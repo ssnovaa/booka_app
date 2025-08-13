@@ -1,12 +1,17 @@
-class Chapter {
+import 'package:equatable/equatable.dart';
+import 'book.dart'; // Импортируем нашу улучшенную модель Book
+
+// Класс наследуется от Equatable для простого и надежного сравнения объектов
+class Chapter extends Equatable {
   final int id;
   final String title;
   final int order;
   final String audioUrl;
   final int? duration;
-  final Map<String, dynamic>? book; // Вся информация о книге (название, обложка и т.д.)
+  final Book? book; // Теперь это объект типа Book, а не Map
 
-  Chapter({
+  // Конструктор теперь const
+  const Chapter({
     required this.id,
     required this.title,
     required this.order,
@@ -15,14 +20,11 @@ class Chapter {
     this.book,
   });
 
-  /// Универсальный fromJson — book можно передать отдельно (или взять из json, если есть)
-  factory Chapter.fromJson(Map<String, dynamic> json, {Map<String, dynamic>? book}) {
-    // ТВОЙ СЕКРЕТНЫЙ КЛЮЧ
-    const String appKey = ',f,rf vfjrv gjkbdfkf ujcnz enhtyytq hjcs 500hfp';
-    String url = json['audio_url'] ?? '';
-    if (url.isNotEmpty && !url.contains('appkey=')) {
-      url += (url.contains('?') ? '&' : '?') + 'appkey=$appKey';
-    }
+  // Фабричный конструктор для создания экземпляра из JSON
+  factory Chapter.fromJson(Map<String, dynamic> json, {Book? book}) {
+    // Логику добавления ключей API лучше выносить в слой работы с сетью (например, в Interceptor для http клиента),
+    // а не хранить в модели данных.
+    String url = json['audio_url']?.toString() ?? '';
 
     int? chapterDuration;
     if (json['duration'] != null) {
@@ -33,12 +35,15 @@ class Chapter {
       }
     }
 
-    // Если явно передали book — используем, иначе ищем в json['book'] (универсальность)
-    final bookData = book ?? (json['book'] is Map<String, dynamic> ? json['book'] : null);
+    // Если явно передали book — используем его.
+    // Иначе, если в JSON есть объект 'book', создаем из него экземпляр Book.
+    final bookData = book ?? (json['book'] is Map<String, dynamic>
+        ? Book.fromJson(json['book'])
+        : null);
 
     return Chapter(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      title: json['title']?.toString() ?? '',
+      title: json['title']?.toString() ?? 'Без названия',
       order: json['order'] is int ? json['order'] : int.tryParse(json['order'].toString()) ?? 0,
       audioUrl: url,
       duration: chapterDuration,
@@ -46,6 +51,7 @@ class Chapter {
     );
   }
 
+  // Метод для преобразования экземпляра в JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -53,13 +59,18 @@ class Chapter {
       'order': order,
       'audio_url': audioUrl,
       'duration': duration,
-      if (book != null) 'book': book,
+      // Если есть объект book, вызываем его собственный toJson
+      if (book != null) 'book': book!.toJson(),
     };
   }
 
-  /// Удобные геттеры для UI:
-  String get bookTitle => (book?['title'] ?? '') as String;
-  String? get coverUrl => book?['cover_url'] as String?;
-  String? get description => book?['description'] as String?;
-  String? get author => book?['author'] as String?;
+  // Equatable автоматически создает `==` и `hashCode` на основе этого списка
+  @override
+  List<Object?> get props => [id, title, order, audioUrl, duration, book];
+
+  // Геттеры теперь обращаются к свойствам объекта Book, что безопаснее
+  String get bookTitle => book?.title ?? 'Без названия';
+  String? get coverUrl => book?.displayCoverUrl;
+  String? get description => book?.description;
+  String? get author => book?.author;
 }

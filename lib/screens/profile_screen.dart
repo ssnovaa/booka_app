@@ -1,5 +1,3 @@
-// ПУТЬ: lib/screens/profile_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,61 +5,85 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../constants.dart';
+import '../models/book.dart';
 import '../widgets/favorite_book_card.dart';
 import '../widgets/listened_book_card.dart';
 import '../widgets/current_listen_card.dart';
 import '../user_notifier.dart';
-import 'login_screen.dart'; // Импорт LoginScreen
+import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late Future<Map<String, dynamic>> profileFuture;
+  bool _isLoadingLists = true;
+  String? _error;
+  List<Book> _favorites = [];
+  List<Book> _listened = [];
 
   @override
   void initState() {
     super.initState();
-    // [FIX] Не вызывать в build — иначе будет дергаться при каждом ребилде
-    profileFuture = fetchUserProfile();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchUserLists();
+    });
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
+  Future<void> _fetchUserLists() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingLists = true;
+      _error = null;
+    });
 
-  Future<Map<String, dynamic>> fetchUserProfile() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('Токен не найден, пользователь не авторизован');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Токен не найден, пользователь не авторизован');
+      }
+
+      final url = Uri.parse('$BASE_URL/profile');
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final favsData = data['favorites'] as List? ?? [];
+        final listenedData = data['listened'] as List? ?? [];
+        setState(() {
+          _favorites = favsData.map((item) => Book.fromJson(item)).toList();
+          _listened = listenedData.map((item) => Book.fromJson(item)).toList();
+        });
+      } else {
+        throw Exception('Ошибка загрузки списков: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingLists = false;
+        });
+      }
     }
-    final url = Uri.parse('$BASE_URL/profile');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    // Для отладки
-    // print('Ответ профиля пользователя: ${response.body}');
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body) as Map<String, dynamic>;
-    } else {
-      throw Exception('Ошибка: ${response.statusCode}: ${response.body}');
-    }
   }
 
-  Future<void> logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
+  Future<void> _logout() async {
+    final userNotifier = context.read<UserNotifier>();
+    await userNotifier.logout();
+
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -70,171 +92,128 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _continueListening() {
-    // Логика перехода к плееру — реализуй по своему проекту
-    // Например:
-    // Navigator.pushNamed(context, '/player_from_profile');
-  }
-
-  /// [ADD] Универсальный резолвер URL с приоритетом на thumb_url.
-  /// Поддерживает как относительные пути (через storage/*), так и абсолютные (http/https).
-  String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
-    String? pick(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      return s.isEmpty ? null : s;
-    }
-
-    // 1) Берём thumb_url, если есть
-    String? thumb = pick(book['thumb_url'] ?? book['thumbUrl']);
-    if (thumb != null) {
-      if (thumb.startsWith('http://') || thumb.startsWith('https://')) {
-        return thumb; // уже абсолютный
-      }
-      // относительный -> собрать абсолютный
-      return fullResourceUrl('storage/$thumb');
-    }
-
-    // 2) Иначе cover_url
-    String? cover = pick(book['cover_url'] ?? book['coverUrl']);
-    if (cover != null) {
-      if (cover.startsWith('http://') || cover.startsWith('https://')) {
-        return cover; // уже абсолютный
-      }
-      return fullResourceUrl('storage/$cover');
-    }
-
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final userNotifier = Provider.of<UserNotifier>(context);
+    final userNotifier = context.watch<UserNotifier>();
 
-    // Если не авторизован — сразу LoginScreen
-    if (!userNotifier.isAuth) {
+    if (!userNotifier.isAuth || userNotifier.user == null) {
       return const LoginScreen();
     }
 
+    final user = userNotifier.user!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Личный кабинет')),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: profileFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Ошибка: ${snapshot.error}'));
-          }
-          final data = snapshot.data!;
-          final favorites = data['favorites'] as List? ?? [];
-          final listened = data['listened'] as List? ?? [];
+      appBar: AppBar(
+        title: const Text('Личный кабинет'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Обновить',
+            onPressed: _fetchUserLists,
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          _buildUserInfo(context, user),
+          const SizedBox(height: 24),
+          const Text(
+            'Текущая книга',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const CurrentListenCard(onContinue: null),
+          const SizedBox(height: 24),
+          _buildSectionTitle('Избранные книги'),
+          const SizedBox(height: 8),
+          _buildBookList(_favorites, true),
+          const SizedBox(height: 24),
+          _buildSectionTitle('Прослушанные книги'),
+          const SizedBox(height: 8),
+          _buildBookList(_listened, false),
+          const SizedBox(height: 32),
+          _buildLogoutButton(),
+        ],
+      ),
+    );
+  }
 
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Имя: ${data['name']}', style: const TextStyle(fontSize: 18)),
-                Text('Email: ${data['email']}', style: const TextStyle(fontSize: 16)),
-                Text(
-                  'Статус: ${data['is_paid'] ? 'Платный' : 'Бесплатный'}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                const SizedBox(height: 20),
-
-                // ---- Текущая книга (карточка читает из AudioPlayerProvider) ----
-                const Text(
-                  'Текущая книга:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 10),
-                CurrentListenCard(
-                  onContinue: _continueListening,
-                ),
-                const SizedBox(height: 20),
-
-                const Text(
-                  'Избранные книги:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 10),
-
-                // [MOD] фавориты: теперь используем thumb_url с фолбэком на cover_url
-                Expanded(
-                  flex: 2,
-                  child: favorites.isEmpty
-                      ? const Text('Нет избранных книг')
-                      : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const ClampingScrollPhysics(),
-                    itemCount: favorites.length,
-                    itemBuilder: (context, i) {
-                      final book = favorites[i] as Map<String, dynamic>;
-
-                      final resolvedUrl = _resolveThumbOrCoverUrl(book);
-
-                      return FavoriteBookCard(
-                        book: book,
-                        // [MOD] было: fullResourceUrl('storage/$relativeCoverUrl')
-                        //      стало: аккуратный резолвер thumb -> cover
-                        coverUrl: resolvedUrl,
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                const Text(
-                  'Прослушанные книги:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 10),
-
-                // [MOD] прослушанные: аналогично — thumb_url -> cover_url
-                Expanded(
-                  flex: 2,
-                  child: listened.isEmpty
-                      ? const Text('Нет прослушанных книг')
-                      : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const ClampingScrollPhysics(),
-                    itemCount: listened.length,
-                    itemBuilder: (context, i) {
-                      final book = listened[i] as Map<String, dynamic>;
-
-                      final resolvedUrl = _resolveThumbOrCoverUrl(book);
-
-                      return ListenedBookCard(
-                        book: book,
-                        coverUrl: resolvedUrl,
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-                SafeArea(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      onPressed: () => logout(context),
-                      child: const Text('Выйти из аккаунта', style: TextStyle(fontSize: 18)),
-                    ),
-                  ),
-                ),
-              ],
+  Widget _buildUserInfo(BuildContext context, dynamic user) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(user.name, style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(user.email, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            Chip(
+              label: Text(
+                user.isPaid ? 'Подписка активна' : 'Бесплатный доступ',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              backgroundColor: user.isPaid ? Colors.green : Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-          );
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+    );
+  }
+
+  Widget _buildBookList(List<Book> books, bool isFavorites) {
+    if (_isLoadingLists) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Text('Ошибка загрузки: $_error', style: const TextStyle(color: Colors.red));
+    }
+    if (books.isEmpty) {
+      return const Text('Список пуст');
+    }
+
+    return SizedBox(
+      height: 200,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: books.length,
+        itemBuilder: (context, i) {
+          final book = books[i];
+          // ИСПРАВЛЕНИЕ: убираем coverUrl, так как виджет его больше не принимает
+          return isFavorites
+              ? FavoriteBookCard(book: book)
+              : ListenedBookCard(book: book);
         },
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton() {
+    return SafeArea(
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.redAccent.withOpacity(0.8),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          onPressed: _logout,
+          child: const Text('Выйти из аккаунта', style: TextStyle(fontSize: 18)),
+        ),
       ),
     );
   }

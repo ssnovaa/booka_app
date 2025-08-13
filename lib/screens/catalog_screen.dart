@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -8,10 +9,7 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/genre.dart';
 import '../models/author.dart';
-import 'login_screen.dart';
 import 'book_detail_screen.dart';
-import 'profile_screen.dart';
-import 'package:provider/provider.dart';
 import '../providers/audio_player_provider.dart';
 import '../user_notifier.dart';
 import '../theme_notifier.dart';
@@ -29,6 +27,7 @@ class CatalogScreen extends StatefulWidget {
   final bool showAppBar;
   final int? selectedGenreId;
 
+  // Добавлено const
   const CatalogScreen({
     super.key,
     this.showAppBar = true,
@@ -45,29 +44,24 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   List<Author> authors = [];
   int? selectedGenreId;
   Author? selectedAuthor;
-  TextEditingController searchController = TextEditingController();
+  final TextEditingController searchController = TextEditingController();
 
   bool isLoading = false;
   String? error;
-
-  late Future<Map<String, dynamic>?> profileFuture;
 
   // Чтобы пересобирать карточку прогресса по возврату на экран:
   Key currentListenCardKey = UniqueKey();
 
   Genre? get selectedGenre {
     if (selectedGenreId == null) return null;
-    for (final g in genres) {
-      if (g.id == selectedGenreId) return g;
-    }
-    return null;
+    // Используем firstWhereOrNull для безопасности и краткости
+    return genres.cast<Genre?>().firstWhere((g) => g?.id == selectedGenreId, orElse: () => null);
   }
 
   @override
   void initState() {
     super.initState();
     selectedGenreId = widget.selectedGenreId;
-    profileFuture = fetchUserProfile();
     fetchFiltersAndBooks();
   }
 
@@ -75,13 +69,17 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Подписываемся на RouteObserver для автоматического обновления карточки
-    routeObserver.subscribe(this, ModalRoute.of(context)!);
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+    }
   }
 
   @override
   void dispose() {
     // Отписываемся от RouteObserver
     routeObserver.unsubscribe(this);
+    searchController.dispose();
     super.dispose();
   }
 
@@ -93,36 +91,11 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     });
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
-  Future<Map<String, dynamic>?> fetchUserProfile() async {
-    final token = await getToken();
-    if (token == null || token.isEmpty) {
-      return null;
-    }
-    final url = Uri.parse('$BASE_URL/profile');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      return null;
-    }
-  }
-
   /// Реализация кнопки "Продолжить"
   void _continueListening() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = prefs.getString('current_listen');
-    if (jsonStr == null) {
+    if (jsonStr == null || !mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Нет сохранённой книги для продолжения.')),
       );
@@ -136,7 +109,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       final position = data['position'] ?? 0;
 
       final book = Book.fromJson(bookJson);
-      final chapter = Chapter.fromJson(chapterJson, book: bookJson);
+      // ИСПРАВЛЕНИЕ: передаем объект Book, а не Map
+      final chapter = Chapter.fromJson(chapterJson, book: book);
 
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -157,21 +131,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
-    final content = FutureBuilder<Map<String, dynamic>?>(
-      future: profileFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return buildMainContent(null);
-        }
-        return buildMainContent(snapshot.data);
-      },
-    );
-
     if (!widget.showAppBar) {
-      return content;
+      return _buildMainContent();
     }
 
     return Scaffold(
@@ -182,8 +143,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
           Consumer<ThemeNotifier>(
             builder: (context, themeNotifier, _) => IconButton(
               icon: Icon(themeNotifier.isDark
-                  ? Icons.dark_mode
-                  : Icons.light_mode),
+                  ? Icons.dark_mode_outlined
+                  : Icons.light_mode_outlined),
               tooltip: 'Сменить тему',
               onPressed: () => themeNotifier.toggleTheme(),
             ),
@@ -191,104 +152,128 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
           const SizedBox(width: 15),
         ],
       ),
-      body: content,
+      body: _buildMainContent(),
     );
   }
 
-  Widget buildMainContent(Map<String, dynamic>? data) {
-    // Проверяем авторизацию через UserNotifier (контекст провайдера)
-    final userNotifier = Provider.of<UserNotifier>(context, listen: false);
-    final bool isAuth = userNotifier.isAuth;
+  Widget _buildMainContent() {
+    final bool isAuth = context.watch<UserNotifier>().isAuth;
 
-    return Stack(
-      children: [
-        isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : error != null
-            ? Center(child: Text(error!))
-            : RefreshIndicator(
-          onRefresh: fetchBooks,
-          child: ListView(
-            padding: const EdgeInsets.all(8),
-            children: [
-              LastBooksWidget(books: books),
-              // Обновление карточки через key гарантирует, что при возврате всегда свежие данные!
-              if (isAuth)
-                CurrentListenCard(
-                  key: currentListenCardKey,
-                  onContinue: _continueListening,
-                ),
-              PopularBooksWidget(books: books),
-              CatalogFilters(
-                genres: genres,
-                authors: authors,
-                selectedGenre: selectedGenre,
-                selectedAuthor: selectedAuthor,
-                searchController: searchController,
-                onReset: resetFilters,
-                onGenreChanged: (Genre? g) {
-                  setState(() => selectedGenreId = g?.id);
-                  fetchBooks();
-                },
-                onAuthorChanged: (a) {
-                  setState(() => selectedAuthor = a);
-                  fetchBooks();
-                },
-                onSearch: fetchBooks,
-              ),
-              ...books.map((book) => BookCardWidget(book: book)),
-              const SizedBox(height: 24),
-            ],
-          ),
+    if (isLoading && books.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text('Ошибка: $error', textAlign: TextAlign.center),
         ),
-      ],
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: fetchBooks,
+      child: ListView(
+        padding: const EdgeInsets.all(8),
+        children: [
+          LastBooksWidget(books: books),
+          if (isAuth)
+            CurrentListenCard(
+              key: currentListenCardKey,
+              onContinue: _continueListening,
+            ),
+          PopularBooksWidget(books: books),
+          CatalogFilters(
+            genres: genres,
+            authors: authors,
+            selectedGenre: selectedGenre,
+            selectedAuthor: selectedAuthor,
+            searchController: searchController,
+            onReset: resetFilters,
+            onGenreChanged: (Genre? g) {
+              setState(() => selectedGenreId = g?.id);
+              fetchBooks();
+            },
+            onAuthorChanged: (a) {
+              setState(() => selectedAuthor = a);
+              fetchBooks();
+            },
+            onSearch: fetchBooks,
+          ),
+          ...books.map((book) => BookCardWidget(book: book)),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 
   Future<void> fetchFiltersAndBooks() async {
+    if (isLoading) return;
     setState(() {
       isLoading = true;
       error = null;
     });
     try {
-      final genreFuture = fetchGenres();
-      final authorFuture = fetchAuthors();
-      await Future.wait([genreFuture, authorFuture]);
+      await Future.wait([
+        fetchGenres(),
+        fetchAuthors(),
+      ]);
       await fetchBooks();
     } catch (e) {
-      error = 'Ошибка загрузки фильтров: $e';
+      if (mounted) {
+        setState(() => error = 'Ошибка загрузки данных: $e');
+      }
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
-  Future<List<Genre>> fetchGenres() async {
-    final response = await http.get(Uri.parse('$BASE_URL/genres'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      genres = data.map((e) => Genre.fromJson(e)).toList();
-      return genres;
-    } else {
-      throw Exception('Ошибка загрузки жанров');
+  Future<void> fetchGenres() async {
+    try {
+      final response = await http.get(Uri.parse('$BASE_URL/genres'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            genres = data.map((e) => Genre.fromJson(e)).toList();
+          });
+        }
+      } else {
+        throw Exception('Ошибка загрузки жанров');
+      }
+    } catch (e) {
+      rethrow;
     }
   }
 
-  Future<List<Author>> fetchAuthors() async {
-    final response = await http.get(Uri.parse('$BASE_URL/authors'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      authors = data.map((e) => Author.fromJson(e)).toList();
-      return authors;
-    } else {
-      throw Exception('Ошибка загрузки авторов');
+  Future<void> fetchAuthors() async {
+    try {
+      final response = await http.get(Uri.parse('$BASE_URL/authors'));
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            authors = data.map((e) => Author.fromJson(e)).toList();
+          });
+        }
+      } else {
+        throw Exception('Ошибка загрузки авторов');
+      }
+    } catch (e) {
+      rethrow;
     }
   }
 
   Future<void> fetchBooks() async {
-    setState(() {
-      isLoading = true;
-      error = null;
-    });
+    if (mounted) {
+      setState(() {
+        isLoading = true;
+        error = null;
+      });
+    }
 
     try {
       final Map<String, String> params = {};
@@ -302,20 +287,28 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         params['author'] = selectedAuthor!.name;
       }
 
-      final uri = Uri.parse('$BASE_URL/abooks').replace(queryParameters: params);
+      final uri = Uri.parse('$BASE_URL/abooks').replace(queryParameters: params.isEmpty ? null : params);
       final response = await http.get(uri);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> items = data is List ? data : data['data'];
-        books = items.map((item) => Book.fromJson(item)).toList();
-      } else {
-        error = 'Ошибка загрузки: ${response.statusCode}';
+      if (mounted) {
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final List<dynamic> items = data is List ? data : data['data'];
+          setState(() {
+            books = items.map((item) => Book.fromJson(item)).toList();
+          });
+        } else {
+          setState(() => error = 'Ошибка загрузки книг: ${response.statusCode}');
+        }
       }
     } catch (e) {
-      error = 'Ошибка подключения: $e';
+      if (mounted) {
+        setState(() => error = 'Ошибка подключения: $e');
+      }
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 

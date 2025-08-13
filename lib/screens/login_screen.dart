@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:provider/provider.dart';
 
-import '../constants.dart';
-import '../models/user.dart';
 import '../user_notifier.dart';
 import 'main_screen.dart';
 
@@ -16,92 +12,146 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  String? error;
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  Future<void> login() async {
-    setState(() => error = null);
-    try {
-      final url = Uri.parse('$BASE_URL/login');
-      final response = await http.post(url, body: {
-        'email': emailController.text.trim(),
-        'password': passwordController.text.trim(),
-      });
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final token = data['token'];
-        final user = User.fromJson(data['user']);
-        await Provider.of<UserNotifier>(context, listen: false).login(user, token);
-
-        // Сброс навигационного стека на главный экран с баром!
-        if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const MainScreen()),
-                (route) => false,
-          );
-        }
-      } else {
-        setState(() {
-          error = 'Неверный логин или пароль';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        error = 'Ошибка подключения: $e';
-      });
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
     }
+    // ИСПРАВЛЕНИЕ: Вызываем login с email и password
+    await context.read<UserNotifier>().login(
+      _emailController.text,
+      _passwordController.text,
+    );
+
+    // После попытки логина, проверяем результат
+    if (mounted) {
+      final userNotifier = context.read<UserNotifier>();
+      if (userNotifier.isAuth) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+              (route) => false,
+        );
+      }
+      // Если есть ошибка, она будет отображена в UI через Consumer
+    }
+  }
+
+  void _continueAsGuest() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainScreen()),
+          (route) => false,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const MainScreen()),
-              (route) => false,
-        );
-        return false; // Не делать стандартный pop!
+        _continueAsGuest();
+        return false;
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Вход')),
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(labelText: 'E-mail'),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              TextField(
-                controller: passwordController,
-                decoration: const InputDecoration(labelText: 'Пароль'),
-                obscureText: true,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: login,
-                child: const Text('Войти'),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: () {
-                  // Кнопка "Продолжить как гость" — тоже только на MainScreen!
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const MainScreen()),
-                        (route) => false,
+        appBar: AppBar(
+          title: const Text('Вход в аккаунт'),
+          elevation: 0,
+        ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Form(
+              key: _formKey,
+              child: Consumer<UserNotifier>(
+                builder: (context, userNotifier, child) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextFormField(
+                        controller: _emailController,
+                        decoration: const InputDecoration(
+                          labelText: 'E-mail',
+                          prefixIcon: Icon(Icons.email_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Пожалуйста, введите E-mail';
+                          }
+                          if (!RegExp(r'\S+@\S+\.\S+').hasMatch(value)) {
+                            return 'Пожалуйста, введите корректный E-mail';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Пароль',
+                          prefixIcon: Icon(Icons.lock_outline),
+                          border: OutlineInputBorder(),
+                        ),
+                        obscureText: true,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Пожалуйста, введите пароль';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      if (userNotifier.error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: Text(
+                            userNotifier.error!,
+                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: userNotifier.isAuthenticating ? null : _login,
+                        child: userNotifier.isAuthenticating
+                            ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                            : const Text('Войти', style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _continueAsGuest,
+                        child: const Text('Продолжить как гость', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
                   );
                 },
-                child: const Text('Продолжить как гость'),
               ),
-              if (error != null) ...[
-                const SizedBox(height: 16),
-                Text(error!, style: const TextStyle(color: Colors.red)),
-              ],
-            ],
+            ),
           ),
         ),
       ),

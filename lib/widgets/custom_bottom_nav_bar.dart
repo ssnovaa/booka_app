@@ -6,81 +6,109 @@ class CustomBottomNavBar extends StatelessWidget {
   final VoidCallback onPlayerTap;
 
   const CustomBottomNavBar({
-    Key? key,
+    super.key,
     required this.currentIndex,
     required this.onTap,
     required this.onPlayerTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
-    final colorSelected = Theme.of(context).colorScheme.primary;
-    final colorUnselected = Colors.grey;
+    final theme = Theme.of(context);
 
     return Container(
       height: 70,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.background,
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+        color: theme.colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: theme.shadowColor.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, -1),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          IconButton(
-            icon: Icon(
-              Icons.collections_bookmark,
-              color: currentIndex == 0 ? colorSelected : colorUnselected,
-            ),
-            onPressed: () => onTap(0),
-            tooltip: 'Подборки',
+          _buildNavItem(
+            context: context,
+            index: 0,
+            icon: Icons.collections_bookmark_outlined,
+            label: 'Подборки',
           ),
-          IconButton(
-            icon: Icon(
-              Icons.library_books,
-              color: currentIndex == 1 ? colorSelected : colorUnselected,
-            ),
-            onPressed: () => onTap(1),
-            tooltip: 'Каталог',
+          _buildNavItem(
+            context: context,
+            index: 1,
+            icon: Icons.library_books_outlined,
+            label: 'Каталог',
           ),
+          _buildPlayerButton(context),
+          // Пустой элемент-распорка, чтобы центральная кнопка не влияла на позиционирование
+          const SizedBox(width: 48),
+          _buildNavItem(
+            context: context,
+            index: 3,
+            icon: Icons.account_circle_outlined,
+            label: 'Профиль',
+          ),
+        ],
+      ),
+    );
+  }
 
-          // Кнопка плеера с логотипом и кнопкой play сверху
-          GestureDetector(
-            onTap: onPlayerTap,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(6.0),
-                    child: Image.asset('lib/assets/images/logo.png'),
-                  ),
-                ),
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 18),
-                ),
+  // Переиспользуемый виджет для элемента навигации
+  Widget _buildNavItem({
+    required BuildContext context,
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    final isSelected = currentIndex == index;
+    final color = isSelected ? theme.colorScheme.primary : Colors.grey[600];
+
+    return IconButton(
+      icon: Icon(icon, color: color),
+      onPressed: () => onTap(index),
+      tooltip: label,
+      iconSize: 28,
+    );
+  }
+
+  // Виджет для центральной кнопки плеера
+  Widget _buildPlayerButton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: onPlayerTap,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.colorScheme.primary.withOpacity(0.1),
+            ),
+            // Изображение логотипа лучше вынести в assets
+            child: Padding(
+              padding: const EdgeInsets.all(6.0),
+              child: Image.asset('lib/assets/images/logo.png'), // Убедитесь, что путь правильный
+            ),
+          ),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.colorScheme.primary,
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
               ],
             ),
-          ),
-
-          IconButton(
-            icon: Icon(
-              Icons.account_circle,
-              color: currentIndex == 3 ? colorSelected : colorUnselected,
-            ),
-            onPressed: () => onTap(3),
-            tooltip: 'Профиль',
+            child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
           ),
         ],
       ),

@@ -11,9 +11,8 @@ import '../player/bottom_sheet_player.dart';
 import '../providers/audio_player_provider.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({Key? key}) : super(key: key);
+  const MainScreen({super.key});
 
-  // --- Даем глобальный доступ к state MainScreen ---
   static _MainScreenState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MainScreenState>();
 
@@ -25,17 +24,13 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 1; // Каталог по умолчанию
 
   void _onTabSelected(int index) {
-    debugPrint('[MainScreen] _onTabSelected: $index');
     setState(() {
       _selectedIndex = index;
     });
   }
 
-  // Кнопка плеера из минибара — открыть всплывающий плеер
   void _onPlayerTap() {
-    debugPrint('[MainScreen] Player tap!');
     final audio = context.read<AudioPlayerProvider>();
-
     final hasCurrent = audio.currentBook != null && audio.currentChapter != null;
     if (hasCurrent) {
       BottomSheetPlayer.show(context);
@@ -46,7 +41,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // --- Новый метод для внешней смены вкладки ---
   void setTab(int index) {
     setState(() {
       _selectedIndex = index;
@@ -55,60 +49,44 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[MainScreen] build, _selectedIndex=$_selectedIndex');
-    return Consumer<UserNotifier>(
-      builder: (context, userNotifier, _) {
-        debugPrint('[MainScreen] Consumer<UserNotifier>: isAuth=${userNotifier.isAuth}');
-        late Widget body;
+    // --- ИСПРАВЛЕННАЯ СТРОКА ДЛЯ ОТЛАДКИ ---
+    debugPrint('[ОТЛАДКА] Текущий тип пользователя: ${context.watch<UserNotifier>().userType}');
+    // ------------------------------------
 
-        switch (_selectedIndex) {
-          case 0:
-            debugPrint('[MainScreen] CASE 0: ПОДБОРКИ (CatalogAndCollectionsScreen)');
-            body = const CatalogAndCollectionsScreen();
-            break;
-          case 1:
-            debugPrint('[MainScreen] CASE 1: КАТАЛОГ');
-            body = const CatalogScreen();
-            break;
-          case 3:
-            debugPrint('[MainScreen] CASE 3: ПРОФИЛЬ');
-            body = const ProfileScreen(); // ← ставим реальный профиль
-            break;
-          default:
-            debugPrint('[MainScreen] CASE default');
-            body = const CatalogScreen();
-        }
+    final List<Widget> pages = [
+      const CatalogAndCollectionsScreen(), // index 0
+      const CatalogScreen(),               // index 1
+      const SizedBox.shrink(),             // index 2 (пустышка для центральной кнопки)
+      const ProfileScreen(),               // index 3
+    ];
 
-        return Scaffold(
-          body: body,
-          bottomNavigationBar: CustomBottomNavBar(
+    final body = pages[(_selectedIndex >= 0 && _selectedIndex < pages.length) ? _selectedIndex : 1];
+
+    return Scaffold(
+      body: body,
+      bottomNavigationBar: Consumer<UserNotifier>(
+        builder: (context, userNotifier, child) {
+          return CustomBottomNavBar(
             currentIndex: _selectedIndex,
             onTap: (index) {
-              debugPrint('[MainScreen] NAVBAR onTap: $index');
-
-              // Профиль открываем как отдельный экран (как у тебя и было)
               if (index == 3) {
-                debugPrint('[MainScreen] NAVBAR PROFILE: isAuth=${userNotifier.isAuth}');
                 if (userNotifier.isAuth) {
-                  debugPrint('[MainScreen] Навигация: ProfileScreen (push)');
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const ProfileScreen()),
                   );
                 } else {
-                  debugPrint('[MainScreen] Навигация: LoginScreen (push)');
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const LoginScreen()),
                   );
                 }
                 return;
               }
-
               _onTabSelected(index);
             },
             onPlayerTap: _onPlayerTap,
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

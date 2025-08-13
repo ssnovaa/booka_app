@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/chapter.dart';
 import '../providers/audio_player_provider.dart';
-import '../user_notifier.dart'; // Для получения типа пользователя
-import '../models/user.dart';
 
-class MiniPlayerWidget extends StatefulWidget {
+class MiniPlayerWidget extends StatelessWidget {
   final Chapter chapter;
   final String bookTitle;
   final VoidCallback onExpand;
@@ -18,150 +16,129 @@ class MiniPlayerWidget extends StatefulWidget {
   });
 
   @override
-  State<MiniPlayerWidget> createState() => _MiniPlayerWidgetState();
-}
-
-class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
-  bool _showedEndDialog = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Важно! Назначаем callback, чтобы ловить окончание первой главы
-    final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
-    audioProvider.onGuestFirstChapterEnd = () {
-      final user = Provider.of<UserNotifier>(context, listen: false).user;
-      final userType = getUserType(user);
-      // --- ПОКАЗЫВАТЬ ДИАЛОГ ВСЕГДА, сброс флага отдельной функцией ---
-      if (userType == UserType.guest && !_showedEndDialog) {
-        _showedEndDialog = true;
-        Future.delayed(Duration.zero, () {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Доступ ограничен'),
-              content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Отмена'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    Navigator.of(context).pushNamed('/login'); // Замени на свой путь к авторизации
-                  },
-                  child: const Text('Войти'),
-                ),
-              ],
-            ),
-          );
-        });
-      }
-    };
-  }
-
-  @override
-  void didUpdateWidget(MiniPlayerWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _resetDialogStateIfReplayed();
-  }
-
-  void _resetDialogStateIfReplayed() {
-    // Сброс флага, если пользователь начал слушать главу сначала
-    final audioProvider = context.read<AudioPlayerProvider>();
-    final user = Provider.of<UserNotifier>(context, listen: false).user;
-    final userType = getUserType(user);
-    final chapter = audioProvider.currentChapter;
-    final position = audioProvider.position;
-
-    if (userType == UserType.guest &&
-        chapter != null &&
-        chapter.order == 0 &&
-        position.inSeconds < 3) {
-      _showedEndDialog = false;
-    }
-  }
-
-  String formatTime(Duration d) {
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final audioProvider = context.watch<AudioPlayerProvider>();
-    final currentChapter = audioProvider.currentChapter;
-
-    // Не показывать мини-плеер, если нет активной главы
-    if (audioProvider.currentUrl == null || currentChapter == null) {
-      return const SizedBox.shrink();
-    }
-
-    final position = audioProvider.position;
-    final duration = audioProvider.duration;
-    final progress = (duration.inMilliseconds > 0)
-        ? position.inMilliseconds / duration.inMilliseconds
-        : 0.0;
+    final audioProvider = context.read<AudioPlayerProvider>();
+    final theme = Theme.of(context);
 
     return Container(
-      color: Colors.grey[900],
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: theme.colorScheme.surface.withOpacity(0.95),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              const Icon(Icons.audiotrack, color: Colors.white),
+              const Icon(Icons.audiotrack_outlined, color: Colors.white70),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      currentChapter.title,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      widget.bookTitle,
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: Icon(
-                  audioProvider.isPlaying ? Icons.pause : Icons.play_arrow,
-                  color: Colors.white,
-                ),
-                onPressed: audioProvider.togglePlayback,
-              ),
-              IconButton(
-                icon: const Icon(Icons.expand_less, color: Colors.white),
-                onPressed: widget.onExpand,
-              ),
+              _buildTrackInfo(context),
+              _buildControls(context, audioProvider),
             ],
           ),
-          const SizedBox(height: 6),
-          LinearProgressIndicator(
-            value: progress.clamp(0.0, 1.0),
-            color: Colors.white,
-            backgroundColor: Colors.grey[800],
-            minHeight: 4,
+          const SizedBox(height: 4),
+          _buildProgressBar(context, audioProvider),
+        ],
+      ),
+    );
+  }
+
+  // Виджет для отображения информации о треке
+  Widget _buildTrackInfo(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            chapter.title,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(formatTime(position), style: const TextStyle(color: Colors.white54, fontSize: 12)),
-              Text(formatTime(duration), style: const TextStyle(color: Colors.white54, fontSize: 12)),
-            ],
+          Text(
+            bookTitle,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
     );
+  }
+
+  // Виджет для кнопок управления
+  Widget _buildControls(BuildContext context, AudioPlayerProvider audioProvider) {
+    return Row(
+      children: [
+        // Кнопка Play/Pause обновляется независимо через StreamBuilder
+        StreamBuilder<bool>(
+          stream: audioProvider.playingStream,
+          builder: (context, snapshot) {
+            final isPlaying = snapshot.data ?? false;
+            return IconButton(
+              icon: Icon(
+                isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
+                color: Colors.white,
+                size: 32,
+              ),
+              onPressed: () {
+                if (isPlaying) {
+                  audioProvider.pause();
+                } else {
+                  audioProvider.play();
+                }
+              },
+            );
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.expand_less_rounded, color: Colors.white, size: 32),
+          onPressed: onExpand,
+          tooltip: 'Открыть плеер',
+        ),
+      ],
+    );
+  }
+
+  // Виджет для полосы прогресса и времени
+  Widget _buildProgressBar(BuildContext context, AudioPlayerProvider audioProvider) {
+    return StreamBuilder<Duration>(
+      stream: audioProvider.positionStream,
+      builder: (context, positionSnapshot) {
+        final position = positionSnapshot.data ?? Duration.zero;
+        return StreamBuilder<Duration?>(
+          stream: audioProvider.durationStream,
+          builder: (context, durationSnapshot) {
+            final duration = durationSnapshot.data ?? Duration.zero;
+            final progress = (duration.inSeconds > 0)
+                ? (position.inSeconds / duration.inSeconds).clamp(0.0, 1.0)
+                : 0.0;
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: progress,
+                  color: Colors.white,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  minHeight: 3,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_formatTime(position), style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    Text(_formatTime(duration), style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatTime(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 }

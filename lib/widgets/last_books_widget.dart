@@ -1,120 +1,125 @@
-// ПУТЬ: lib/widgets/last_books_widget.dart
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 
-class LastBooksWidget extends StatelessWidget {
+class LastBooksWidget extends StatefulWidget {
   final List<Book> books;
 
-  const LastBooksWidget({Key? key, required this.books}) : super(key: key);
+  const LastBooksWidget({super.key, required this.books});
 
-  List<Book> getLastBooks() {
-    if (books.isEmpty) return [];
-    final sorted = List<Book>.from(books)..sort((a, b) => b.id.compareTo(a.id));
-    return sorted.take(6).toList(); // ← при необходимости поменяй количество
+  @override
+  State<LastBooksWidget> createState() => _LastBooksWidgetState();
+}
+
+class _LastBooksWidgetState extends State<LastBooksWidget> {
+  List<Book> _lastBooks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _processBooks();
+  }
+
+  @override
+  void didUpdateWidget(covariant LastBooksWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Пересчитываем список только если входные данные изменились
+    if (widget.books != oldWidget.books) {
+      _processBooks();
+    }
+  }
+
+  // Логика сортировки и выбора вынесена из build метода
+  void _processBooks() {
+    if (widget.books.isEmpty) {
+      _lastBooks = [];
+      return;
+    }
+    // Сортируем по ID в убывающем порядке, чтобы получить самые новые
+    final sorted = List<Book>.from(widget.books)..sort((a, b) => b.id.compareTo(a.id));
+    // Берем первые 6
+    _lastBooks = sorted.take(6).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final lastBooks = getLastBooks();
-    if (lastBooks.isEmpty) return const SizedBox();
-
-    // Группируем по 3 в ряд для "карусели"
-    final List<List<Book>> slides = [];
-    for (int i = 0; i < lastBooks.length; i += 3) {
-      slides.add(lastBooks.sublist(i, (i + 3) > lastBooks.length ? lastBooks.length : (i + 3)));
+    if (_lastBooks.isEmpty) {
+      return const SizedBox.shrink(); // Не показывать ничего, если книг нет
     }
 
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      child: Padding(
-        padding: const EdgeInsets.only(top: 12, left: 8, right: 8, bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8, left: 4),
-              child: Text(
-                'Найсвіжіші історії',
-                style: GoogleFonts.pangolin(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey[900],
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-            SizedBox(
-              height: 164,
-              child: PageView.builder(
-                itemCount: slides.length,
-                controller: PageController(viewportFraction: 0.95),
-                itemBuilder: (context, index) {
-                  final slide = slides[index];
-                  return Row(
-                    children: List.generate(3, (i) {
-                      if (i < slide.length) {
-                        final book = slide[i];
-                        // ✅ КЛЮЧ: используем миниатюру с фолбэком на обложку
-                        final imageUrl = book.displayCoverUrl;
+    final theme = Theme.of(context);
 
-                        return Flexible(
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => BookDetailScreen(book: book),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              height: 144,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                color: Colors.grey[200],
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 2,
-                                    offset: Offset(1, 2),
-                                  ),
-                                ],
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: imageUrl.isNotEmpty
-                                  ? Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  color: Colors.grey[300],
-                                  alignment: Alignment.center,
-                                  child: const Icon(Icons.broken_image, size: 40),
-                                ),
-                              )
-                                  : Container(
-                                color: Colors.grey[300],
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.book, size: 40),
-                              ),
-                            ),
-                          ),
-                        );
-                      } else {
-                        // Пустой Flexible для выравнивания
-                        return const Flexible(child: SizedBox());
-                      }
-                    }),
-                  );
-                },
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Text(
+            'Новинки',
+            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        SizedBox(
+          height: 180, // Задаем фиксированную высоту для списка
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _lastBooks.length,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemBuilder: (context, index) {
+              final book = _lastBooks[index];
+              return _BookCoverItem(book: book);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Отдельный виджет для элемента списка для лучшей производительности и читаемости
+class _BookCoverItem extends StatelessWidget {
+  final Book book;
+
+  const _BookCoverItem({required this.book});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = book.displayCoverUrl;
+    const double height = 160;
+    const double width = height * (2 / 3); // Сохраняем соотношение сторон 2:3
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
+          );
+        },
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          clipBehavior: Clip.antiAlias,
+          child: (imageUrl != null && imageUrl.isNotEmpty)
+              ? Image.network(
+            imageUrl,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+            const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+            loadingBuilder: (_, child, progress) {
+              if (progress == null) return child;
+              return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+            },
+          )
+              : Container(
+            width: width,
+            height: height,
+            color: Colors.grey[300],
+            child: const Icon(Icons.book, size: 40, color: Colors.white),
+          ),
         ),
       ),
     );
