@@ -1,110 +1,99 @@
+// ПУТЬ: lib/widgets/listened_book_card.dart
+
 import 'package:flutter/material.dart';
-import '../models/book.dart';
-import '../screens/book_detail_screen.dart';
+import '../constants.dart'; // для fullResourceUrl
 
 class ListenedBookCard extends StatelessWidget {
-  final Book book;
+  final Map<String, dynamic> book;
+
+  /// Абсолютный URL изображения, если уже вычислен снаружи.
+  /// Если null — виджет сам попытается взять thumb_url -> cover_url из [book].
+  final String? coverUrl;
 
   const ListenedBookCard({
-    super.key,
+    Key? key,
     required this.book,
-  });
+    this.coverUrl,
+  }) : super(key: key);
+
+  String? _resolveThumbOrCoverUrl(Map<String, dynamic> b) {
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    String? url = pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
+    if (url == null) return null;
+
+    final lower = url.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return url; // уже абсолютный
+    }
+    // относительный -> собрать абсолютный
+    return fullResourceUrl('storage/$url');
+  }
+
+  String _authorName(Map<String, dynamic> b) {
+    final a = b['author'];
+    if (a is Map && a['name'] != null) return a['name'].toString();
+    if (a is String && a.trim().isNotEmpty) return a.trim();
+    final an = b['author_name']?.toString();
+    if (an != null && an.trim().isNotEmpty) return an.trim();
+    return 'Неизвестно';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final String title = (book['title'] ?? 'Без названия').toString();
+    final String author = _authorName(book);
+    final String? imageUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
 
-    // Оборачиваем Card в SizedBox, чтобы ограничить его ширину.
-    // Это решает ошибку 'unbounded constraints', которая возникает,
-    // когда Row с Expanded находится внутри виджета с бесконечной шириной (например, ListView).
-    return SizedBox(
-      width: 300, // Установите желаемую ширину для карточки
-      child: Card(
-        elevation: 1,
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              children: [
-                _buildCover(context, book.displayCoverUrl),
-                const SizedBox(width: 16),
-                Expanded(child: _buildInfo(context, book)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Виджет для отображения обложки
-  Widget _buildCover(BuildContext context, String? imageUrl) {
-    const double size = 64;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: size,
-        height: size,
-        color: isDark ? Colors.white10 : Colors.black12,
-        child: (imageUrl != null && imageUrl.isNotEmpty)
-            ? Image.network(
-          imageUrl,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              Icon(Icons.broken_image_outlined, size: size, color: isDark ? Colors.white30 : Colors.black26),
-          loadingBuilder: (_, child, progress) {
-            if (progress == null) return child;
-            return const Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
-        )
-            : Icon(Icons.book_outlined, size: 40, color: isDark ? Colors.white54 : Colors.black45),
+    final leadingWidget = (imageUrl != null)
+        ? ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Image.network(
+        imageUrl,
+        width: 48,
+        height: 64,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            Icon(Icons.broken_image, size: 48, color: isDark ? Colors.white30 : Colors.black26),
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            width: 48,
+            height: 64,
+            alignment: Alignment.center,
+            color: isDark ? Colors.white10 : Colors.black12,
+            child: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
       ),
-    );
-  }
+    )
+        : Icon(Icons.book, size: 48, color: isDark ? Colors.white54 : Colors.black45);
 
-  // Виджет для отображения текстовой информации
-  Widget _buildInfo(BuildContext context, Book book) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          book.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          book.author,
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: ListTile(
+        leading: leadingWidget,
+        title: Text(
+          title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
-          ),
         ),
-      ],
+        subtitle: Text(
+          'Автор: $author',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        // onTap: () { /* при необходимости: открыть детальную */ },
+      ),
     );
   }
 }

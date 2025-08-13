@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import '../models/genre.dart';
 import '../models/book.dart';
-import '../services/catalog_service.dart'; // Предполагаем, что сервис существует
+import '../services/catalog_service.dart';
 import '../widgets/book_card.dart';
 
 class GenresScreen extends StatefulWidget {
-  final VoidCallback? onReturnToMain;
+  final VoidCallback? onReturnToMain; // Новый параметр!
 
   const GenresScreen({super.key, this.onReturnToMain});
 
@@ -15,201 +15,204 @@ class GenresScreen extends StatefulWidget {
 }
 
 class _GenresScreenState extends State<GenresScreen> {
-  List<Genre> _genres = [];
-  Genre? _selectedGenre;
-  List<Book> _books = [];
-
-  bool _isLoadingGenres = true;
-  bool _isLoadingBooks = false;
-  String? _error;
+  List<Genre> genres = [];
+  Genre? selectedGenre;
+  List<Book> books = [];
+  bool isLoadingGenres = false;
+  bool isLoadingBooks = false;
+  String? error;
 
   @override
   void initState() {
     super.initState();
-    _fetchGenres();
+    fetchGenres();
   }
 
-  Future<void> _fetchGenres() async {
-    if (!mounted) return;
+  Future<void> fetchGenres() async {
     setState(() {
-      _isLoadingGenres = true;
-      _error = null;
+      isLoadingGenres = true;
+      error = null;
     });
     try {
-      _genres = await CatalogService.fetchGenres();
+      genres = await CatalogService.fetchGenres();
+      setState(() {
+        selectedGenre = null;
+      });
     } catch (e) {
-      _error = 'Ошибка загрузки жанров: $e';
+      error = 'Помилка завантаження жанрів: $e';
     } finally {
-      if (mounted) {
-        setState(() => _isLoadingGenres = false);
-      }
+      setState(() => isLoadingGenres = false);
     }
   }
 
-  Future<void> _fetchBooksForGenre(Genre genre) async {
-    if (!mounted) return;
+  Future<void> fetchBooksForGenre(Genre genre) async {
     setState(() {
-      _isLoadingBooks = true;
-      _error = null;
-      _books = [];
+      isLoadingBooks = true;
+      error = null;
+      books = [];
     });
     try {
-      _books = await CatalogService.fetchBooks(genre: genre);
+      books = await CatalogService.fetchBooks(genre: genre);
     } catch (e) {
-      _error = 'Ошибка загрузки книг: $e';
+      error = 'Помилка завантаження книг: $e';
     } finally {
-      if (mounted) {
-        setState(() => _isLoadingBooks = false);
-      }
+      setState(() => isLoadingBooks = false);
     }
   }
 
-  void _selectGenre(Genre genre) {
-    setState(() => _selectedGenre = genre);
-    _fetchBooksForGenre(genre);
-  }
-
-  void _resetGenre() {
-    setState(() {
-      _selectedGenre = null;
-      _books = [];
-    });
-  }
-
+  // ----------- БЛОК КАСТОМНОГО BACK-ОБРАБОТЧИКА -----------
   Future<bool> _onWillPop() async {
-    if (_selectedGenre != null) {
-      _resetGenre();
+    if (selectedGenre != null) {
+      setState(() {
+        selectedGenre = null;
+        books = [];
+      });
       return false; // Остаемся на экране, сбрасываем жанр
     }
-    widget.onReturnToMain?.call();
-    return false; // Не даём стандартного pop
+    // Если жанр не выбран — вызвать onReturnToMain (например, сменить таб)
+    if (widget.onReturnToMain != null) {
+      widget.onReturnToMain!();
+    }
+    // Не даём обычного pop!
+    return false;
   }
+  // --------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        body: _buildBody(),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoadingGenres) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return Center(child: Text(_error!));
-    }
-    if (_genres.isEmpty) {
-      return const Center(child: Text('Жанры не найдены'));
-    }
-
-    // Показываем либо сетку жанров, либо детали выбранного жанра
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: _selectedGenre == null
-          ? _buildGenreGrid()
-          : _buildGenreDetailView(),
-    );
-  }
-
-  Widget _buildGenreGrid() {
-    return GridView.builder(
-      key: const ValueKey('genre_grid'), // Ключ для анимации
-      padding: const EdgeInsets.all(12),
-      itemCount: _genres.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.1,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-      ),
-      itemBuilder: (context, index) {
-        final genre = _genres[index];
-        return _GenreCard(
-          genre: genre,
-          onTap: () => _selectGenre(genre),
-        );
-      },
-    );
-  }
-
-  Widget _buildGenreDetailView() {
-    return Column(
-      key: ValueKey(_selectedGenre!.id), // Ключ для анимации
-      children: [
-        _buildDetailHeader(),
-        Expanded(
-          child: _isLoadingBooks
-              ? const Center(child: CircularProgressIndicator())
-              : _books.isEmpty
-              ? const Center(child: Text('Книг в этом жанре не найдено'))
-              : ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: _books.length,
-            itemBuilder: (context, index) {
-              return BookCardWidget(book: _books[index]);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDetailHeader() {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-            onPressed: _resetGenre,
-          ),
-          Expanded(
-            child: Text(
-              _selectedGenre!.name,
-              style: Theme.of(context).textTheme.titleLarge,
-              textAlign: TextAlign.center,
+        // appBar: AppBar(title: const Text('Жанри')),
+        body: isLoadingGenres
+            ? const Center(child: CircularProgressIndicator())
+            : genres.isEmpty
+            ? const Center(child: Text('Жанрів не знайдено'))
+            : selectedGenre == null
+            ? SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: genres.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 1.1,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+              ),
+              itemBuilder: (context, index) {
+                final genre = genres[index];
+                return GestureDetector(
+                  onTap: () async {
+                    setState(() {
+                      selectedGenre = genre;
+                      books = [];
+                    });
+                    await fetchBooksForGenre(genre);
+                  },
+                  child: Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 2,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _buildGenreImage(genre),
+                          const SizedBox(height: 10),
+                          AutoSizeText(
+                            genre.name,
+                            textAlign: TextAlign.center,
+                            minFontSize: 10,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.0,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          const SizedBox(width: 48), // Распорка для центрирования
-        ],
-      ),
-    );
-  }
-}
-
-// Отдельный виджет для карточки жанра
-class _GenreCard extends StatelessWidget {
-  final Genre genre;
-  final VoidCallback onTap;
-
-  const _GenreCard({required this.genre, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        )
+            : Column(
           children: [
-            _buildGenreImage(genre),
-            const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: AutoSizeText(
-                genre.name,
-                textAlign: TextAlign.center,
-                minFontSize: 12,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: genres.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 2.4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                ),
+                itemBuilder: (context, index) {
+                  final genre = genres[index];
+                  final isSelected = selectedGenre?.id == genre.id;
+                  return GestureDetector(
+                    onTap: () async {
+                      setState(() {
+                        selectedGenre = genre;
+                        books = [];
+                      });
+                      await fetchBooksForGenre(genre);
+                    },
+                    child: Card(
+                      color: isSelected ? Colors.purple.shade100 : Colors.white,
+                      elevation: isSelected ? 4 : 1,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: isSelected
+                            ? BorderSide(color: Colors.purple.shade400, width: 2)
+                            : BorderSide.none,
+                      ),
+                      child: Center(
+                        child: AutoSizeText(
+                          genre.name,
+                          textAlign: TextAlign.center,
+                          minFontSize: 10,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.purple : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: isLoadingBooks
+                  ? const Center(child: CircularProgressIndicator())
+                  : books.isEmpty
+                  ? const Center(child: Text('Книг не знайдено для цього жанру'))
+                  : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: books.length,
+                itemBuilder: (context, index) {
+                  final book = books[index];
+                  return BookCardWidget(book: book);
+                },
               ),
             ),
           ],
@@ -218,19 +221,19 @@ class _GenreCard extends StatelessWidget {
     );
   }
 
-  // Логика отображения изображения для жанра
   Widget _buildGenreImage(Genre genre) {
     final Map<int, String> genreImages = {
       5: 'lib/assets/images/fantasy.png',
       2: 'lib/assets/images/detective.png',
       4: 'lib/assets/images/romance.png',
+      // ...
     };
     final asset = genreImages[genre.id] ?? 'lib/assets/images/logo.png';
     return Image.asset(
       asset,
       width: 82,
       height: 82,
-      fit: BoxFit.contain,
+      fit: BoxFit.cover,
     );
   }
 }

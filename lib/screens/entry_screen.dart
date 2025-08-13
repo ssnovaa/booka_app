@@ -3,26 +3,40 @@ import 'package:provider/provider.dart';
 import '../user_notifier.dart';
 import 'main_screen.dart';
 
-class EntryScreen extends StatelessWidget {
-  const EntryScreen({super.key});
+class EntryScreen extends StatefulWidget {
+  const EntryScreen({Key? key}) : super(key: key);
+
+  @override
+  State<EntryScreen> createState() => _EntryScreenState();
+}
+
+class _EntryScreenState extends State<EntryScreen> {
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadUser();
+  }
+
+  Future<void> loadUser() async {
+    final userNotifier = Provider.of<UserNotifier>(context, listen: false);
+    await userNotifier.checkAuth();
+    if (!mounted) return;
+    setState(() {
+      isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Используем Consumer, чтобы реагировать на изменение статуса аутентификации
-    return Consumer<UserNotifier>(
-      builder: (context, userNotifier, child) {
-        // Пока UserNotifier проверяет токен, показываем экран загрузки
-        if (userNotifier.status == AuthStatus.authenticating ||
-            userNotifier.status == AuthStatus.uninitialized) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-        // Когда проверка завершена (успешно или нет), показываем главный экран.
-        // MainScreen сам решит, что показать гостю или авторизованному пользователю.
-        return const MainScreen();
-      },
-    );
+    // Показывай MainScreen для всех (и гостя, и авторизованного)
+    return const MainScreen();
   }
 }

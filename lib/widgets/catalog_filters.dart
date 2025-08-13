@@ -14,121 +14,116 @@ class CatalogFilters extends StatelessWidget {
   final VoidCallback onSearch;
 
   const CatalogFilters({
-    super.key,
+    Key? key,
     required this.genres,
     required this.authors,
-    this.selectedGenre,
-    this.selectedAuthor,
+    required this.selectedGenre,
+    required this.selectedAuthor,
     required this.searchController,
     required this.onReset,
     required this.onGenreChanged,
     required this.onAuthorChanged,
     required this.onSearch,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final backgroundColor = isDark ? Colors.white10 : Colors.grey.shade100;
-
     return Card(
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      color: theme.scaffoldBackgroundColor, // Фильтры на фоне экрана
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Wrap(
-          spacing: 8.0, // Горизонтальный отступ
-          runSpacing: 8.0, // Вертикальный отступ
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
           children: [
-            _buildSearchField(context, backgroundColor),
-            _buildGenreDropdown(context, backgroundColor),
-            _buildAuthorDropdown(context, backgroundColor),
-            _buildResetButton(context),
+            Row(
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      hintText: 'Пошук по назві або автору',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.zero,
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      prefixIcon: const Icon(Icons.search, size: 22),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => onSearch(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: DropdownButtonFormField<Genre>(
+                    value: selectedGenre,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      hintText: 'Жанр',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.zero,
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      isDense: true,
+                    ),
+                    items: genres.map((g) {
+                      return DropdownMenuItem<Genre>(
+                        value: g,
+                        child: Text(g.name, overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+                    onChanged: onGenreChanged,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 1,
+                  child: DropdownButtonFormField<Author>(
+                    value: selectedAuthor,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      hintText: 'Автор',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.zero,
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      isDense: true,
+                    ),
+                    items: authors.map((a) {
+                      return DropdownMenuItem<Author>(
+                        value: a,
+                        child: Text(a.name, overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+                    onChanged: onAuthorChanged,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 22),
+                  tooltip: 'Скинути фільтри',
+                  onPressed: onReset,
+                ),
+              ],
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  // Виджет поля поиска
-  Widget _buildSearchField(BuildContext context, Color backgroundColor) {
-    return SizedBox(
-      width: double.infinity, // Занимает всю доступную ширину в строке Wrap
-      child: TextField(
-        controller: searchController,
-        decoration: InputDecoration(
-          hintText: 'Поиск по названию или автору',
-          prefixIcon: const Icon(Icons.search, size: 22),
-          filled: true,
-          fillColor: backgroundColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-          isDense: true,
-        ),
-        onSubmitted: (_) => onSearch(),
-      ),
-    );
-  }
-
-  // Виджет выпадающего списка жанров
-  Widget _buildGenreDropdown(BuildContext context, Color backgroundColor) {
-    return DropdownButtonFormField<Genre>(
-      value: selectedGenre,
-      isExpanded: true,
-      decoration: _dropdownDecoration('Жанр', Icons.category_outlined, backgroundColor),
-      items: genres.map((g) {
-        return DropdownMenuItem<Genre>(
-          value: g,
-          child: Text(g.name, overflow: TextOverflow.ellipsis),
-        );
-      }).toList(),
-      onChanged: onGenreChanged,
-    );
-  }
-
-  // Виджет выпадающего списка авторов
-  Widget _buildAuthorDropdown(BuildContext context, Color backgroundColor) {
-    return DropdownButtonFormField<Author>(
-      value: selectedAuthor,
-      isExpanded: true,
-      decoration: _dropdownDecoration('Автор', Icons.person_outline, backgroundColor),
-      items: authors.map((a) {
-        return DropdownMenuItem<Author>(
-          value: a,
-          child: Text(a.name, overflow: TextOverflow.ellipsis),
-        );
-      }).toList(),
-      onChanged: onAuthorChanged,
-    );
-  }
-
-  // Кнопка сброса фильтров
-  Widget _buildResetButton(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.clear_all_rounded),
-      tooltip: 'Сбросить фильтры',
-      onPressed: onReset,
-    );
-  }
-
-  // Общая декорация для выпадающих списков
-  InputDecoration _dropdownDecoration(String hint, IconData icon, Color fillColor) {
-    return InputDecoration(
-      hintText: hint,
-      prefixIcon: Icon(icon, size: 22),
-      filled: true,
-      fillColor: fillColor,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-      isDense: true,
     );
   }
 }
