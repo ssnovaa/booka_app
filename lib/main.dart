@@ -1,38 +1,23 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'user_notifier.dart';
-import 'providers/audio_player_provider.dart';
-import 'theme_notifier.dart';
-import 'screens/entry_screen.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 
-// --- Глобальный RouteObserver, ОБЯЗАТЕЛЬНО --- //
-final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+import 'core/theme/app_theme.dart';
+import 'core/navigation/nav_service.dart';
+import 'core/auth/auth_notifier.dart';
+import 'core/audio/audio_background.dart';
+import 'core/audio/audio_controller_v2.dart';
+import 'core/network/api_client.dart';
+import 'services/auth_service.dart';
+import 'widgets/auth_gate.dart';
+import 'widgets/mini_player.dart';
+
+import 'features/home/home_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Инициализация just_audio_background для уведомлений и локскрина
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
-    androidNotificationChannelName: 'Booka Audio',
-    androidNotificationOngoing: true,
-  );
-
-  // --- Автоматическое восстановление прогресса при старте ---
-  final audioProvider = AudioPlayerProvider();
-  await audioProvider.restoreProgress();
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ThemeNotifier()),
-        ChangeNotifierProvider(create: (_) => UserNotifier()),
-        ChangeNotifierProvider(create: (_) => audioProvider), // передаем уже инициализированный!
-      ],
-      child: const BookaApp(),
-    ),
-  );
+  await initAudioBackground(); // Part 4
+  runApp(const BookaApp());
 }
 
 class BookaApp extends StatelessWidget {
@@ -40,28 +25,25 @@ class BookaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ThemeNotifier>(
-      builder: (context, themeNotifier, _) {
-        return MaterialApp(
-          title: 'Booka',
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.light,
-            colorSchemeSeed: Colors.deepPurple,
-            scaffoldBackgroundColor: Colors.white,
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.dark,
-            colorSchemeSeed: Colors.deepPurple,
-            scaffoldBackgroundColor: Colors.black,
-          ),
-          themeMode: themeNotifier.themeMode,
-          home: const EntryScreen(),
-          debugShowCheckedModeBanner: false,
-          navigatorObservers: [routeObserver], // --- обязательно!
-        );
-      },
+    return MultiProvider(
+      providers: [
+        Provider(create: (_) => ApiClient()),
+        ProxyProvider<ApiClient, AuthService>(
+          update: (_, api, __) => AuthService(api),
+        ),
+        ChangeNotifierProvider(create: (ctx) => AuthNotifier(ctx.read<AuthService>())..init()),
+        ChangeNotifierProvider(create: (_) => AudioControllerV2()),
+      ],
+      child: MaterialApp(
+        navigatorKey: NavService.navigatorKey,
+        title: 'Booka',
+        theme: AppTheme.light(context),
+        darkTheme: AppTheme.dark(context),
+        themeMode: ThemeMode.system,
+        home: const AuthGate(
+          child: HomeShell(),
+        ),
+      ),
     );
   }
 }
