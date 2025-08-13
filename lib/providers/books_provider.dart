@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:booka_app/api_service.dart'; // Предполагаемый импорт
+import 'package:booka_app/services/api_service.dart'; // Исправленный путь импорта
 
 class BooksProvider with ChangeNotifier {
   final ApiService _apiService;
