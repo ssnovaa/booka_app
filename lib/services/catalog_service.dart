@@ -1,54 +1,76 @@
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-import '../constants.dart';
-import '../models/book.dart';
-import '../models/genre.dart';
-import '../models/author.dart';
+// lib/catalog_service.dart
+import 'package:dio/dio.dart';
+import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/core/network/app_exception.dart';
+import 'package:booka_app/models/book.dart';
+import 'package:booka_app/models/genre.dart';
+import 'package:booka_app/models/author.dart';
 
 class CatalogService {
-  // Загрузка книг с фильтрами (поиском, жанром, автором)
   static Future<List<Book>> fetchBooks({
     String? search,
     Genre? genre,
     Author? author,
+    int page = 1,
+    int perPage = 20,
   }) async {
-    final Map<String, String> params = {};
-    if (search != null && search.isNotEmpty) params['search'] = search;
-    if (genre != null) params['genre'] = genre.name;
-    if (author != null) params['author'] = author.name;
+    try {
+      final dio = ApiClient.i();
+      final qp = <String, dynamic>{
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (genre != null) 'genre_id': genre.id,
+        if (author != null) 'author_id': author.id,
+        'page': page,
+        'per_page': perPage,
+      };
 
-    final uri = Uri.parse('$BASE_URL/abooks').replace(queryParameters: params);
-    final response = await http.get(uri);
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final List<dynamic> items = data is List ? data : data['data'];
-      return items.map((item) => Book.fromJson(item)).toList();
-    } else {
-      throw Exception('Помилка завантаження: ${response.statusCode}');
+      final Response r = await dio.get('/books', queryParameters: qp);
+      if (r.statusCode == 200) {
+        final data = r.data;
+        final List raw = data is Map<String, dynamic> ? (data['items'] ?? data['data'] ?? []) : (data as List);
+        return raw.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+    } on DioException catch (e) {
+      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
     }
   }
 
-  // Загрузка жанров
   static Future<List<Genre>> fetchGenres() async {
-    final response = await http.get(Uri.parse('$BASE_URL/genres'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      return data.map((e) => Genre.fromJson(e)).toList();
-    } else {
-      throw Exception('Помилка завантаження жанрів');
+    try {
+      final r = await ApiClient.i().get('/genres');
+      if (r.statusCode == 200) {
+        final List raw = r.data is List ? r.data : (r.data['items'] ?? []);
+        return raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+    } on DioException catch (e) {
+      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
     }
   }
 
-  // Загрузка авторов
   static Future<List<Author>> fetchAuthors() async {
-    final response = await http.get(Uri.parse('$BASE_URL/authors'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      return data.map((e) => Author.fromJson(e)).toList();
-    } else {
-      throw Exception('Помилка завантаження авторів');
+    try {
+      final r = await ApiClient.i().get('/authors');
+      if (r.statusCode == 200) {
+        final List raw = r.data is List ? r.data : (r.data['items'] ?? []);
+        return raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+    } on DioException catch (e) {
+      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+    }
+  }
+
+  static Future<Book> fetchBook(String id) async {
+    try {
+      final r = await ApiClient.i().get('/books/$id');
+      if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
+        return Book.fromJson(r.data as Map<String, dynamic>);
+      }
+      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+    } on DioException catch (e) {
+      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
     }
   }
 }

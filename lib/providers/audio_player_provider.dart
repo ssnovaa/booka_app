@@ -1,14 +1,14 @@
+// lib/providers/audio_player_provider.dart
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-import '../models/chapter.dart';
-import '../models/book.dart';
-import '../models/user.dart'; // enum UserType
+import 'package:booka_app/models/chapter.dart';
+import 'package:booka_app/models/book.dart';
+import 'package:booka_app/models/user.dart'; // enum UserType
 
-// --- Функция сохранения прогресса (SharedPreferences) ---
 Future<void> saveCurrentListenToPrefs({
   required Book? book,
   required Chapter? chapter,
@@ -34,13 +34,11 @@ class AudioPlayerProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // --- Контроль типа пользователя ---
   UserType _userType = UserType.guest;
   set userType(UserType value) {
     _userType = value;
   }
 
-  // --- Callback для UI: показывать окно регистрации при окончании главы у guest ---
   void Function()? _onGuestFirstChapterEnd;
   set onGuestFirstChapterEnd(void Function()? cb) => _onGuestFirstChapterEnd = cb;
 
@@ -62,14 +60,12 @@ class AudioPlayerProvider extends ChangeNotifier {
   List<Chapter> get chapters => _chapters;
 
   AudioPlayerProvider() {
-    // Подписка на изменение позиции
     player.positionStream.listen((pos) {
       _position = pos;
       _saveProgress();
       notifyListeners();
     });
 
-    // Подписка на изменение длительности
     player.durationStream.listen((dur) {
       if (dur != null) {
         _duration = dur;
@@ -77,12 +73,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
 
-    // Изменение статуса воспроизведения
     player.playingStream.listen((_) {
       notifyListeners();
     });
 
-    // Подписка на изменение текущей главы (индекса)
     player.currentIndexStream.listen((index) {
       if (index != null && index >= 0 && index < _chapters.length) {
         _currentChapterIndex = index;
@@ -91,7 +85,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
 
-    // --- Callback для guest: окончание главы
     player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed &&
           _userType == UserType.guest &&
@@ -103,7 +96,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     });
   }
 
-  /// Внутренняя функция для сохранения прогресса (текущее состояние)
   void _saveProgress() {
     saveCurrentListenToPrefs(
       book: currentBook,
@@ -112,7 +104,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     );
   }
 
-  /// Восстановление прогресса из SharedPreferences при запуске (вызывай в main/initState!)
   Future<void> restoreProgress() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = prefs.getString('current_listen');
@@ -134,11 +125,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      // ignore, ничего не делаем если данные битые
+      // ignore
     }
   }
 
-  /// Загружает главы как плейлист. Для guest — только первая!
   Future<void> setChapters(
       List<Chapter> chapters, {
         int startIndex = 0,
@@ -147,19 +137,16 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? coverUrl,
         Book? book,
       }) async {
-    // --- Ограничение: если гость, то только первая глава в плеере ---
     final playlistChapters = _userType == UserType.guest
         ? (chapters.isNotEmpty ? [chapters.first] : <Chapter>[])
         : chapters;
 
-    // Проверка на совпадение, чтобы не сбрасывать проигрыватель попусту
     if (_chapters.isNotEmpty &&
         _chapters.length == playlistChapters.length &&
         _chapters.asMap().entries.every((entry) => entry.value.id == playlistChapters[entry.key].id)) {
       return;
     }
 
-    // ДОБАВЛЯЕМ book в каждую главу (важно для восстановления!)
     _chapters = playlistChapters
         .map((ch) => Chapter(
       id: ch.id,
@@ -183,9 +170,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           id: chapter.id.toString(),
           title: prettyTitle,
           artist: artist ?? "Неизвестно",
-          artUri: (coverUrl != null && coverUrl.isNotEmpty)
-              ? Uri.parse(coverUrl)
-              : null,
+          artUri: (coverUrl != null && coverUrl.isNotEmpty) ? Uri.parse(coverUrl) : null,
           duration: (chapter.duration != null && chapter.duration! > 0)
               ? Duration(seconds: chapter.duration!)
               : null,
@@ -240,7 +225,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Переход к следующей главе
   Future<void> nextChapter() async {
     if (_currentChapterIndex < _chapters.length - 1) {
       await player.seek(Duration.zero, index: _currentChapterIndex + 1);
@@ -248,7 +232,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  /// Переход к предыдущей главе
   Future<void> previousChapter() async {
     if (_currentChapterIndex > 0) {
       await player.seek(Duration.zero, index: _currentChapterIndex - 1);
@@ -256,7 +239,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  /// Перейти к главе по индексу
   Future<void> seekChapter(int index, {Duration? position}) async {
     if (index >= 0 && index < _chapters.length) {
       await player.seek(position ?? Duration.zero, index: index);

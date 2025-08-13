@@ -1,25 +1,24 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'user_notifier.dart';
-import 'providers/audio_player_provider.dart';
-import 'theme_notifier.dart';
-import 'screens/entry_screen.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-
-// --- Глобальный RouteObserver, ОБЯЗАТЕЛЬНО --- //
-final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/user_notifier.dart';
+import 'package:booka_app/theme_notifier.dart';
+import 'package:booka_app/providers/audio_player_provider.dart';
+import 'package:booka_app/screens/entry_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Инициализация just_audio_background для уведомлений и локскрина
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
     androidNotificationChannelName: 'Booka Audio',
     androidNotificationOngoing: true,
   );
 
-  // --- Автоматическое восстановление прогресса при старте ---
+  await ApiClient.init();
+
   final audioProvider = AudioPlayerProvider();
   await audioProvider.restoreProgress();
 
@@ -28,7 +27,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeNotifier()),
         ChangeNotifierProvider(create: (_) => UserNotifier()),
-        ChangeNotifierProvider(create: (_) => audioProvider), // передаем уже инициализированный!
+        ChangeNotifierProvider.value(value: audioProvider),
       ],
       child: const BookaApp(),
     ),
@@ -44,22 +43,10 @@ class BookaApp extends StatelessWidget {
       builder: (context, themeNotifier, _) {
         return MaterialApp(
           title: 'Booka',
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.light,
-            colorSchemeSeed: Colors.deepPurple,
-            scaffoldBackgroundColor: Colors.white,
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.dark,
-            colorSchemeSeed: Colors.deepPurple,
-            scaffoldBackgroundColor: Colors.black,
-          ),
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
           themeMode: themeNotifier.themeMode,
           home: const EntryScreen(),
-          debugShowCheckedModeBanner: false,
-          navigatorObservers: [routeObserver], // --- обязательно!
         );
       },
     );
