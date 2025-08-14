@@ -2,8 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
+import '../core/network/image_cache.dart'; // BookaImageCacheManager
 
 class PopularBooksWidget extends StatelessWidget {
   final List<Book> books;
@@ -29,7 +32,7 @@ class PopularBooksWidget extends StatelessWidget {
     return Card(
       elevation: 1,
       margin: const EdgeInsets.symmetric(vertical: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       child: Padding(
         padding: const EdgeInsets.only(top: 12, left: 8, right: 8, bottom: 8),
         child: Column(
@@ -58,8 +61,7 @@ class PopularBooksWidget extends StatelessWidget {
                     children: List.generate(3, (i) {
                       if (i < slide.length) {
                         final book = slide[i];
-                        // ✅ ключ: миниатюра с фолбэком на полную обложку
-                        final imageUrl = book.displayCoverUrl;
+                        final imageUrl = book.displayCoverUrl; // thumb с фолбэком на cover
 
                         return Flexible(
                           child: GestureDetector(
@@ -87,20 +89,15 @@ class PopularBooksWidget extends StatelessWidget {
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: imageUrl.isNotEmpty
-                                  ? Image.network(
-                                imageUrl,
+                                  ? CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                cacheManager: BookaImageCacheManager.instance,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  color: Colors.grey[300],
-                                  alignment: Alignment.center,
-                                  child: const Icon(Icons.broken_image, size: 40),
-                                ),
+                                useOldImageOnUrlChange: true,
+                                placeholder: (ctx, _) => const _TilePlaceholder(),
+                                errorWidget: (ctx, _, __) => const _TileError(),
                               )
-                                  : Container(
-                                color: Colors.grey[300],
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.book, size: 40),
-                              ),
+                                  : const _TilePlaceholder(),
                             ),
                           ),
                         );
@@ -115,6 +112,32 @@ class PopularBooksWidget extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TilePlaceholder extends StatelessWidget {
+  const _TilePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.grey[300],
+      alignment: Alignment.center,
+      child: const Icon(Icons.book, size: 40, color: Colors.black45),
+    );
+  }
+}
+
+class _TileError extends StatelessWidget {
+  const _TileError();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.grey[300],
+      alignment: Alignment.center,
+      child: const Icon(Icons.broken_image, size: 40),
     );
   }
 }

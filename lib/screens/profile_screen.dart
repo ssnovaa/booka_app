@@ -1,17 +1,17 @@
-// ПУТЬ: lib/screens/profile_screen.dart
+// lib/screens/profile_screen.dart
+
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
-import '../constants.dart';
-import '../widgets/favorite_book_card.dart';
-import '../widgets/listened_book_card.dart';
-import '../widgets/current_listen_card.dart';
-import '../user_notifier.dart';
-import 'login_screen.dart'; // Импорт LoginScreen
+import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/constants.dart';
+import 'package:booka_app/widgets/favorite_book_card.dart';
+import 'package:booka_app/widgets/listened_book_card.dart';
+import 'package:booka_app/widgets/current_listen_card.dart';
+import 'package:booka_app/user_notifier.dart';
+import 'package:booka_app/screens/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -21,47 +21,31 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late Future<Map<String, dynamic>> profileFuture;
+  late Future<Map<String, dynamic>?> profileFuture;
 
   @override
   void initState() {
     super.initState();
-    // [FIX] Не вызывать в build — иначе будет дергаться при каждом ребилде
     profileFuture = fetchUserProfile();
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
-  Future<Map<String, dynamic>> fetchUserProfile() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('Токен не найден, пользователь не авторизован');
-    }
-    final url = Uri.parse('$BASE_URL/profile');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    // Для отладки
-    // print('Ответ профиля пользователя: ${response.body}');
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body) as Map<String, dynamic>;
-    } else {
-      throw Exception('Ошибка: ${response.statusCode}: ${response.body}');
+  Future<Map<String, dynamic>?> fetchUserProfile() async {
+    try {
+      final r = await ApiClient.i().get('/profile');
+      if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(r.data as Map<String, dynamic>);
+      }
+      // Если 401 или другой код — вернём null (неавторизован / нет данных)
+      return null;
+    } catch (e) {
+      // В debug можно логировать: debugPrint('Profile load error: $e');
+      return null;
     }
   }
 
   Future<void> logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
+    // UserNotifier.logout() очистит токен и обновит состояние
+    Provider.of<UserNotifier>(context, listen: false).logout();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -71,12 +55,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _continueListening() {
-    // Логика перехода к плееру — реализуй по своему проекту
-    // Например:
-    // Navigator.pushNamed(context, '/player_from_profile');
+    // Если у тебя другая логика — можно её вставить сюда.
   }
 
-  /// [ADD] Универсальный резолвер URL с приоритетом на thumb_url.
+  /// Универсальный резолвер URL с приоритетом на thumb_url.
   /// Поддерживает как относительные пути (через storage/*), так и абсолютные (http/https).
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     String? pick(dynamic v) {
@@ -118,33 +100,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Личный кабинет')),
-      body: FutureBuilder<Map<String, dynamic>>(
+      body: FutureBuilder<Map<String, dynamic>?>(
         future: profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (snapshot.hasError) {
             return Center(child: Text('Ошибка: ${snapshot.error}'));
           }
-          final data = snapshot.data!;
-          final favorites = data['favorites'] as List? ?? [];
-          final listened = data['listened'] as List? ?? [];
+
+          final data = snapshot.data;
+          if (data == null) {
+            return const Center(child: Text('Не удалось загрузить профиль.'));
+          }
+
+          final favoritesRaw = data['favorites'];
+          final listenedRaw = data['listened'];
+
+          final List<Map<String, dynamic>> favorites = (favoritesRaw is List)
+              ? favoritesRaw.cast<Map<String, dynamic>>().toList()
+              : <Map<String, dynamic>>[];
+
+          final List<Map<String, dynamic>> listened = (listenedRaw is List)
+              ? listenedRaw.cast<Map<String, dynamic>>().toList()
+              : <Map<String, dynamic>>[];
 
           return Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Имя: ${data['name']}', style: const TextStyle(fontSize: 18)),
-                Text('Email: ${data['email']}', style: const TextStyle(fontSize: 16)),
+                Text('Имя: ${data['name'] ?? '-'}', style: const TextStyle(fontSize: 18)),
+                Text('Email: ${data['email'] ?? '-'}', style: const TextStyle(fontSize: 16)),
                 Text(
-                  'Статус: ${data['is_paid'] ? 'Платный' : 'Бесплатный'}',
+                  'Статус: ${((data['is_paid'] ?? false) as bool) ? 'Платный' : 'Бесплатный'}',
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 20),
 
-                // ---- Текущая книга (карточка читает из AudioPlayerProvider) ----
                 const Text(
                   'Текущая книга:',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -161,7 +156,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                // [MOD] фавориты: теперь используем thumb_url с фолбэком на cover_url
+                // Фавориты
                 Expanded(
                   flex: 2,
                   child: favorites.isEmpty
@@ -171,16 +166,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     physics: const ClampingScrollPhysics(),
                     itemCount: favorites.length,
                     itemBuilder: (context, i) {
-                      final book = favorites[i] as Map<String, dynamic>;
-
+                      final Map<String, dynamic> book = favorites[i];
                       final resolvedUrl = _resolveThumbOrCoverUrl(book);
-
-                      return FavoriteBookCard(
-                        book: book,
-                        // [MOD] было: fullResourceUrl('storage/$relativeCoverUrl')
-                        //      стало: аккуратный резолвер thumb -> cover
-                        coverUrl: resolvedUrl,
-                      );
+                      return FavoriteBookCard(book: book, coverUrl: resolvedUrl);
                     },
                   ),
                 ),
@@ -193,7 +181,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                // [MOD] прослушанные: аналогично — thumb_url -> cover_url
                 Expanded(
                   flex: 2,
                   child: listened.isEmpty
@@ -203,14 +190,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     physics: const ClampingScrollPhysics(),
                     itemCount: listened.length,
                     itemBuilder: (context, i) {
-                      final book = listened[i] as Map<String, dynamic>;
-
+                      final Map<String, dynamic> book = listened[i];
                       final resolvedUrl = _resolveThumbOrCoverUrl(book);
-
-                      return ListenedBookCard(
-                        book: book,
-                        coverUrl: resolvedUrl,
-                      );
+                      return ListenedBookCard(book: book, coverUrl: resolvedUrl);
                     },
                   ),
                 ),

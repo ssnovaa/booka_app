@@ -1,3 +1,4 @@
+// lib/screens/main_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -11,7 +12,7 @@ import 'catalog_and_collections_screen.dart';
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
 
-  // --- Даем глобальный доступ к state MainScreen ---
+  /// Глобальный доступ к state MainScreen (например, из дочерних экранов)
   static _MainScreenState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MainScreenState>();
 
@@ -20,76 +21,74 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 1; // Каталог по умолчанию
+  /// Индекс текущей вкладки в навбаре.
+  /// 0 — Подборки, 1 — Каталог, (2 — кнопка плеера через onPlayerTap), 3 — Профиль (пушится поверх).
+  int _selectedIndex = 1; // по умолчанию — Каталог
+
+  /// Вкладки, которые реально живут в IndexedStack и сохраняют своё состояние.
+  /// Профиль сюда не входит, т.к. открывается отдельным экраном (push).
+  late final List<Widget> _tabs = const <Widget>[
+    CatalogAndCollectionsScreen(),
+    CatalogScreen(),
+  ];
 
   void _onTabSelected(int index) {
-    print('[MainScreen] _onTabSelected: $index');
-    setState(() {
-      _selectedIndex = index;
-    });
+    // Индексы табов, которые мы отображаем в IndexedStack: 0 и 1.
+    if (index == 0 || index == 1) {
+      setState(() {
+        _selectedIndex = index;
+      });
+      return;
+    }
+
+    // Index 3 — профиль. Открываем поверх и НЕ меняем активную вкладку.
+    if (index == 3) {
+      final userNotifier = Provider.of<UserNotifier>(context, listen: false);
+      if (userNotifier.isAuth) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        );
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      }
+      return;
+    }
+
+    // Прочие индексы (например, центр-плеер) обрабатываются через onPlayerTap в навбаре.
   }
 
   void _onPlayerTap() {
-    print('[MainScreen] Player tap!');
-    // TODO: Добавь логику вызова плеера
+    // TODO: логика открытия мини-плеера/полного плеера
+    debugPrint('[MainScreen] Player tap!');
   }
 
-  // --- Новый метод для внешней смены вкладки ---
+  /// Публичный метод для внешней смены вкладки (например, из дочерних экранов).
   void setTab(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    if (index == 0 || index == 1) {
+      setState(() => _selectedIndex = index);
+    } else if (index == 3) {
+      _onTabSelected(3);
+    }
   }
+
+  /// Маппинг индекса нижней навигации в индекс IndexedStack.
+  /// У нас в стеке только 0 и 1.
+  int get _stackIndex => (_selectedIndex == 0) ? 0 : 1;
 
   @override
   Widget build(BuildContext context) {
-    print('[MainScreen] build, _selectedIndex=$_selectedIndex');
     return Consumer<UserNotifier>(
       builder: (context, userNotifier, _) {
-        print('[MainScreen] Consumer<UserNotifier>: isAuth=${userNotifier.isAuth}');
-        late Widget body;
-
-        switch (_selectedIndex) {
-          case 0:
-            print('[MainScreen] CASE 0: ПОДБОРКИ (CatalogAndCollectionsScreen)');
-            body = const CatalogAndCollectionsScreen();
-            break;
-          case 1:
-            print('[MainScreen] CASE 1: КАТАЛОГ');
-            body = const CatalogScreen();
-            break;
-          case 3:
-            print('[MainScreen] CASE 3: ПРОФИЛЬ');
-            body = const CatalogScreen(); // возможно, здесь нужен ProfileScreen
-            break;
-          default:
-            print('[MainScreen] CASE default');
-            body = const CatalogScreen();
-        }
-
         return Scaffold(
-          body: body,
+          body: IndexedStack(
+            index: _stackIndex,
+            children: _tabs,
+          ),
           bottomNavigationBar: CustomBottomNavBar(
             currentIndex: _selectedIndex,
-            onTap: (index) {
-              print('[MainScreen] NAVBAR onTap: $index');
-              if (index == 3) {
-                print('[MainScreen] NAVBAR PROFILE: isAuth=${userNotifier.isAuth}');
-                if (userNotifier.isAuth) {
-                  print('[MainScreen] Навигация: ProfileScreen');
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                  );
-                } else {
-                  print('[MainScreen] Навигация: LoginScreen');
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  );
-                }
-              } else {
-                _onTabSelected(index);
-              }
-            },
+            onTap: _onTabSelected,
             onPlayerTap: _onPlayerTap,
           ),
         );

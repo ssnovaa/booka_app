@@ -1,29 +1,30 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
+// lib/screens/catalog_screen.dart
 import 'dart:convert';
 
-import '../constants.dart';
-import '../models/book.dart';
-import '../models/chapter.dart';
-import '../models/genre.dart';
-import '../models/author.dart';
-import 'login_screen.dart';
-import 'book_detail_screen.dart';
-import 'profile_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/audio_player_provider.dart';
-import '../user_notifier.dart';
-import '../theme_notifier.dart';
-import '../widgets/last_books_widget.dart';
-import '../widgets/popular_books_widget.dart';
-import '../widgets/current_listen_card.dart';
-import '../widgets/book_card.dart';
-import '../widgets/catalog_filters.dart';
-import '../widgets/booka_app_bar_title.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 
-// Для отслеживания возврата с других экранов (обновление карточки)
-final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/models/book.dart';
+import 'package:booka_app/models/chapter.dart';
+import 'package:booka_app/models/genre.dart';
+import 'package:booka_app/models/author.dart';
+import 'package:booka_app/screens/book_detail_screen.dart';
+import 'package:booka_app/user_notifier.dart';
+
+import 'package:booka_app/widgets/last_books_widget.dart';
+import 'package:booka_app/widgets/popular_books_widget.dart';
+import 'package:booka_app/widgets/current_listen_card.dart';
+import 'package:booka_app/widgets/book_card.dart';
+import 'package:booka_app/widgets/catalog_filters.dart';
+import 'package:booka_app/widgets/booka_app_bar.dart'; // общий AppBar с глобальным переключателем темы
+
+/// Для отслеживания возврата с других экранов (обновление карточки)
+final RouteObserver<ModalRoute<void>> routeObserver =
+RouteObserver<ModalRoute<void>>();
 
 class CatalogScreen extends StatefulWidget {
   final bool showAppBar;
@@ -45,7 +46,7 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   List<Author> authors = [];
   int? selectedGenreId;
   Author? selectedAuthor;
-  TextEditingController searchController = TextEditingController();
+  final TextEditingController searchController = TextEditingController();
 
   bool isLoading = false;
   String? error;
@@ -68,20 +69,22 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     super.initState();
     selectedGenreId = widget.selectedGenreId;
     profileFuture = fetchUserProfile();
-    fetchFiltersAndBooks();
+    fetchFiltersAndBooks(); // первый прогон: читаем из кэша/сети по необходимости
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Подписываемся на RouteObserver для автоматического обновления карточки
-    routeObserver.subscribe(this, ModalRoute.of(context)!);
+    final modal = ModalRoute.of(context);
+    if (modal != null) routeObserver.subscribe(this, modal);
   }
 
   @override
   void dispose() {
     // Отписываемся от RouteObserver
     routeObserver.unsubscribe(this);
+    searchController.dispose();
     super.dispose();
   }
 
@@ -93,27 +96,22 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     });
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
+  /// Попытка получить профиль через ApiClient (Dio). Возвращаем Map или null.
+  /// 401 не считаем ошибкой — гость.
   Future<Map<String, dynamic>?> fetchUserProfile() async {
-    final token = await getToken();
-    if (token == null || token.isEmpty) {
-      return null;
-    }
-    final url = Uri.parse('$BASE_URL/profile');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
+    try {
+      final r = await ApiClient.i().get(
+        '/profile',
+        options: Options(
+          // Не бросать исключение на 401/404 и т.п. (всё, что < 500 — ок)
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+      if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(r.data as Map<String, dynamic>);
+      }
+      return null; // 401/404 — считаем, что профиля нет
+    } catch (_) {
       return null;
     }
   }
@@ -163,9 +161,7 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          return buildMainContent(null);
-        }
+        // игнорируем ошибку профиля — отображаем контент
         return buildMainContent(snapshot.data);
       },
     );
@@ -175,30 +171,46 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        title: const BookaAppBarTitle(),
-        actions: [
-          Consumer<ThemeNotifier>(
-            builder: (context, themeNotifier, _) => IconButton(
-              icon: Icon(themeNotifier.isDark
-                  ? Icons.dark_mode
-                  : Icons.light_mode),
-              tooltip: 'Сменить тему',
-              onPressed: () => themeNotifier.toggleTheme(),
-            ),
-          ),
-          const SizedBox(width: 15),
-        ],
+      appBar: bookaAppBar(
+        // сюда можно добавить свои кнопки; глобальный переключатель темы — уже вшит
+        actions: const [],
       ),
       body: content,
     );
   }
 
-  Widget buildMainContent(Map<String, dynamic>? data) {
+  Widget buildMainContent(Map<String, dynamic>? profileData) {
     // Проверяем авторизацию через UserNotifier (контекст провайдера)
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     final bool isAuth = userNotifier.isAuth;
+
+    // «Шапка» списка как массив виджетов
+    final headerWidgets = <Widget>[
+      LastBooksWidget(books: books),
+      if (isAuth)
+        CurrentListenCard(
+          key: currentListenCardKey,
+          onContinue: _continueListening,
+        ),
+      PopularBooksWidget(books: books),
+      CatalogFilters(
+        genres: genres,
+        authors: authors,
+        selectedGenre: selectedGenre,
+        selectedAuthor: selectedAuthor,
+        searchController: searchController,
+        onReset: resetFilters,
+        onGenreChanged: (Genre? g) {
+          setState(() => selectedGenreId = g?.id);
+          fetchBooks(); // читаем из кэша при наличии
+        },
+        onAuthorChanged: (a) {
+          setState(() => selectedAuthor = a);
+          fetchBooks();
+        },
+        onSearch: fetchBooks,
+      ),
+    ];
 
     return Stack(
       children: [
@@ -207,91 +219,120 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             : error != null
             ? Center(child: Text(error!))
             : RefreshIndicator(
-          onRefresh: fetchBooks,
-          child: ListView(
+          onRefresh: () => fetchFiltersAndBooks(
+              refresh:
+              true), // refresh -> форс в сеть + сохранить (перезаписать кэш)
+          child: ListView.builder(
             padding: const EdgeInsets.all(8),
-            children: [
-              LastBooksWidget(books: books),
-              // Обновление карточки через key гарантирует, что при возврате всегда свежие данные!
-              if (isAuth)
-                CurrentListenCard(
-                  key: currentListenCardKey,
-                  onContinue: _continueListening,
-                ),
-              PopularBooksWidget(books: books),
-              CatalogFilters(
-                genres: genres,
-                authors: authors,
-                selectedGenre: selectedGenre,
-                selectedAuthor: selectedAuthor,
-                searchController: searchController,
-                onReset: resetFilters,
-                onGenreChanged: (Genre? g) {
-                  setState(() => selectedGenreId = g?.id);
-                  fetchBooks();
-                },
-                onAuthorChanged: (a) {
-                  setState(() => selectedAuthor = a);
-                  fetchBooks();
-                },
-                onSearch: fetchBooks,
-              ),
-              ...books.map((book) => BookCardWidget(book: book)),
-              const SizedBox(height: 24),
-            ],
+            itemCount: headerWidgets.length + books.length + 1,
+            itemBuilder: (context, index) {
+              // Заголовочные виджеты
+              if (index < headerWidgets.length) {
+                return headerWidgets[index];
+              }
+
+              // Книга
+              final bookIndex = index - headerWidgets.length;
+              if (bookIndex < books.length) {
+                return BookCardWidget(book: books[bookIndex]);
+              }
+
+              // Нижний отступ
+              return const SizedBox(height: 24);
+            },
           ),
         ),
       ],
     );
   }
 
-  Future<void> fetchFiltersAndBooks() async {
+  Future<void> fetchFiltersAndBooks({bool refresh = false}) async {
     setState(() {
       isLoading = true;
       error = null;
     });
     try {
-      final genreFuture = fetchGenres();
-      final authorFuture = fetchAuthors();
+      final genreFuture = fetchGenres(refresh: refresh);
+      final authorFuture = fetchAuthors(refresh: refresh);
       await Future.wait([genreFuture, authorFuture]);
-      await fetchBooks();
+      await fetchBooks(refresh: refresh);
     } catch (e) {
-      error = 'Ошибка загрузки фильтров: $e';
+      setState(() {
+        error = 'Ошибка загрузки фильтров: $e';
+      });
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  Future<List<Genre>> fetchGenres() async {
-    final response = await http.get(Uri.parse('$BASE_URL/genres'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      genres = data.map((e) => Genre.fromJson(e)).toList();
-      return genres;
-    } else {
-      throw Exception('Ошибка загрузки жанров');
+  Future<List<Genre>> fetchGenres({bool refresh = false}) async {
+    try {
+      final cacheOpts = ApiClient.cacheOptions(
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        maxStale: const Duration(hours: 24),
+      );
+
+      final r = await ApiClient.i()
+          .get('/genres', options: cacheOpts.toOptions());
+
+      if (r.statusCode == 200) {
+        final data = r.data;
+        final List raw = data is List
+            ? data
+            : (data is Map &&
+            (data['data'] != null || data['items'] != null)
+            ? (data['data'] ?? data['items'])
+            : []);
+        genres = raw
+            .map((e) => Genre.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return genres;
+      }
+      throw Exception('Ошибка загрузки жанров: ${r.statusCode}');
+    } on DioException catch (e) {
+      throw Exception('Ошибка загрузки жанров: ${e.message}');
     }
   }
 
-  Future<List<Author>> fetchAuthors() async {
-    final response = await http.get(Uri.parse('$BASE_URL/authors'));
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      authors = data.map((e) => Author.fromJson(e)).toList();
-      return authors;
-    } else {
-      throw Exception('Ошибка загрузки авторов');
+  Future<List<Author>> fetchAuthors({bool refresh = false}) async {
+    try {
+      final cacheOpts = ApiClient.cacheOptions(
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        maxStale: const Duration(hours: 24),
+      );
+
+      final r = await ApiClient.i()
+          .get('/authors', options: cacheOpts.toOptions());
+
+      if (r.statusCode == 200) {
+        final data = r.data;
+        final List raw = data is List
+            ? data
+            : (data is Map &&
+            (data['data'] != null || data['items'] != null)
+            ? (data['data'] ?? data['items'])
+            : []);
+        authors = raw
+            .map((e) => Author.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return authors;
+      }
+      throw Exception('Ошибка загрузки авторов: ${r.statusCode}');
+    } on DioException catch (e) {
+      throw Exception('Ошибка загрузки авторов: ${e.message}');
     }
   }
 
-  Future<void> fetchBooks() async {
+  Future<void> fetchBooks({bool refresh = false}) async {
     setState(() {
       isLoading = true;
       error = null;
     });
 
     try {
-      final Map<String, String> params = {};
+      final Map<String, dynamic> params = {};
       if (searchController.text.isNotEmpty) {
         params['search'] = searchController.text;
       }
@@ -302,20 +343,37 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         params['author'] = selectedAuthor!.name;
       }
 
-      final uri = Uri.parse('$BASE_URL/abooks').replace(queryParameters: params);
-      final response = await http.get(uri);
+      final cacheOpts = ApiClient.cacheOptions(
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        maxStale: const Duration(hours: 6),
+      );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> items = data is List ? data : data['data'];
-        books = items.map((item) => Book.fromJson(item)).toList();
+      final r = await ApiClient.i().get(
+        '/abooks',
+        queryParameters: params,
+        options: cacheOpts.toOptions(),
+      );
+
+      if (r.statusCode == 200) {
+        final data = r.data;
+        final List<dynamic> items = data is List
+            ? data
+            : (data is Map<String, dynamic>
+            ? (data['data'] ?? data['items'] ?? [])
+            : []);
+        books = items
+            .map((item) => Book.fromJson(item as Map<String, dynamic>))
+            .toList();
       } else {
-        error = 'Ошибка загрузки: ${response.statusCode}';
+        setState(() => error = 'Ошибка загрузки: ${r.statusCode}');
       }
+    } on DioException catch (e) {
+      setState(() => error = 'Ошибка подключения: ${e.message}');
     } catch (e) {
-      error = 'Ошибка подключения: $e';
+      setState(() => error = 'Ошибка: $e');
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 

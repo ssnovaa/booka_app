@@ -1,7 +1,9 @@
+// lib/screens/entry_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../user_notifier.dart';
 import 'main_screen.dart';
+import '../core/network/api_client.dart'; // + импорт
 
 class EntryScreen extends StatefulWidget {
   const EntryScreen({Key? key}) : super(key: key);
@@ -20,12 +22,18 @@ class _EntryScreenState extends State<EntryScreen> {
   }
 
   Future<void> loadUser() async {
-    final userNotifier = Provider.of<UserNotifier>(context, listen: false);
-    await userNotifier.checkAuth();
-    if (!mounted) return;
-    setState(() {
-      isLoading = false;
-    });
+    try {
+      // Гарантируем, что Dio + кэш хранилище готовы
+      await ApiClient.init();
+
+      final userNotifier = Provider.of<UserNotifier>(context, listen: false);
+      await userNotifier.checkAuth(); // внутри желательно validateStatus<500 для /profile
+    } catch (_) {
+      // Тихо игнорим — гость остаётся гостем, логи не засоряем
+    } finally {
+      if (!mounted) return;
+      setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -35,8 +43,7 @@ class _EntryScreenState extends State<EntryScreen> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
-    // Показывай MainScreen для всех (и гостя, и авторизованного)
+    // Показываем главный экран и для гостя, и для авторизованного
     return const MainScreen();
   }
 }

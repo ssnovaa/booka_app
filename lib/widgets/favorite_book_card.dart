@@ -1,7 +1,10 @@
 // ПУТЬ: lib/widgets/favorite_book_card.dart
 
 import 'package:flutter/material.dart';
-import '../constants.dart'; // для fullResourceUrl
+import 'package:cached_network_image/cached_network_image.dart';
+
+import '../constants.dart'; // fullResourceUrl(...)
+import '../core/network/image_cache.dart'; // BookaImageCacheManager
 
 class FavoriteBookCard extends StatelessWidget {
   final Map<String, dynamic> book;
@@ -25,15 +28,22 @@ class FavoriteBookCard extends StatelessWidget {
       return s.isEmpty ? null : s;
     }
 
-    String? url = pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
+    String? url =
+        pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
     if (url == null) return null;
 
-    // Уже абсолютный?
     final lower = url.toLowerCase();
     if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return url;
+      return url; // уже абсолютный
     }
-    // Относительный -> собрать абсолютный
+
+    // Относительный путь -> нормализуем
+    if (lower.startsWith('storage/')) {
+      return fullResourceUrl(url);
+    }
+    if (lower.startsWith('/storage/')) {
+      return fullResourceUrl(url.substring(1));
+    }
     return fullResourceUrl('storage/$url');
   }
 
@@ -49,10 +59,14 @@ class FavoriteBookCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = Theme.of(context).cardColor;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final cardColor = theme.cardColor;
 
-    final String? imageUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
+    final String? rawUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
+    final String? imageUrl =
+    (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl.trim() : null;
+
     final String title = (book['title'] ?? 'Без названия').toString();
     final String author = _authorName(book);
 
@@ -66,36 +80,22 @@ class FavoriteBookCard extends StatelessWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: (imageUrl != null)
-                  ? Image.network(
-                imageUrl,
+              child: imageUrl != null
+                  ? CachedNetworkImage(
+                imageUrl: imageUrl,
+                cacheManager: BookaImageCacheManager.instance,
                 width: 64,
                 height: 64,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    Icon(Icons.broken_image, size: 64, color: isDark ? Colors.white30 : Colors.black26),
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    width: 64,
-                    height: 64,
-                    alignment: Alignment.center,
-                    color: isDark ? Colors.white10 : Colors.black12,
-                    child: const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  );
-                },
+                useOldImageOnUrlChange: true,
+                placeholder: (ctx, _) => _coverPlaceholder(isDark),
+                errorWidget: (ctx, _, __) => Icon(
+                  Icons.broken_image,
+                  size: 64,
+                  color: isDark ? Colors.white30 : Colors.black26,
+                ),
               )
-                  : Container(
-                width: 64,
-                height: 64,
-                color: isDark ? Colors.white10 : Colors.black12,
-                alignment: Alignment.center,
-                child: Icon(Icons.book, size: 40, color: isDark ? Colors.white54 : Colors.black45),
-              ),
+                  : _coverPlaceholder(isDark),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -106,15 +106,17 @@ class FavoriteBookCard extends StatelessWidget {
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     author,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.8),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.8),
                     ),
                   ),
                 ],
@@ -122,6 +124,20 @@ class FavoriteBookCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _coverPlaceholder(bool isDark) {
+    return Container(
+      width: 64,
+      height: 64,
+      color: isDark ? Colors.white10 : Colors.black12,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.book,
+        size: 40,
+        color: isDark ? Colors.white54 : Colors.black45,
       ),
     );
   }

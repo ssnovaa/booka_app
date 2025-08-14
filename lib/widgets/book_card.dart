@@ -1,4 +1,6 @@
+// lib/widgets/book_card.dart
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 
@@ -9,7 +11,7 @@ class BookCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = book.displayCoverUrl;
+    final imageUrl = (book.displayCoverUrl ?? '').trim();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -57,24 +59,21 @@ class BookCardWidget extends StatelessWidget {
                   color: isDark ? Colors.white10 : Colors.black12,
                   alignment: Alignment.center,
                   child: imageUrl.isNotEmpty
-                      ? Image.network(
-                    imageUrl,
+                      ? CachedNetworkImage(
+                    imageUrl: imageUrl,
                     width: imageWidth,
                     height: imageWidth * 1.5,
-                    fit: BoxFit.cover, // заполняем, чтобы карта выглядела «плотно»
-                    errorBuilder: (_, __, ___) => Icon(
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    errorWidget: (context, url, error) => Icon(
                       Icons.broken_image,
                       size: 36,
                       color: isDark ? Colors.white30 : Colors.black26,
                     ),
-                    loadingBuilder: (c, child, progress) {
-                      if (progress == null) return child;
-                      return const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      );
-                    },
                   )
                       : Icon(Icons.book, size: 40, color: isDark ? Colors.white54 : Colors.black45),
                 ),
@@ -91,7 +90,7 @@ class BookCardWidget extends StatelessWidget {
                     children: [
                       // Заголовок
                       Text(
-                        (book.title).trim().isNotEmpty ? book.title.trim() : 'Без назви',
+                        (book.title ?? '').trim().isNotEmpty ? book.title!.trim() : 'Без названия',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -102,9 +101,9 @@ class BookCardWidget extends StatelessWidget {
                       const SizedBox(height: 6),
 
                       // Автор (серый вторичный)
-                      if (book.author.trim().isNotEmpty)
+                      if ((book.author ?? '').trim().isNotEmpty)
                         Text(
-                          book.author.trim(),
+                          book.author!.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -118,7 +117,7 @@ class BookCardWidget extends StatelessWidget {
                       // Жанры (до 3 штук), компактный серый текст
                       if (book.genres.isNotEmpty)
                         Text(
-                          'Жанри: ${book.genres.take(3).join(", ")}',
+                          'Жанры: ${book.genres.take(3).join(", ")}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
@@ -132,12 +131,12 @@ class BookCardWidget extends StatelessWidget {
                         spacing: 10,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          if (book.duration.trim().isNotEmpty)
+                          if ((book.duration ?? '').trim().isNotEmpty)
                             _MetaChip(
                               icon: Icons.schedule,
-                              text: book.duration.trim(),
+                              text: book.duration!.trim(),
                             ),
-                          if ((book.series ?? '').toString().trim().isNotEmpty)
+                          if (((book.series ?? '').toString().trim()).isNotEmpty)
                             _MetaChip(
                               icon: Icons.auto_stories_outlined,
                               text: (book.series ?? '').toString().trim(),

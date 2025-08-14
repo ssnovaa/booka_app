@@ -10,15 +10,21 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   provider: ^6.1.5
+
   dio: ^5.7.0
-  dio_cache_interceptor: ^3.5.0
+  dio_cache_interceptor: ^4.0.3
+  path_provider: ^2.1.5
+  http_cache_file_store: ^2.0.1
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.8
   just_audio: ^0.10.4
   just_audio_background: ^0.0.1-beta.15
   google_fonts: ^6.2.1
   auto_size_text: ^3.0.0
+
+  cached_network_image: ^3.2.3
 
 dev_dependencies:
   flutter_test:

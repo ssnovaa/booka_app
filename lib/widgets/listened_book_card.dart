@@ -1,13 +1,16 @@
 // ПУТЬ: lib/widgets/listened_book_card.dart
 
 import 'package:flutter/material.dart';
-import '../constants.dart'; // для fullResourceUrl
+import 'package:cached_network_image/cached_network_image.dart';
+
+import '../constants.dart'; // fullResourceUrl(...)
+import '../core/network/image_cache.dart'; // BookaImageCacheManager
 
 class ListenedBookCard extends StatelessWidget {
   final Map<String, dynamic> book;
 
-  /// Абсолютный URL изображения, если уже вычислен снаружи.
-  /// Если null — виджет сам попытается взять thumb_url -> cover_url из [book].
+  /// Абсолютный URL, если уже вычислен снаружи.
+  /// Если null — сам возьмём thumb_url -> cover_url из [book].
   final String? coverUrl;
 
   const ListenedBookCard({
@@ -23,7 +26,8 @@ class ListenedBookCard extends StatelessWidget {
       return s.isEmpty ? null : s;
     }
 
-    String? url = pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
+    String? url =
+        pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
     if (url == null) return null;
 
     final lower = url.toLowerCase();
@@ -31,6 +35,8 @@ class ListenedBookCard extends StatelessWidget {
       return url; // уже абсолютный
     }
     // относительный -> собрать абсолютный
+    if (lower.startsWith('/storage/')) return fullResourceUrl(url.substring(1));
+    if (lower.startsWith('storage/')) return fullResourceUrl(url);
     return fullResourceUrl('storage/$url');
   }
 
@@ -45,38 +51,34 @@ class ListenedBookCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     final String title = (book['title'] ?? 'Без названия').toString();
     final String author = _authorName(book);
-    final String? imageUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
+    final String? rawUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
+    final String? imageUrl =
+    (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl.trim() : null;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final leadingWidget = (imageUrl != null)
+    final Widget leadingWidget = (imageUrl != null)
         ? ClipRRect(
       borderRadius: BorderRadius.circular(6),
-      child: Image.network(
-        imageUrl,
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        cacheManager: BookaImageCacheManager.instance,
         width: 48,
         height: 64,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            Icon(Icons.broken_image, size: 48, color: isDark ? Colors.white30 : Colors.black26),
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return Container(
-            width: 48,
-            height: 64,
-            alignment: Alignment.center,
-            color: isDark ? Colors.white10 : Colors.black12,
-            child: const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        },
+        useOldImageOnUrlChange: true,
+        placeholder: (ctx, _) => _thumbPlaceholder(isDark),
+        errorWidget: (ctx, _, __) => Icon(
+          Icons.broken_image,
+          size: 48,
+          color: isDark ? Colors.white30 : Colors.black26,
+        ),
       ),
     )
-        : Icon(Icons.book, size: 48, color: isDark ? Colors.white54 : Colors.black45);
+        : _thumbPlaceholder(isDark);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -94,6 +96,19 @@ class ListenedBookCard extends StatelessWidget {
         ),
         // onTap: () { /* при необходимости: открыть детальную */ },
       ),
+    );
+  }
+
+  Widget _thumbPlaceholder(bool isDark) {
+    return Container(
+      width: 48,
+      height: 64,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : Colors.black12,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(Icons.book, size: 32, color: isDark ? Colors.white54 : Colors.black45),
     );
   }
 }
