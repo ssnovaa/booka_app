@@ -26,8 +26,33 @@ class CatalogFilters extends StatelessWidget {
     required this.onSearch,
   }) : super(key: key);
 
+  InputDecoration _fieldDecoration(
+      BuildContext context, {
+        String? hint,
+        Widget? suffixIcon,
+      }) {
+    final cs = Theme.of(context).colorScheme;
+    return InputDecoration(
+      hintText: hint,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      isDense: true,
+      filled: true,
+      fillColor: cs.surfaceVariant.withOpacity(0.6),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      // лупа теперь только справа, поэтому prefixIcon не используем
+      suffixIcon: suffixIcon,
+      // чтобы уместить 2 иконки (❌ и 🔍) без обрезки
+      suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Card(
       elevation: 1,
       margin: const EdgeInsets.symmetric(vertical: 2),
@@ -36,88 +61,109 @@ class CatalogFilters extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           children: [
+            // --- Поиск (лупа справа) ---
             Row(
               children: [
                 Expanded(
                   flex: 6,
-                  child: TextField(
-                    controller: searchController,
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                      hintText: 'Пошук по назві або автору',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.zero,
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      prefixIcon: const Icon(Icons.search, size: 22),
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) => onSearch(),
+                  child: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: searchController,
+                    builder: (context, value, _) {
+                      final hasText = value.text.trim().isNotEmpty;
+
+                      // справа: если есть текст → [❌, 🔍], если нет → [🔍]
+                      final rightIcons = Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasText)
+                            IconButton(
+                              tooltip: 'Очистити',
+                              icon: const Icon(Icons.clear, size: 20),
+                              onPressed: () {
+                                searchController.clear();
+                                onSearch();
+                              },
+                            ),
+                          IconButton(
+                            tooltip: 'Знайти',
+                            icon: const Icon(Icons.search, size: 22),
+                            onPressed: () {
+                              FocusScope.of(context).unfocus();
+                              onSearch();
+                            },
+                          ),
+                        ],
+                      );
+
+                      return TextField(
+                        controller: searchController,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) {
+                          FocusScope.of(context).unfocus();
+                          onSearch();
+                        },
+                        decoration: _fieldDecoration(
+                          context,
+                          hint: 'Пошук по назві або автору',
+                          suffixIcon: rightIcons,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
+
+            // --- Жанр / Автор + Скинути ---
             Row(
               children: [
                 Expanded(
-                  flex: 1,
                   child: DropdownButtonFormField<Genre>(
                     value: selectedGenre,
                     isExpanded: true,
-                    decoration: InputDecoration(
-                      hintText: 'Жанр',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.zero,
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      isDense: true,
-                    ),
-                    items: genres.map((g) {
-                      return DropdownMenuItem<Genre>(
+                    decoration: _fieldDecoration(context, hint: 'Жанр'),
+                    items: genres
+                        .map(
+                          (g) => DropdownMenuItem<Genre>(
                         value: g,
                         child: Text(g.name, overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
+                      ),
+                    )
+                        .toList(),
                     onChanged: onGenreChanged,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  flex: 1,
                   child: DropdownButtonFormField<Author>(
                     value: selectedAuthor,
                     isExpanded: true,
-                    decoration: InputDecoration(
-                      hintText: 'Автор',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.zero,
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      isDense: true,
-                    ),
-                    items: authors.map((a) {
-                      return DropdownMenuItem<Author>(
+                    decoration: _fieldDecoration(context, hint: 'Автор'),
+                    items: authors
+                        .map(
+                          (a) => DropdownMenuItem<Author>(
                         value: a,
                         child: Text(a.name, overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
+                      ),
+                    )
+                        .toList(),
                     onChanged: onAuthorChanged,
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.clear, size: 22),
-                  tooltip: 'Скинути фільтри',
-                  onPressed: onReset,
+                Tooltip(
+                  message: 'Скинути фільтри',
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceVariant.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.filter_alt_off, size: 22),
+                      onPressed: onReset,
+                    ),
+                  ),
                 ),
               ],
             ),

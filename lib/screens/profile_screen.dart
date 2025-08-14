@@ -1,4 +1,4 @@
-// lib/screens/profile_screen.dart
+// ПУТЬ: lib/screens/profile_screen.dart
 
 import 'dart:convert';
 
@@ -12,6 +12,8 @@ import 'package:booka_app/widgets/listened_book_card.dart';
 import 'package:booka_app/widgets/current_listen_card.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/screens/login_screen.dart';
+import 'package:booka_app/widgets/booka_app_bar.dart'; // <-- глобальный AppBar с переключателем темы
+import 'package:dio/dio.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -31,20 +33,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<Map<String, dynamic>?> fetchUserProfile() async {
     try {
-      final r = await ApiClient.i().get('/profile');
+      final r = await ApiClient.i().get(
+        '/profile',
+        options: Options(
+          // 401/404 не считаем ошибкой — гость. Кэш для профиля не используем.
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
       if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
         return Map<String, dynamic>.from(r.data as Map<String, dynamic>);
       }
-      // Если 401 или другой код — вернём null (неавторизован / нет данных)
+      // 401/404 → null (неавторизован / нет данных)
       return null;
-    } catch (e) {
-      // В debug можно логировать: debugPrint('Profile load error: $e');
+    } catch (_) {
+      // Можно залогировать в debug при необходимости
       return null;
     }
   }
 
   Future<void> logout(BuildContext context) async {
-    // UserNotifier.logout() очистит токен и обновит состояние
     Provider.of<UserNotifier>(context, listen: false).logout();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -55,11 +62,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _continueListening() {
-    // Если у тебя другая логика — можно её вставить сюда.
+    // Твоя логика "продолжить прослушивание", если нужна
   }
 
-  /// Универсальный резолвер URL с приоритетом на thumb_url.
-  /// Поддерживает как относительные пути (через storage/*), так и абсолютные (http/https).
+  /// thumb_url > cover_url; относительные пути → абсолютные через fullResourceUrl('storage/...').
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     String? pick(dynamic v) {
       if (v == null) return null;
@@ -67,22 +73,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return s.isEmpty ? null : s;
     }
 
-    // 1) Берём thumb_url, если есть
     String? thumb = pick(book['thumb_url'] ?? book['thumbUrl']);
     if (thumb != null) {
-      if (thumb.startsWith('http://') || thumb.startsWith('https://')) {
-        return thumb; // уже абсолютный
-      }
-      // относительный -> собрать абсолютный
+      if (thumb.startsWith('http://') || thumb.startsWith('https://')) return thumb;
       return fullResourceUrl('storage/$thumb');
     }
 
-    // 2) Иначе cover_url
     String? cover = pick(book['cover_url'] ?? book['coverUrl']);
     if (cover != null) {
-      if (cover.startsWith('http://') || cover.startsWith('https://')) {
-        return cover; // уже абсолютный
-      }
+      if (cover.startsWith('http://') || cover.startsWith('https://')) return cover;
       return fullResourceUrl('storage/$cover');
     }
 
@@ -93,13 +92,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final userNotifier = Provider.of<UserNotifier>(context);
 
-    // Если не авторизован — сразу LoginScreen
+    // Если не авторизован — сразу показываем LoginScreen (в нём уже есть глобальный переключатель темы)
     if (!userNotifier.isAuth) {
       return const LoginScreen();
     }
 
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Личный кабинет')),
+      appBar: bookaAppBar(
+        actions: const [], // глобальная кнопка темы уже встроена
+      ),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: profileFuture,
         builder: (context, snapshot) {
@@ -108,12 +111,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text('Ошибка: ${snapshot.error}'));
+            return Center(child: Text('Помилка: ${snapshot.error}'));
           }
 
           final data = snapshot.data;
           if (data == null) {
-            return const Center(child: Text('Не удалось загрузить профиль.'));
+            return const Center(child: Text('Не вдалося завантажити профіль.'));
           }
 
           final favoritesRaw = data['favorites'];
@@ -132,35 +135,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Имя: ${data['name'] ?? '-'}', style: const TextStyle(fontSize: 18)),
-                Text('Email: ${data['email'] ?? '-'}', style: const TextStyle(fontSize: 16)),
+                Text('Імʼя: ${data['name'] ?? '-'}', style: theme.textTheme.titleMedium),
+                Text('Email: ${data['email'] ?? '-'}', style: theme.textTheme.bodyMedium),
                 Text(
-                  'Статус: ${((data['is_paid'] ?? false) as bool) ? 'Платный' : 'Бесплатный'}',
-                  style: const TextStyle(fontSize: 16),
+                  'Статус: ${((data['is_paid'] ?? false) as bool) ? 'Платний' : 'Безкоштовний'}',
+                  style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 20),
 
-                const Text(
-                  'Текущая книга:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                Text('Поточна книга:', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
-                CurrentListenCard(
-                  onContinue: _continueListening,
-                ),
+                CurrentListenCard(onContinue: _continueListening),
                 const SizedBox(height: 20),
 
-                const Text(
-                  'Избранные книги:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                Text('Вибране:', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
 
-                // Фавориты
+                // Избранные
                 Expanded(
                   flex: 2,
                   child: favorites.isEmpty
-                      ? const Text('Нет избранных книг')
+                      ? const Text('Немає обраних книг')
                       : ListView.builder(
                     shrinkWrap: true,
                     physics: const ClampingScrollPhysics(),
@@ -175,16 +170,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 20),
 
-                const Text(
-                  'Прослушанные книги:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                Text('Прослухані:', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
 
                 Expanded(
                   flex: 2,
                   child: listened.isEmpty
-                      ? const Text('Нет прослушанных книг')
+                      ? const Text('Немає прослуханих книг')
                       : ListView.builder(
                     shrinkWrap: true,
                     physics: const ClampingScrollPhysics(),
@@ -209,7 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
                       onPressed: () => logout(context),
-                      child: const Text('Выйти из аккаунта', style: TextStyle(fontSize: 18)),
+                      child: const Text('Вийти з акаунту', style: TextStyle(fontSize: 18)),
                     ),
                   ),
                 ),

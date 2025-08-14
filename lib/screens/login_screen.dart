@@ -6,7 +6,8 @@ import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/core/network/app_exception.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
-import 'package:booka_app/models/user.dart'; // <-- нужен UserType
+import 'package:booka_app/models/user.dart'; // UserType
+import 'package:booka_app/widgets/booka_app_bar.dart'; // <-- общий AppBar с глобальной кнопкой темы
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,20 +31,15 @@ class _LoginScreenState extends State<LoginScreen> {
       await Provider.of<UserNotifier>(context, listen: false)
           .loginWithEmail(emailCtl.text.trim(), passCtl.text.trim());
 
-      // После успешного логина — перейти в главный экран
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const MainScreen()),
             (route) => false,
       );
     } on AppNetworkException catch (e) {
-      setState(() {
-        _error = e.message ?? 'Ошибка входа';
-      });
+      setState(() => _error = e.message ?? 'Ошибка входа');
     } catch (e) {
-      setState(() {
-        _error = 'Ошибка: ${e.toString()}';
-      });
+      setState(() => _error = 'Ошибка: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -53,9 +49,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     await userNotifier.continueAsGuest();
 
-    // Пометим audio provider как гость (обязательно импортировать AudioPlayerProvider)
     final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
-    audio.userType = UserType.guest; // теперь UserType определён через импорт models/user.dart
+    audio.userType = UserType.guest;
 
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -73,9 +68,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Чтобы содержимое поднималось вместе с клавиатурой
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Вход')),
+      // Глобальный AppBar: брендовый заголовок + КНОПКА ТЕМЫ в actions
+      appBar: bookaAppBar(
+        // свои экшены можно добавить в этот список при необходимости
+        actions: const [],
+      ),
       body: SafeArea(
         child: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
@@ -83,13 +83,21 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - kToolbarHeight,
+                minHeight: MediaQuery.of(context).size.height -
+                    MediaQuery.of(context).padding.top -
+                    kToolbarHeight,
               ),
               child: IntrinsicHeight(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 8),
+                    Text(
+                      'Вхід до акаунту',
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: emailCtl,
                       decoration: const InputDecoration(labelText: 'Email'),
@@ -120,12 +128,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                          : const Text('Войти'),
+                          : const Text('Увійти'),
                     ),
                     const SizedBox(height: 12),
                     TextButton(
                       onPressed: _continueAsGuest,
-                      child: const Text('Продолжить как гость'),
+                      child: const Text('Продовжити як гість'),
                     ),
                     const Spacer(),
                   ],
