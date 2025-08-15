@@ -21,6 +21,8 @@ class LastBooksWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     final lastBooks = getLastBooks();
     if (lastBooks.isEmpty) return const SizedBox();
 
@@ -30,27 +32,32 @@ class LastBooksWidget extends StatelessWidget {
       slides.add(lastBooks.sublist(i, (i + 3) > lastBooks.length ? lastBooks.length : (i + 3)));
     }
 
+    // Контрастный заголовок, корректный в светлой/тёмной теме
+    final baseTitle = Theme.of(context).textTheme.titleLarge ??
+        const TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
+    final titleStyle = GoogleFonts.pangolin(textStyle: baseTitle).copyWith(
+      color: cs.onSurface.withOpacity(0.92),
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.1,
+    );
+
     return Card(
-      elevation: 1,
+      elevation: 0, // строже без тени
       margin: const EdgeInsets.symmetric(vertical: 2),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      color: Theme.of(context).cardColor,
       child: Padding(
         padding: const EdgeInsets.only(top: 12, left: 8, right: 8, bottom: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Заголовок
             Padding(
               padding: const EdgeInsets.only(bottom: 8, left: 4),
-              child: Text(
-                'Найсвіжіші історії',
-                style: GoogleFonts.pangolin(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey[900],
-                  letterSpacing: 0.2,
-                ),
-              ),
+              child: Text('Найсвіжіші історії', style: titleStyle),
             ),
+
+            // Карусель
             SizedBox(
               height: 164,
               child: PageView.builder(
@@ -79,14 +86,9 @@ class LastBooksWidget extends StatelessWidget {
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(10),
-                                color: Colors.grey[200],
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 2,
-                                    offset: Offset(1, 2),
-                                  ),
-                                ],
+                                // строгая рамка вместо тени
+                                border: Border.all(color: cs.outline, width: 1),
+                                color: cs.surfaceVariant.withOpacity(0.35),
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: imageUrl.isNotEmpty
@@ -123,10 +125,11 @@ class _TilePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.grey[300],
+      color: cs.surfaceVariant.withOpacity(0.35),
       alignment: Alignment.center,
-      child: const Icon(Icons.book, size: 40, color: Colors.black45),
+      child: Icon(Icons.book, size: 40, color: cs.onSurfaceVariant),
     );
   }
 }
@@ -136,10 +139,11 @@ class _TileError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.grey[300],
+      color: cs.surfaceVariant.withOpacity(0.35),
       alignment: Alignment.center,
-      child: const Icon(Icons.broken_image, size: 40),
+      child: Icon(Icons.broken_image, size: 40, color: cs.onSurfaceVariant),
     );
   }
 }

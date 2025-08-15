@@ -1,7 +1,10 @@
 // lib/screens/genres_screen.dart
 import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
+import 'package:dio/dio.dart';
+import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 
+import 'package:booka_app/core/network/api_client.dart';
 import '../models/genre.dart';
 import '../models/book.dart';
 import '../services/catalog_service.dart';
@@ -51,20 +54,55 @@ class _GenresScreenState extends State<GenresScreen> {
     }
   }
 
-  Future<void> fetchBooksForGenre(Genre genre) async {
+  /// Отправляем genre по имени (как в CatalogScreen)
+  Future<void> fetchBooksForGenre(Genre genre, {bool refresh = false}) async {
     setState(() {
       isLoadingBooks = true;
       error = null;
       books = [];
     });
     try {
-      final res = await CatalogService.fetchBooks(genre: genre); // /abooks — кэш на уровне сервиса
+      final params = <String, dynamic>{
+        'genre': genre.name,
+        'page': 1,
+        'per_page': 20,
+      };
+
+      final cacheOpts = ApiClient.cacheOptions(
+        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.request,
+        maxStale: const Duration(hours: 6),
+      );
+
+      final r = await ApiClient.i().get(
+        '/abooks',
+        queryParameters: params,
+        options: cacheOpts.toOptions(),
+      );
+
+      if (r.statusCode == 200) {
+        final data = r.data;
+        final List<dynamic> items = data is List
+            ? data
+            : (data is Map<String, dynamic>
+            ? (data['data'] ?? data['items'] ?? data['books'] ?? [])
+            : []);
+        setState(() {
+          books = items
+              .map((e) => Book.fromJson(e as Map<String, dynamic>))
+              .toList();
+        });
+      } else {
+        setState(() {
+          error = 'Unexpected response: ${r.statusCode}';
+        });
+      }
+    } on DioException catch (e) {
       setState(() {
-        books = res;
+        error = e.message ?? 'Network error';
       });
     } catch (e) {
       setState(() {
-        error = 'Помилка завантаження книг: $e';
+        error = 'Parsing error: $e';
       });
     } finally {
       if (mounted) setState(() => isLoadingBooks = false);
@@ -90,12 +128,14 @@ class _GenresScreenState extends State<GenresScreen> {
     if (selectedGenre == null) {
       await fetchGenres();
     } else {
-      await fetchBooksForGenre(selectedGenre!);
+      await fetchBooksForGenre(selectedGenre!, refresh: true); // жёсткий refresh
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
@@ -126,7 +166,7 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Экран жанров (без выбранного жанра)
+            // --- Экран жанров (без выбранного жанра) — строгие плитки
             if (selectedGenre == null) {
               return RefreshIndicator(
                 onRefresh: _onPullToRefresh,
@@ -140,50 +180,21 @@ class _GenresScreenState extends State<GenresScreen> {
                       itemCount: genres.length,
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        childAspectRatio: 1.1,
+                        childAspectRatio: 1.05,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                       ),
                       itemBuilder: (context, index) {
                         final genre = genres[index];
-                        return GestureDetector(
+                        return _GenreTile(
+                          genre: genre,
                           onTap: () async {
                             setState(() {
                               selectedGenre = genre;
                               books = [];
                             });
-                            await fetchBooksForGenre(genre);
+                            await fetchBooksForGenre(genre, refresh: true);
                           },
-                          child: Card(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 2,
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  _buildGenreImage(genre),
-                                  const SizedBox(height: 10),
-                                  AutoSizeText(
-                                    genre.name,
-                                    textAlign: TextAlign.center,
-                                    minFontSize: 10,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      height: 1.0,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                         );
                       },
                     ),
@@ -192,56 +203,34 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Экран выбранного жанра
+            // --- Экран выбранного жанра: «пилюли» + список
             return Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                   child: GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: genres.length,
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
-                      childAspectRatio: 2.4,
+                      childAspectRatio: 3.0,
                       mainAxisSpacing: 8,
                       crossAxisSpacing: 8,
                     ),
                     itemBuilder: (context, index) {
                       final genre = genres[index];
                       final isSelected = selectedGenre?.id == genre.id;
-                      return GestureDetector(
+                      return _GenrePill(
+                        label: genre.name,
+                        selected: isSelected,
                         onTap: () async {
                           setState(() {
                             selectedGenre = genre;
                             books = [];
                           });
-                          await fetchBooksForGenre(genre);
+                          await fetchBooksForGenre(genre, refresh: true);
                         },
-                        child: Card(
-                          color: isSelected ? Colors.purple.shade100 : Colors.white,
-                          elevation: isSelected ? 4 : 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: isSelected
-                                ? BorderSide(color: Colors.purple.shade400, width: 2)
-                                : BorderSide.none,
-                          ),
-                          child: Center(
-                            child: AutoSizeText(
-                              genre.name,
-                              textAlign: TextAlign.center,
-                              minFontSize: 10,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.purple : Colors.black87,
-                              ),
-                            ),
-                          ),
-                        ),
                       );
                     },
                   ),
@@ -264,7 +253,7 @@ class _GenresScreenState extends State<GenresScreen> {
                       children: [
                         _ErrorPanel(
                           message: error ?? 'Помилка завантаження книг',
-                          onRetry: () => fetchBooksForGenre(selectedGenre!),
+                          onRetry: () => fetchBooksForGenre(selectedGenre!, refresh: true),
                         ),
                       ],
                     )
@@ -281,7 +270,10 @@ class _GenresScreenState extends State<GenresScreen> {
                       itemCount: books.length,
                       itemBuilder: (context, index) {
                         final book = books[index];
-                        return BookCardWidget(book: book);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: BookCardWidget(book: book),
+                        );
                       },
                     ),
                   ),
@@ -293,19 +285,125 @@ class _GenresScreenState extends State<GenresScreen> {
       ),
     );
   }
+}
 
-  Widget _buildGenreImage(Genre genre) {
-    final Map<int, String> genreImages = {
-      5: 'lib/assets/images/fantasy.png',
-      2: 'lib/assets/images/detective.png',
-      4: 'lib/assets/images/romance.png',
-    };
-    final asset = genreImages[genre.id] ?? 'lib/assets/images/logo.png';
-    return Image.asset(
-      asset,
-      width: 82,
-      height: 82,
-      fit: BoxFit.cover,
+/// Строгая плитка жанра: без теней, с тонкой рамкой и подписью под изображением
+class _GenreTile extends StatelessWidget {
+  final Genre genre;
+  final VoidCallback onTap;
+
+  const _GenreTile({required this.genre, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final borderColor = cs.outline;
+    final asset = _genreAsset(genre.id);
+
+    return Material(
+      color: cs.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    asset,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              AutoSizeText(
+                genre.name,
+                maxLines: 1,
+                minFontSize: 11,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.0,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _genreAsset(int id) {
+    switch (id) {
+      case 5:
+        return 'lib/assets/images/fantasy.png';
+      case 2:
+        return 'lib/assets/images/detective.png';
+      case 4:
+        return 'lib/assets/images/romance.png';
+      default:
+        return 'lib/assets/images/logo.png';
+    }
+  }
+}
+
+/// Строгая «пилюля» жанра: тонкая рамка, без тени/градиентов
+class _GenrePill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GenrePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final border = selected ? cs.primary : cs.outline;            // контрастнее в дарке
+    final bg = selected ? cs.primaryContainer : cs.surface;
+    final fg = selected ? cs.onPrimaryContainer : cs.onSurface;   // <— фикс читабельности
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border, width: selected ? 2 : 1),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: AutoSizeText(
+            label,
+            maxLines: 1,
+            minFontSize: 10,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
     );
   }
 }

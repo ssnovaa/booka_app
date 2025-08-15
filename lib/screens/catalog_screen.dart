@@ -56,6 +56,7 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   // Чтобы пересобирать карточку прогресса по возврату на экран:
   Key currentListenCardKey = UniqueKey();
 
+  /// Находим выбранный жанр по id из текущего списка жанров
   Genre? get selectedGenre {
     if (selectedGenreId == null) return null;
     for (final g in genres) {
@@ -69,26 +70,24 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     super.initState();
     selectedGenreId = widget.selectedGenreId;
     profileFuture = fetchUserProfile();
-    fetchFiltersAndBooks(); // первый прогон: читаем из кэша/сети по необходимости
+    fetchFiltersAndBooks(); // первый прогон
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Подписываемся на RouteObserver для автоматического обновления карточки
     final modal = ModalRoute.of(context);
     if (modal != null) routeObserver.subscribe(this, modal);
   }
 
   @override
   void dispose() {
-    // Отписываемся от RouteObserver
     routeObserver.unsubscribe(this);
     searchController.dispose();
     super.dispose();
   }
 
-  // Когда вернулись со страницы книги — обновить карточку прогресса!
+  /// Когда вернулись со страницы книги — обновить карточку прогресса!
   @override
   void didPopNext() {
     setState(() {
@@ -103,14 +102,13 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       final r = await ApiClient.i().get(
         '/profile',
         options: Options(
-          // Не бросать исключение на 401/404 и т.п. (всё, что < 500 — ок)
           validateStatus: (s) => s != null && s < 500,
         ),
       );
       if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
         return Map<String, dynamic>.from(r.data as Map<String, dynamic>);
       }
-      return null; // 401/404 — считаем, что профиля нет
+      return null;
     } catch (_) {
       return null;
     }
@@ -161,7 +159,6 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        // игнорируем ошибку профиля — отображаем контент
         return buildMainContent(snapshot.data);
       },
     );
@@ -172,7 +169,6 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
 
     return Scaffold(
       appBar: bookaAppBar(
-        // сюда можно добавить свои кнопки; глобальный переключатель темы — уже вшит
         actions: const [],
       ),
       body: content,
@@ -180,11 +176,9 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   }
 
   Widget buildMainContent(Map<String, dynamic>? profileData) {
-    // Проверяем авторизацию через UserNotifier (контекст провайдера)
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     final bool isAuth = userNotifier.isAuth;
 
-    // «Шапка» списка как массив виджетов
     final headerWidgets = <Widget>[
       LastBooksWidget(books: books),
       if (isAuth)
@@ -202,7 +196,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         onReset: resetFilters,
         onGenreChanged: (Genre? g) {
           setState(() => selectedGenreId = g?.id);
-          fetchBooks(); // читаем из кэша при наличии
+          // важный момент — берём свежие данные из сети и обновляем кэш
+          fetchBooks(refresh: true);
         },
         onAuthorChanged: (a) {
           setState(() => selectedAuthor = a);
@@ -219,25 +214,19 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             : error != null
             ? Center(child: Text(error!))
             : RefreshIndicator(
-          onRefresh: () => fetchFiltersAndBooks(
-              refresh:
-              true), // refresh -> форс в сеть + сохранить (перезаписать кэш)
+          onRefresh: () =>
+              fetchFiltersAndBooks(refresh: true), // форсим сеть
           child: ListView.builder(
             padding: const EdgeInsets.all(8),
             itemCount: headerWidgets.length + books.length + 1,
             itemBuilder: (context, index) {
-              // Заголовочные виджеты
               if (index < headerWidgets.length) {
                 return headerWidgets[index];
               }
-
-              // Книга
               final bookIndex = index - headerWidgets.length;
               if (bookIndex < books.length) {
                 return BookCardWidget(book: books[bookIndex]);
               }
-
-              // Нижний отступ
               return const SizedBox(height: 24);
             },
           ),
@@ -268,13 +257,12 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   Future<List<Genre>> fetchGenres({bool refresh = false}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-        policy:
-        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
       );
 
-      final r = await ApiClient.i()
-          .get('/genres', options: cacheOpts.toOptions());
+      final r =
+      await ApiClient.i().get('/genres', options: cacheOpts.toOptions());
 
       if (r.statusCode == 200) {
         final data = r.data;
@@ -284,9 +272,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        genres = raw
-            .map((e) => Genre.fromJson(e as Map<String, dynamic>))
-            .toList();
+        genres =
+            raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
         return genres;
       }
       throw Exception('Ошибка загрузки жанров: ${r.statusCode}');
@@ -298,13 +285,12 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   Future<List<Author>> fetchAuthors({bool refresh = false}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-        policy:
-        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
       );
 
-      final r = await ApiClient.i()
-          .get('/authors', options: cacheOpts.toOptions());
+      final r =
+      await ApiClient.i().get('/authors', options: cacheOpts.toOptions());
 
       if (r.statusCode == 200) {
         final data = r.data;
@@ -314,9 +300,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        authors = raw
-            .map((e) => Author.fromJson(e as Map<String, dynamic>))
-            .toList();
+        authors =
+            raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
         return authors;
       }
       throw Exception('Ошибка загрузки авторов: ${r.statusCode}');
@@ -336,16 +321,19 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       if (searchController.text.isNotEmpty) {
         params['search'] = searchController.text;
       }
+      // ВАЖНО: жанр отправляем как имя (как и в GenresScreen)
       if (selectedGenreId != null) {
-        params['genre_id'] = selectedGenreId.toString();
+        final g = selectedGenre;
+        if (g != null) {
+          params['genre'] = g.name; // <-- ключ, который ждёт бэкенд
+        }
       }
       if (selectedAuthor != null) {
         params['author'] = selectedAuthor!.name;
       }
 
       final cacheOpts = ApiClient.cacheOptions(
-        policy:
-        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 6),
       );
 
@@ -383,6 +371,7 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       selectedAuthor = null;
       searchController.clear();
     });
-    fetchBooks();
+    // после сброса — свежий запрос
+    fetchBooks(refresh: true);
   }
 }

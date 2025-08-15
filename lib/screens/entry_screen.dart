@@ -1,9 +1,13 @@
 // lib/screens/entry_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../user_notifier.dart';
 import 'main_screen.dart';
-import '../core/network/api_client.dart'; // + импорт
+
+import '../core/network/api_client.dart';
+import '../core/network/auth_interceptor.dart';
+import '../core/network/auth/auth_store.dart';
 
 class EntryScreen extends StatefulWidget {
   const EntryScreen({Key? key}) : super(key: key);
@@ -13,37 +17,52 @@ class EntryScreen extends StatefulWidget {
 }
 
 class _EntryScreenState extends State<EntryScreen> {
-  bool isLoading = true;
+  bool _isLoading = true;
+  bool _interceptorAttached = false;
 
   @override
   void initState() {
     super.initState();
-    loadUser();
+    _bootstrap();
   }
 
-  Future<void> loadUser() async {
+  Future<void> _bootstrap() async {
     try {
-      // Гарантируем, что Dio + кэш хранилище готовы
+      // 1) инициализируем Dio/кэш
       await ApiClient.init();
 
+      // 2) восстанавливаем токены
+      await AuthStore.I.restore();
+
+      // 3) подключаем AuthInterceptor (ровно один раз)
+      final dio = ApiClient.i();
+      if (!_interceptorAttached) {
+        dio.interceptors.removeWhere((it) => it is AuthInterceptor);
+        dio.interceptors.add(AuthInterceptor(
+          refreshPath: '/auth/refresh',
+          headerPrefix: 'Bearer ',
+        ));
+        _interceptorAttached = true;
+      }
+
+      // 4) проверяем авторизацию
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
-      await userNotifier.checkAuth(); // внутри желательно validateStatus<500 для /profile
+      await userNotifier.checkAuth();
     } catch (_) {
-      // Тихо игнорим — гость остаётся гостем, логи не засоряем
+      // гостевой режим — ок
     } finally {
       if (!mounted) return;
-      setState(() => isLoading = false);
+      setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
+    if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    // Показываем главный экран и для гостя, и для авторизованного
     return const MainScreen();
   }
 }
