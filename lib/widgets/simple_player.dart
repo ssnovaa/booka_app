@@ -1,9 +1,11 @@
+// lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/chapter.dart';
-import '../providers/audio_player_provider.dart';
-import '../user_notifier.dart';
-import '../models/user.dart';
+
+import 'package:booka_app/models/chapter.dart';
+import 'package:booka_app/providers/audio_player_provider.dart';
+import 'package:booka_app/user_notifier.dart';
+import 'package:booka_app/models/user.dart';
 
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
@@ -12,7 +14,7 @@ class SimplePlayer extends StatefulWidget {
   final int? selectedChapterId;
   final Function(Chapter) onChapterSelected;
   final Chapter? initialChapter;
-  final int? initialPosition; // <--- Новый параметр (секунды!)
+  final int? initialPosition; // секунды
 
   const SimplePlayer({
     super.key,
@@ -22,7 +24,7 @@ class SimplePlayer extends StatefulWidget {
     required this.selectedChapterId,
     required this.onChapterSelected,
     required this.initialChapter,
-    this.initialPosition,         // <--- Новый параметр
+    this.initialPosition,
   });
 
   @override
@@ -31,19 +33,28 @@ class SimplePlayer extends StatefulWidget {
 
 class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
-  bool _didSeek = false; // <--- Чтобы seek не делался каждый rebuild
+  bool _didSeek = false;
+
+  double? _dragValueSecs; // временное значение слайдера во время перетягивания
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeSeekToInitial();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Колбэк для AudioPlayerProvider: вызываем диалог при окончании главы
+
+    // Хук по окончанию 1-й главы для гостя
     final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
     audioProvider.onGuestFirstChapterEnd = () {
       final user = Provider.of<UserNotifier>(context, listen: false).user;
       final userType = getUserType(user);
       if (userType == UserType.guest && !_showedEndDialog) {
         _showedEndDialog = true;
-        Future.delayed(Duration.zero, () {
+        Future.microtask(() {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -75,25 +86,19 @@ class _SimplePlayerState extends State<SimplePlayer> {
     _resetDialogStateIfReplayed();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _maybeSeekToInitial();
-  }
-
-  void _maybeSeekToInitial() async {
-    // Сделать seek только 1 раз при запуске, если задана стартовая позиция
+  Future<void> _maybeSeekToInitial() async {
+    // Один раз переводим на стартовую позицию, если задана
     if (!_didSeek && widget.initialPosition != null) {
       final provider = context.read<AudioPlayerProvider>();
-      // Подожди пока плеер инициализируется (иначе может не сработать)
+      // дать источнику подготовиться
       await Future.delayed(const Duration(milliseconds: 400));
-      provider.player.seek(Duration(seconds: widget.initialPosition!));
+      await provider.seek(Duration(seconds: widget.initialPosition!), persist: false);
       _didSeek = true;
     }
   }
 
   void _resetDialogStateIfReplayed() {
-    // Сброс флага, если пользователь начал слушать главу сначала
+    // Сброс флага при старте первой главы заново
     final audioProvider = context.read<AudioPlayerProvider>();
     final user = Provider.of<UserNotifier>(context, listen: false).user;
     final userType = getUserType(user);
@@ -102,7 +107,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
     if (userType == UserType.guest &&
         chapter != null &&
-        chapter.order == 0 &&
+        (chapter.order <= 1) &&
         position.inSeconds < 3) {
       _showedEndDialog = false;
     }
@@ -112,10 +117,15 @@ class _SimplePlayerState extends State<SimplePlayer> {
     context.read<AudioPlayerProvider>().changeSpeed();
   }
 
-  void _skipSeconds(BuildContext context, int seconds) {
+  Future<void> _skipSeconds(BuildContext context, int seconds) async {
     final provider = context.read<AudioPlayerProvider>();
-    final newPosition = provider.position + Duration(seconds: seconds);
-    provider.player.seek(newPosition);
+    final dur = provider.duration;
+
+    var target = provider.position + Duration(seconds: seconds);
+    if (target < Duration.zero) target = Duration.zero;
+    if (dur > Duration.zero && target > dur) target = dur;
+
+    await provider.seek(target); // через провайдер — с сохранением/пушем
   }
 
   void _nextChapter(BuildContext context, UserType userType) {
@@ -149,6 +159,9 @@ class _SimplePlayerState extends State<SimplePlayer> {
       } else {
         _showAuthDialog(context);
       }
+    } else {
+      // Если уже первая — просто в начало
+      provider.seek(const Duration(seconds: 0));
     }
   }
 
@@ -179,122 +192,207 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     final user = Provider.of<UserNotifier>(context).user;
     final userType = getUserType(user);
 
     final provider = context.watch<AudioPlayerProvider>();
-    final chapter = provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
+    final currentChapter =
+        provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
+
     final position = provider.position;
     final duration = provider.duration;
 
+    // Значение слайдера: показываем "временное" во время драга
+    final double sliderMax =
+    duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0;
+    final double rawValue = (_dragValueSecs ?? position.inSeconds.toDouble());
+    final double sliderValue = rawValue.clamp(0.0, sliderMax).toDouble();
+
+    final displayedPos = Duration(
+      seconds: (_dragValueSecs ?? position.inSeconds.toDouble()).toInt(),
+    );
+
     return Material(
-      color: Colors.grey[900],
+      color: Colors.transparent, // нет чёрного фона
       child: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Заголовки
+              Text(
+                currentChapter.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
               Text(
                 widget.bookTitle,
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurface.withOpacity(0.8),
+                ),
               ),
               Text(
                 widget.author,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurface.withOpacity(0.6),
+                ),
               ),
-              const SizedBox(height: 16),
-              Slider(
-                value: position.inSeconds.clamp(0, duration.inSeconds > 0 ? duration.inSeconds : 1).toDouble(),
-                max: duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0,
-                onChanged: (value) {
-                  provider.player.seek(Duration(seconds: value.toInt()));
-                },
+
+              const SizedBox(height: 12),
+
+              // Слайдер
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                ),
+                child: Slider(
+                  value: sliderValue,
+                  min: 0.0,
+                  max: sliderMax,
+                  onChangeStart: (v) => setState(() => _dragValueSecs = v),
+                  onChanged: (v) => setState(() => _dragValueSecs = v),
+                  onChangeEnd: (v) async {
+                    setState(() => _dragValueSecs = null);
+                    await context
+                        .read<AudioPlayerProvider>()
+                        .seek(Duration(seconds: v.toInt()));
+                  },
+                ),
               ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_formatDuration(position), style: const TextStyle(color: Colors.white)),
-                  Text(_formatDuration(duration), style: const TextStyle(color: Colors.white)),
-                ],
+
+              // Тайминги
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_formatDuration(displayedPos), style: theme.textTheme.labelSmall),
+                    Text(_formatDuration(duration), style: theme.textTheme.labelSmall),
+                  ],
+                ),
               ),
+
               const SizedBox(height: 8),
+
+              // Кнопки управления (скорость перенесена в самое начало)
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // ← скорость здесь
+                  const _SpeedButton(),
+
                   IconButton(
-                    icon: const Icon(Icons.skip_previous, color: Colors.white),
+                    tooltip: 'Предыдущая глава',
                     onPressed: () => _previousChapter(context, userType),
+                    icon: const Icon(Icons.skip_previous_rounded, size: 30),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.replay_10, color: Colors.white),
+                    tooltip: '-15 сек',
                     onPressed: () => _skipSeconds(context, -15),
+                    // Иконки 15с в Material нет — используем 10с-вариант
+                    icon: const Icon(Icons.replay_10_rounded, size: 28),
                   ),
-                  IconButton(
-                    icon: Icon(
-                      provider.isPlaying ? Icons.pause_circle : Icons.play_circle,
-                      size: 48,
-                      color: Colors.white,
+
+                  // Play / Pause
+                  Semantics(
+                    label: provider.isPlaying ? 'Пауза' : 'Воспроизвести',
+                    button: true,
+                    child: _RoundPlayButton(
+                      size: 64,
+                      isPlaying: provider.isPlaying,
+                      onTap: provider.togglePlayback,
                     ),
-                    onPressed: () => provider.togglePlayback(),
                   ),
+
                   IconButton(
-                    icon: const Icon(Icons.forward_10, color: Colors.white),
+                    tooltip: '+15 сек',
                     onPressed: () => _skipSeconds(context, 15),
+                    // Иконки 15с в Material нет — используем 10с-вариант
+                    icon: const Icon(Icons.forward_10_rounded, size: 28),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_next, color: Colors.white),
+                    tooltip: 'Следующая глава',
                     onPressed: () => _nextChapter(context, userType),
+                    icon: const Icon(Icons.skip_next_rounded, size: 30),
                   ),
                 ],
               ),
-              if (userType == UserType.free) ...[
-                const SizedBox(height: 12),
+
+              const SizedBox(height: 12),
+
+              // Баннер для free (весь каталог доступен, но с рекламой)
+              if (userType == UserType.free)
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
-                    color: Colors.yellow[800],
-                    borderRadius: BorderRadius.circular(8),
+                    color: cs.tertiary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: cs.tertiary.withOpacity(0.25)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.campaign, color: Colors.white),
-                      SizedBox(width: 8),
+                      Icon(Icons.campaign, color: cs.tertiary),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           "Реклама: купите подписку и слушайте без рекламы!",
-                          style: TextStyle(color: Colors.white),
+                          style: theme.textTheme.bodySmall,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-              const Divider(color: Colors.white30),
-              const Align(
+
+              Divider(color: cs.outlineVariant.withOpacity(0.35)),
+
+              Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Выберите главу', style: TextStyle(color: Colors.white, fontSize: 16)),
+                child: Text('Выберите главу', style: theme.textTheme.titleSmall),
               ),
               const SizedBox(height: 8),
+
+              // Список глав
               Expanded(
                 child: ListView.builder(
                   itemCount: widget.chapters.length,
                   itemBuilder: (_, index) {
                     final ch = widget.chapters[index];
-                    final isSelected = ch.id == chapter.id;
+                    final isSelected = ch.id == currentChapter.id;
+
                     bool isAvailable = true;
-                    if (userType == UserType.guest && index != 0) isAvailable = false;
+                    if (userType == UserType.guest && index != 0) {
+                      isAvailable = false;
+                    }
 
                     return ListTile(
+                      dense: true,
                       title: Text(
                         ch.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: isSelected
-                              ? Colors.amber
-                              : isAvailable
-                              ? Colors.white
-                              : Colors.white24,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              ? cs.primary
+                              : (isAvailable
+                              ? cs.onSurface
+                              : cs.onSurface.withOpacity(0.35)),
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                         ),
                       ),
                       enabled: isAvailable,
@@ -303,14 +401,9 @@ class _SimplePlayerState extends State<SimplePlayer> {
                         context.read<AudioPlayerProvider>().seekChapter(index);
                         widget.onChapterSelected(ch);
                       }
-                          : () {
-                        _showAuthDialog(context);
-                      },
+                          : () => _showAuthDialog(context),
                       trailing: !isAvailable
-                          ? GestureDetector(
-                        onTap: () => _showAuthDialog(context),
-                        child: const Icon(Icons.lock, color: Colors.white24),
-                      )
+                          ? Icon(Icons.lock, color: cs.onSurface.withOpacity(0.35))
                           : null,
                     );
                   },
@@ -327,5 +420,101 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+}
+
+/// Кнопка скорости с текущим значением (1×, 1.25× ...).
+class _SpeedButton extends StatelessWidget {
+  const _SpeedButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final audio = context.read<AudioPlayerProvider>();
+
+    return StreamBuilder<double>(
+      // just_audio: speedStream есть у player
+      stream: audio.player.speedStream,
+      initialData: audio.player.speed,
+      builder: (context, snap) {
+        final sp = (snap.data ?? 1.0);
+        final label = (sp % 1 == 0) ? '${sp.toStringAsFixed(0)}×' : '${sp.toStringAsFixed(2)}×';
+
+        return InkWell(
+          onTap: () => context.read<AudioPlayerProvider>().changeSpeed(),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: cs.primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: cs.primary.withOpacity(0.25)),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(fontWeight: FontWeight.w600, color: cs.primary),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Круглая кнопка play/pause «как в нижнем баре», c градиентным кольцом.
+class _RoundPlayButton extends StatelessWidget {
+  final double size;
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  const _RoundPlayButton({
+    required this.size,
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = isPlaying ? Icons.pause : Icons.play_arrow;
+    final iconSize = size * 0.56;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: SweepGradient(
+                  colors: [
+                    Color(0xFFF48FB1),
+                    Color(0xFF7C4DFF),
+                    Color(0xFF448AFF),
+                    Color(0xFF00BCD4),
+                    Color(0xFFF48FB1),
+                  ],
+                  stops: [0.0, 0.33, 0.66, 0.85, 1.0],
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  width: size - 10,
+                  height: size - 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: iconSize, color: Color(0xFF7C4DFF)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

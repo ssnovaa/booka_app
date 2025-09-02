@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "356466512000",
+    "project_id": "booka-radio-app",
+    "storage_bucket": "booka-radio-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:356466512000:android:70517005c854875cc45665",
+        "android_client_info": {
+          "package_name": "com.booka_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "356466512000-7fvpi1687qcrep3oif71eoi6s1g4838o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.booka_app",
+            "certificate_hash": "242a682b122f832fc0e09d0fadcac546f2e3b2de"
+          }
+        },
+        {
+          "client_id": "356466512000-apcr6dtsj0crcth0afnv19lb68klp5n8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBrcdal6HdD7vwjIB03y6hfNqvVim49Zsc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "356466512000-apcr6dtsj0crcth0afnv19lb68klp5n8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "356466512000-e1ujb659sodhevsb292ol74l6gvf6rl3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.booka.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
