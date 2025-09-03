@@ -1212,9 +1212,15 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Future<bool> handleBottomPlayTap() async {
     _log('handleBottomPlayTap()');
-    final prepared = await _prepareFromSavedIfNeeded();
-    if (!prepared) return false;
+    final wasPrepared = _hasSequence; // Проверим, была ли уже установлена последовательность
 
+    // Если плеер не подготовлен, запустим асинхронную подготовку и дождёмся её завершения
+    if (!wasPrepared) {
+      final prepared = await _prepareFromSavedIfNeeded();
+      if (!prepared) return false;
+    }
+
+    // Теперь плеер гарантированно подготовлен. Выполняем логику play/pause.
     if (player.playing) {
       await pause();
     } else {
