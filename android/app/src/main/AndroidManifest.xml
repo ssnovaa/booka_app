@@ -1,19 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Разрешения -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
-    <application
-        android:networkSecurityConfig="@xml/network_security_config"
-        android:label="booka_app"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+    <!-- FCM -->
+    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE"/>
+    <!-- Android 13+ (runtime permission для показа уведомлений) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-        <!-- Main Activity: меняем android:name для поддержки аудиосервиса -->
+    <application
+        android:name="${applicationName}"
+        android:label="Аудіокниги Українською"
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="true">
+
+        <!-- Канал/иконка/цвет по умолчанию для уведомлений FCM -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="booka_default" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/black" />
+
+        <!-- Main Activity: поддержка аудиосервиса -->
         <activity
             android:name="com.ryanheise.audioservice.AudioServiceActivity"
             android:exported="true"
@@ -25,8 +44,7 @@
             android:windowSoftInputMode="adjustResize">
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme"
-                />
+                android:resource="@style/NormalTheme" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -36,8 +54,8 @@
         <!-- AudioService: foreground service -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"
-            android:foregroundServiceType="mediaPlayback"
             android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
             tools:ignore="Instantiatable">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
@@ -54,8 +72,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <!-- Не удалять: нужно Flutter для регистрации плагинов -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

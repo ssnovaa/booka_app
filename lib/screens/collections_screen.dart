@@ -1,10 +1,13 @@
 // ПУТЬ: lib/screens/catalog_and_collections_screen.dart
 
 import 'package:flutter/material.dart';
-import '../widgets/booka_app_bar_title.dart';
+import 'package:flutter/services.dart'; // для BackButtonListener
+import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
-import 'collections_stub_screen.dart';
-import 'main_screen.dart'; // Импортируем для доступа к MainScreen.of(context)
+import 'main_screen.dart';
+import 'series_books_list_screen.dart';
+import '../core/network/api_client.dart';
+import 'package:dio/dio.dart';
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -15,7 +18,7 @@ class CatalogAndCollectionsScreen extends StatefulWidget {
 
 class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  late final TabController _tabController;
 
   @override
   void initState() {
@@ -29,64 +32,189 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
     super.dispose();
   }
 
-  void _goToMainTab() {
-    _tabController.animateTo(0);
-  }
+  /// Универсальный обработчик «Назад» для этого экрана.
+  /// Возвращает true, если событие обработано здесь (Navigator не трогаем).
+  bool _handleBackHere() {
+    debugPrint('[BACK][CAC] tapped. tabIndex=${_tabController.index}');
 
-  // Смена вкладки MainScreen, чтобы не терять навбар
-  void _goToRootCatalogScreen() {
-    final mainState = MainScreen.of(context);
-    mainState?.setTab(1); // 1 — индекс каталога в MainScreen!
-  }
-
-  // <<< ВАЖНО: перехват "Назад"
-  Future<bool> _onWillPop() async {
-    // Если сейчас открыта вкладка "Подборки" (index == 1),
-    // переключаемся на "Каталог" (index == 0) и НЕ закрываем экран.
-    if (_tabController.index != 0) {
+    // Если мы на «Серії» (index == 1) — вернуться на «Жанри» (index == 0)
+    if (_tabController.index == 1) {
       _tabController.animateTo(0);
-      return false;
+      debugPrint('[BACK][CAC] Switched Series -> Genres');
+      // Визуально покажем, что перехватили назад
+      _showHint('Повернення: Серії → Жанри');
+      return true;
     }
-    // Иначе позволяем всплыть назад (MainScreen уже решит, что делать дальше)
-    return true;
+
+    // Мы на «Жанри»: попросим MainScreen переключиться на таб каталога (index 1)
+    final main = MainScreen.of(context);
+    if (main != null) {
+      main.setTab(1);
+      debugPrint('[BACK][CAC] Asked MainScreen.setTab(1) (go to Catalog tab)');
+      _showHint('На головний каталог');
+      return true;
+    }
+
+    // Если MainScreen не найден (не должно быть в обычном потоке),
+    // вернём false, чтобы решить дальше на уровне навигатора.
+    debugPrint('[BACK][CAC] MainScreen.of(context) == null (not handled here)');
+    return false;
   }
-  // >>>
+
+  void _showHint(String msg) {
+    // короткий snackbar, чтобы было видно «куда повело»
+    final sm = ScaffoldMessenger.maybeOf(context);
+    if (sm != null) {
+      sm.hideCurrentSnackBar();
+      sm.showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop, // <-- добавлено
+    final theme = Theme.of(context);
+    final appBarBg = theme.colorScheme.surface;
+    final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
+    final primary = theme.colorScheme.primary;
+
+    return BackButtonListener(
+      onBackButtonPressed: () {
+        // ВАЖНО: этот колбэк вызывается ДО Navigator.pop().
+        // Если вернём true — событие «съедено», приложение не закроется.
+        final handled = _handleBackHere();
+        return handled;
+      },
       child: Scaffold(
-        appBar: AppBar(
-          title: BookaAppBarTitle(),
-          centerTitle: false,
-          backgroundColor: Colors.white,
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings, color: Colors.black),
-              onPressed: () {
-                // TODO: переход к экрану настроек
-              },
-            ),
-          ],
+        appBar: bookaAppBar(
+          backgroundColor: appBarBg,
+          actions: const [],
           bottom: TabBar(
             controller: _tabController,
+            indicatorColor: primary,
+            labelColor: primary,
+            unselectedLabelColor: onSurfaceVariant,
             tabs: const [
-              Tab(text: 'Каталог'),
-              Tab(text: 'Подборки'),
+              Tab(text: 'Жанри'),
+              Tab(text: 'Серії'),
             ],
           ),
         ),
         body: TabBarView(
           controller: _tabController,
-          children: [
-            GenresScreen(
-              onReturnToMain: _goToRootCatalogScreen, // теперь только смена вкладки!
-            ),
-            const CollectionsStubScreen(),
+          children: const [
+            GenresScreen(key: PageStorageKey('genres_tab')),
+            _SeriesTab(key: PageStorageKey('series_tab')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SeriesTab extends StatefulWidget {
+  const _SeriesTab({super.key});
+
+  @override
+  State<_SeriesTab> createState() => _SeriesTabState();
+}
+
+class _SeriesTabState extends State<_SeriesTab> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetchSeries();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchSeries() async {
+    try {
+      final r = await ApiClient.i().get(
+        '/series',
+        options: Options(validateStatus: (s) => s != null && s < 500),
+      );
+
+      if (r.statusCode != 200 || r.data == null) {
+        return <Map<String, dynamic>>[];
+      }
+
+      final raw = (r.data is Map && (r.data as Map).containsKey('data'))
+          ? (r.data['data'] as List?)
+          : (r.data as List?);
+
+      final list = (raw ?? const [])
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+
+      return list;
+    } catch (e, st) {
+      debugPrint('[SeriesTab] fetch error: $e\n$st');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snap) {
+        final data = snap.data ?? const <Map<String, dynamic>>[];
+
+        if (snap.connectionState == ConnectionState.waiting) {
+          return _loadingSkeleton(context);
+        }
+
+        if (data.isEmpty) {
+          return const Center(
+            child: Text('Серії поки що відсутні'),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(12),
+          itemCount: data.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, i) {
+            final item = data[i];
+            final id = item['id'] as int?;
+            final title = (item['title'] as String?)?.trim();
+
+            if (id == null || (title == null || title.isEmpty)) {
+              return const SizedBox.shrink();
+            }
+
+            return ListTile(
+              title: Text(title),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SeriesBooksListScreen(
+                      seriesId: id,
+                      title: title,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _loadingSkeleton(BuildContext context) {
+    final c = Theme.of(context).colorScheme.surfaceContainerHigh;
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: 6,
+      itemBuilder: (_, __) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        height: 56,
+        decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

@@ -1,127 +1,130 @@
-// lib/core/network/auth_interceptor.dart
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
-// ВНИМАНИЕ: 'auth' — подпапка текущей папки 'network'
-import 'auth/auth_store.dart';
+import 'package:booka_app/core/network/auth/auth_store.dart';
 
-/// Интерсептор: подставляет Authorization и делает refresh при 401.
-/// Одновременные запросы ждут один общий refresh.
 class AuthInterceptor extends Interceptor {
-  AuthInterceptor({
-    this.refreshPath = '/auth/refresh',
-    this.headerPrefix = 'Bearer ',
-  });
+  final Dio dio; // корневой Dio для ретрая
+  AuthInterceptor(this.dio);
 
-  final String refreshPath;
-  final String headerPrefix;
+  Completer<void>? _refreshing;
 
-  static Completer<bool>? _refreshing;
-
-  @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final token = AuthStore.I.accessToken;
-    if (token != null && options.headers['Authorization'] == null) {
-      options.headers['Authorization'] = '$headerPrefix$token';
-    }
-    super.onRequest(options, handler);
+  bool _isAuthRoute(RequestOptions o) {
+    final p = o.path;
+    return p.contains('/auth/login') || p.contains('/auth/refresh') || (o.extra['skipAuth'] == true);
   }
 
   @override
-  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    if (_isAuthRoute(options)) return handler.next(options);
+
+    // Если access истёк — попытаемся обновить заранее (ленивый preflight)
+    if (AuthStore.I.isAccessExpired && (AuthStore.I.refreshToken?.isNotEmpty ?? false)) {
+      await _ensureRefreshed();
+    }
+
+    final access = AuthStore.I.accessToken;
+    if (access != null && access.isNotEmpty) {
+      options.headers['Authorization'] = 'Bearer $access';
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
     final res = err.response;
     final req = err.requestOptions;
 
-    if (res?.statusCode != 401) {
-      return super.onError(err, handler);
-    }
+    final is401 = res?.statusCode == 401;
+    final alreadyRetried = req.extra['__ret'] == true;
 
-    // не рефрешим сам refresh-запрос и когда нет refreshToken
-    if (req.path.endsWith(refreshPath) || AuthStore.I.refreshToken == null) {
-      return super.onError(err, handler);
+    if (!_isAuthRoute(req) && is401 && !alreadyRetried && (AuthStore.I.refreshToken?.isNotEmpty ?? false)) {
+      try {
+        await _ensureRefreshed();
+        final access = AuthStore.I.accessToken;
+        if (access != null && access.isNotEmpty) {
+          final cloned = await _cloneWithAuth(req, access);
+          final response = await dio.fetch(cloned);
+          return handler.resolve(response);
+        }
+      } catch (_) {
+        // провал рефреша — падаем дальше
+      }
     }
+    handler.next(err);
+  }
 
+  Future<void> _ensureRefreshed() async {
+    if (_refreshing != null) {
+      return _refreshing!.future;
+    }
+    _refreshing = Completer<void>();
     try {
-      // если уже идёт refresh — ждём его
-      if (_refreshing != null) {
-        final ok = await _refreshing!.future;
-        if (!ok) return super.onError(err, handler);
-        final retry = await _retryWithNewToken(req);
-        return handler.resolve(retry);
-      }
-
-      // стартуем свой refresh
-      _refreshing = Completer<bool>();
-      final ok = await _doRefresh(req);
-      _refreshing!.complete(ok);
-
-      if (!ok) {
-        await AuthStore.I.clear();
-        return super.onError(err, handler);
-      }
-
-      final resp = await _retryWithNewToken(req);
-      return handler.resolve(resp);
-    } catch (_) {
-      _refreshing?.complete(false);
-      await AuthStore.I.clear();
-      return super.onError(err, handler);
+      await _doRefresh();
     } finally {
+      _refreshing!.complete();
       _refreshing = null;
     }
   }
 
-  Future<bool> _doRefresh(RequestOptions failedReq) async {
-    final refreshToken = AuthStore.I.refreshToken;
-    if (refreshToken == null) return false;
+  Future<void> _doRefresh() async {
+    final rt = AuthStore.I.refreshToken;
+    if (rt == null || rt.isEmpty) return;
 
-    // отдельный "чистый" Dio без наших интерсепторов
-    final dio = Dio(BaseOptions(
-      baseUrl: failedReq.baseUrl,
-      connectTimeout: failedReq.connectTimeout,
-      receiveTimeout: failedReq.receiveTimeout,
-      sendTimeout: failedReq.sendTimeout,
-    ));
-
-    final resp = await dio.post(
-      refreshPath,
-      data: {'refresh_token': refreshToken},
-      options: Options(
-        headers: {'Authorization': '$headerPrefix$refreshToken'},
-        validateStatus: (s) => s != null && s < 500,
-      ),
-    );
-
-    if (resp.statusCode == 200 && resp.data is Map) {
-      final map = resp.data as Map;
-      final newAccess = (map['access_token'] ?? map['accessToken']) as String?;
-      final newRefresh =
-          (map['refresh_token'] ?? map['refreshToken']) as String? ?? refreshToken;
-      if (newAccess == null) return false;
-
-      await AuthStore.I.saveTokens(
-        accessToken: newAccess,
-        refreshToken: newRefresh,
+    try {
+      final resp = await dio.post(
+        '/auth/refresh',
+        data: {'refresh_token': rt},
+        options: Options(extra: {'skipAuth': true}), // важно: не добавлять старый access
       );
-      return true;
+
+      final data = resp.data as Map<String, dynamic>;
+      final newAccess = (data['access_token'] as String?) ?? '';
+      final accessExpStr = data['access_expires_at'] as String?;
+      final newRefresh = data['refresh_token'] as String?;
+      final accessExp = accessExpStr != null ? DateTime.tryParse(accessExpStr) : null;
+
+      if (newAccess.isEmpty) {
+        await AuthStore.I.clear();
+        return;
+      }
+
+      await AuthStore.I.save(
+        access: newAccess,
+        refresh: newRefresh ?? rt, // сервер присылает ротацию — берём новый, иначе оставляем старый
+        accessExp: accessExp,
+      );
+      if (kDebugMode) {
+        debugPrint('AuthInterceptor: token refreshed, exp=$accessExp');
+      }
+    } catch (e) {
+      // Рефреш не удался — чистим токены (оставим пользователя гостем)
+      await AuthStore.I.clear();
+      rethrow;
     }
-    return false;
   }
 
-  Future<Response<dynamic>> _retryWithNewToken(RequestOptions req) async {
-    final dio = Dio(BaseOptions(
-      baseUrl: req.baseUrl,
-      connectTimeout: req.connectTimeout,
-      receiveTimeout: req.receiveTimeout,
-      sendTimeout: req.sendTimeout,
-    ));
+  Future<RequestOptions> _cloneWithAuth(RequestOptions o, String access) async {
+    final headers = Map<String, dynamic>.from(o.headers);
+    headers['Authorization'] = 'Bearer $access';
 
-    final token = AuthStore.I.accessToken;
-    final headers = Map<String, dynamic>.from(req.headers);
-    if (token != null) {
-      headers['Authorization'] = '$headerPrefix$token';
-    }
-
-    return dio.fetch<dynamic>(req.copyWith(headers: headers));
+    return RequestOptions(
+      path: o.path,
+      method: o.method,
+      headers: headers,
+      queryParameters: o.queryParameters,
+      data: o.data,
+      baseUrl: o.baseUrl,
+      connectTimeout: o.connectTimeout,
+      sendTimeout: o.sendTimeout,
+      receiveTimeout: o.receiveTimeout,
+      extra: {...o.extra, '__ret': true},
+      contentType: o.contentType,
+      responseType: o.responseType,
+      followRedirects: o.followRedirects,
+      listFormat: o.listFormat,
+      receiveDataWhenStatusError: o.receiveDataWhenStatusError,
+    );
   }
 }
