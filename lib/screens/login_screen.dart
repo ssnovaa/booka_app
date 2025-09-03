@@ -42,6 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
 
+      // Запускаем подготовку плеера в фоне
+      ap.ensurePrepared();
+
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -127,6 +130,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
+
+      // Запускаем подготовку плеера в фоне
+      ap.ensurePrepared();
 
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
