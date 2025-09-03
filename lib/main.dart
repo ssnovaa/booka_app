@@ -77,13 +77,29 @@ Future<void> main() async {
       ),
     );
 
-    // 5) Push — инициализация FCM (разрешения, токен, диплинки) ПОСЛЕ runApp,
-    // когда уже есть navigatorKey и готов ApiClient
+    // 5) Post-frame: пуши и ПРЕДЗАГРУЗКА ПЛЕЕРА
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
+        // Инициализация FCM (разрешения, токен, диплинки)
         await PushService.instance.init(navigatorKey: _navKey);
       } catch (e, st) {
         debugPrint('PushService.init failed: $e\n$st');
+      }
+
+      // 🔥 ВАЖНО: как только дерево виджетов поднялось — аккуратно «прогреваем» плеер.
+      // 1) пробуем подтянуть серверный прогресс (если юзер уже залогинен)
+      // 2) в любом случае готовим источник из локального current_listen/карты прогресса
+      try {
+        final ctx = _navKey.currentContext;
+        if (ctx != null) {
+          final audio = Provider.of<AudioPlayerProvider>(ctx, listen: false);
+          // сначала тихо попробуем гидратацию с бэка
+          unawaited(audio.hydrateFromServerIfAvailable());
+          // затем — гарантированно подготовим источник (idempotent)
+          unawaited(audio.ensurePrepared());
+        }
+      } catch (e, st) {
+        debugPrint('Audio warm-up failed: $e\n$st');
       }
     });
   }, (Object error, StackTrace stack) {
