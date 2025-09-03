@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>356466512000-e1ujb659sodhevsb292ol74l6gvf6rl3.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.356466512000-e1ujb659sodhevsb292ol74l6gvf6rl3</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>356466512000-7fvpi1687qcrep3oif71eoi6s1g4838o.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCITOBB0A_W1gfzDvabzfd_o4sqJvb1YYk</string>
+	<key>GCM_SENDER_ID</key>
+	<string>356466512000</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.booka.app</string>
+	<key>PROJECT_ID</key>
+	<string>booka-radio-app</string>
+	<key>STORAGE_BUCKET</key>
+	<string>booka-radio-app.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:356466512000:ios:ff6afbafe21c14cec45665</string>
+</dict>
+</plist>

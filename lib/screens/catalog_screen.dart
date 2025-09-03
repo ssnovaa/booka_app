@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // compute (парсинг вне UI изолята)
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,11 +21,26 @@ import 'package:booka_app/widgets/popular_books_widget.dart';
 import 'package:booka_app/widgets/current_listen_card.dart';
 import 'package:booka_app/widgets/book_card.dart';
 import 'package:booka_app/widgets/catalog_filters.dart';
-import 'package:booka_app/widgets/booka_app_bar.dart'; // общий AppBar с глобальным переключателем темы
+import 'package:booka_app/widgets/booka_app_bar.dart';
 
-/// Для отслеживания возврата с других экранов (обновление карточки)
+// ⬇️ провайдер плеера
+import 'package:booka_app/providers/audio_player_provider.dart';
+
+// ⬇️ единый репозиторий профиля (single-flight + TTL)
+import 'package:booka_app/repositories/profile_repository.dart';
+
 final RouteObserver<ModalRoute<void>> routeObserver =
 RouteObserver<ModalRoute<void>>();
+
+/// ===== Парсинг вне главного изолята (ускоряет первый рендер при больших списках) =====
+List<Book> _parseBooksOffMain(List<dynamic> items) =>
+    items.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
+
+List<Genre> _parseGenresOffMain(List raw) =>
+    raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
+
+List<Author> _parseAuthorsOffMain(List raw) =>
+    raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
 
 class CatalogScreen extends StatefulWidget {
   final bool showAppBar;
@@ -37,10 +53,10 @@ class CatalogScreen extends StatefulWidget {
   });
 
   @override
-  State<CatalogScreen> createState() => _CatalogScreenState();
+  State<CatalogScreen> createState() => CatalogScreenState();
 }
 
-class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
+class CatalogScreenState extends State<CatalogScreen> with RouteAware {
   List<Book> books = [];
   List<Genre> genres = [];
   List<Author> authors = [];
@@ -51,12 +67,11 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   bool isLoading = false;
   String? error;
 
-  late Future<Map<String, dynamic>?> profileFuture;
+  // Вместо прямого GET /profile — «прогрев» через репозиторий (результат в UI не используется)
+  late Future<void> profileFuture;
 
-  // Чтобы пересобирать карточку прогресса по возврату на экран:
   Key currentListenCardKey = UniqueKey();
 
-  /// Находим выбранный жанр по id из текущего списка жанров
   Genre? get selectedGenre {
     if (selectedGenreId == null) return null;
     for (final g in genres) {
@@ -65,12 +80,21 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     return null;
   }
 
+  /// Фильтры активны, когда выбран жанр или автор
+  bool get filtersActive => selectedGenreId != null || selectedAuthor != null;
+
   @override
   void initState() {
     super.initState();
     selectedGenreId = widget.selectedGenreId;
-    profileFuture = fetchUserProfile();
-    fetchFiltersAndBooks(); // первый прогон
+
+    // Профиль «прогреваем» сразу — через репозиторий (single-flight + TTL)
+    profileFuture = _warmupProfile();
+
+    // Тяжёлые загрузки — после первого кадра, чтобы не блокировать старт
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) fetchFiltersAndBooks();
+    });
   }
 
   @override
@@ -87,7 +111,6 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     super.dispose();
   }
 
-  /// Когда вернулись со страницы книги — обновить карточку прогресса!
   @override
   void didPopNext() {
     setState(() {
@@ -95,45 +118,64 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     });
   }
 
-  /// Попытка получить профиль через ApiClient (Dio). Возвращаем Map или null.
-  /// 401 не считаем ошибкой — гость.
-  Future<Map<String, dynamic>?> fetchUserProfile() async {
+  /// Однократная фоновая загрузка профиля через репозиторий (без прямого /profile)
+  Future<void> _warmupProfile() async {
     try {
-      final r = await ApiClient.i().get(
-        '/profile',
-        options: Options(
-          validateStatus: (s) => s != null && s < 500,
-        ),
-      );
-      if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
-        return Map<String, dynamic>.from(r.data as Map<String, dynamic>);
-      }
-      return null;
+      await ProfileRepository.I.load(debugTag: 'CatalogScreen.init');
     } catch (_) {
-      return null;
+      // тихо игнорируем: экран каталога не зависит от профиля для рендера
     }
   }
 
-  /// Реализация кнопки "Продолжить"
+  /// «Продовжити прослуховування»
+  /// 1) Тянем сервер в провайдере (LWW), 2) если ок — готовим и играем,
+  /// 3) иначе — читаем локальные prefs. (Без прямого дёргания /profile)
   void _continueListening() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString('current_listen');
-    if (jsonStr == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Нет сохранённой книги для продолжения.')),
+    final audio = context.read<AudioPlayerProvider>();
+
+    // 1) Всегда подтянуть актуальное состояние с сервера (LWW безопасен)
+    await audio.hydrateFromServerIfAvailable();
+
+    // 2) Если после гидратации в провайдере есть книга/глава — готовим и переходим
+    if (audio.currentBook != null && audio.currentChapter != null) {
+      await audio.ensurePrepared();
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: audio.currentBook!,
+            initialChapter: audio.currentChapter!,
+            initialPosition: audio.position.inSeconds,
+            autoPlay: true,
+          ),
+        ),
       );
       return;
     }
 
+    // 3) Fallback: читаем локальные prefs (без лишних сетевых запросов)
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('current_listen');
+
+      if (jsonStr == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Немає збереженої книги для продовження.')),
+        );
+        return;
+      }
+
       final data = json.decode(jsonStr);
       final bookJson = data['book'] as Map<String, dynamic>;
       final chapterJson = data['chapter'] as Map<String, dynamic>;
-      final position = data['position'] ?? 0;
+      final rawPos = data['position'] ?? 0;
+      final position = rawPos is int ? rawPos : int.tryParse('$rawPos') ?? 0;
 
       final book = Book.fromJson(bookJson);
       final chapter = Chapter.fromJson(chapterJson, book: bookJson);
 
+      if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => BookDetailScreen(
@@ -145,21 +187,22 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при продолжении: $e')),
+        SnackBar(content: Text('Помилка при продовженні: $e')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final content = FutureBuilder<Map<String, dynamic>?>(
-      future: profileFuture,
+    final content = FutureBuilder<void>(
+      future: profileFuture, // просто ждём прогрева профиля (без данных)
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        return buildMainContent(snapshot.data);
+        return buildMainContent();
       },
     );
 
@@ -175,35 +218,90 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
     );
   }
 
-  Widget buildMainContent(Map<String, dynamic>? profileData) {
+  // === ВСПОМОГАТЕЛЬНОЕ: «прозрачная плитка» + чуть шире ===
+  Widget _tile(BuildContext context, Widget child) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      // шире: меньше горизонтальный отступ чем обычно
+      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        // полупрозрачная подложка
+        color: cs.surface.withOpacity(0.28),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 14,
+            spreadRadius: 0,
+            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.12),
+          ),
+        ],
+      ),
+      // скругляем содержимое, чтобы совпадали углы
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: child,
+      ),
+    );
+  }
+
+  // обёртка для обычных элементов — стандартная ширина
+  Widget _padNormal(Widget child) =>
+      Padding(padding: const EdgeInsets.all(8), child: child);
+
+  Widget buildMainContent() {
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     final bool isAuth = userNotifier.isAuth;
 
-    final headerWidgets = <Widget>[
-      LastBooksWidget(books: books),
+    // Когда фильтры активны — оставляем только панель фильтров.
+    final List<Widget> headerWidgets = filtersActive
+        ? <Widget>[
+      _padNormal(
+        CatalogFilters(
+          genres: genres,
+          authors: authors,
+          selectedGenre: selectedGenre,
+          selectedAuthor: selectedAuthor,
+          searchController: searchController,
+          onReset: resetFilters,
+          onGenreChanged: (Genre? g) {
+            setState(() => selectedGenreId = g?.id);
+            fetchBooks(refresh: true);
+          },
+          onAuthorChanged: (a) {
+            setState(() => selectedAuthor = a);
+            fetchBooks();
+          },
+          onSearch: fetchBooks,
+        ),
+      ),
+    ]
+        : <Widget>[
+      _tile(context, LastBooksWidget(books: books)),
       if (isAuth)
         CurrentListenCard(
           key: currentListenCardKey,
           onContinue: _continueListening,
         ),
-      PopularBooksWidget(books: books),
-      CatalogFilters(
-        genres: genres,
-        authors: authors,
-        selectedGenre: selectedGenre,
-        selectedAuthor: selectedAuthor,
-        searchController: searchController,
-        onReset: resetFilters,
-        onGenreChanged: (Genre? g) {
-          setState(() => selectedGenreId = g?.id);
-          // важный момент — берём свежие данные из сети и обновляем кэш
-          fetchBooks(refresh: true);
-        },
-        onAuthorChanged: (a) {
-          setState(() => selectedAuthor = a);
-          fetchBooks();
-        },
-        onSearch: fetchBooks,
+      _tile(context, PopularBooksWidget(books: books)),
+      _padNormal(
+        CatalogFilters(
+          genres: genres,
+          authors: authors,
+          selectedGenre: selectedGenre,
+          selectedAuthor: selectedAuthor,
+          searchController: searchController,
+          onReset: resetFilters,
+          onGenreChanged: (Genre? g) {
+            setState(() => selectedGenreId = g?.id);
+            fetchBooks(refresh: true);
+          },
+          onAuthorChanged: (a) {
+            setState(() => selectedAuthor = a);
+            fetchBooks();
+          },
+          onSearch: fetchBooks,
+        ),
       ),
     ];
 
@@ -214,10 +312,16 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             : error != null
             ? Center(child: Text(error!))
             : RefreshIndicator(
-          onRefresh: () =>
-              fetchFiltersAndBooks(refresh: true), // форсим сеть
+          onRefresh: () async {
+            // тянем всё + освежаем карточку current_listen
+            setState(() {
+              profileFuture = _warmupProfile();
+              currentListenCardKey = UniqueKey();
+            });
+            await fetchFiltersAndBooks(refresh: true);
+          },
           child: ListView.builder(
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.zero,
             itemCount: headerWidgets.length + books.length + 1,
             itemBuilder: (context, index) {
               if (index < headerWidgets.length) {
@@ -225,7 +329,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
               }
               final bookIndex = index - headerWidgets.length;
               if (bookIndex < books.length) {
-                return BookCardWidget(book: books[bookIndex]);
+                return _padNormal(
+                    BookCardWidget(book: books[bookIndex]));
               }
               return const SizedBox(height: 24);
             },
@@ -257,7 +362,9 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   Future<List<Genre>> fetchGenres({bool refresh = false}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        // совместимо с твоей версией плагина
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
       );
 
@@ -272,8 +379,7 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        genres =
-            raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
+        genres = await compute(_parseGenresOffMain, raw);
         return genres;
       }
       throw Exception('Ошибка загрузки жанров: ${r.statusCode}');
@@ -285,7 +391,8 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
   Future<List<Author>> fetchAuthors({bool refresh = false}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
       );
 
@@ -300,14 +407,75 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        authors =
-            raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
+        authors = await compute(_parseAuthorsOffMain, raw);
         return authors;
       }
       throw Exception('Ошибка загрузки авторов: ${r.statusCode}');
     } on DioException catch (e) {
       throw Exception('Ошибка загрузки авторов: ${e.message}');
     }
+  }
+
+  /// Извлекаем «оценку популярности» из сырого JSON-книги.
+  /// Набор ключей подобран с запасом, чтобы не падать, если API меняется.
+  double _extractPopularity(dynamic item) {
+    if (item is! Map<String, dynamic>) return 0;
+
+    num? _asNum(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v;
+      final s = '$v'.trim();
+      return num.tryParse(s);
+    }
+
+    // Проверяем несколько возможных полей
+    const keys = <String>[
+      'popularity',
+      'popular',
+      'popularity_score',
+      'score',
+      'plays',
+      'play_count',
+      'listens',
+      'listeners',
+      'views',
+      'downloads',
+      'favorites',
+      'likes',
+      'hearts',
+      'stars',
+      'rating',
+      'rank',
+    ];
+
+    for (final k in keys) {
+      if (item.containsKey(k)) {
+        final v = _asNum(item[k]);
+        if (v != null) return v.toDouble();
+      }
+    }
+
+    // Иногда бывает вложенный объект статистики
+    final stats = item['stats'];
+    if (stats is Map<String, dynamic>) {
+      const statKeys = <String>[
+        'popularity',
+        'score',
+        'plays',
+        'play_count',
+        'listens',
+        'listeners',
+        'favorites',
+        'likes',
+        'rating',
+      ];
+      for (final k in statKeys) {
+        final v = _asNum(stats[k]);
+        if (v != null) return v.toDouble();
+      }
+    }
+
+    return 0;
   }
 
   Future<void> fetchBooks({bool refresh = false}) async {
@@ -321,19 +489,25 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       if (searchController.text.isNotEmpty) {
         params['search'] = searchController.text;
       }
-      // ВАЖНО: жанр отправляем как имя (как и в GenresScreen)
       if (selectedGenreId != null) {
         final g = selectedGenre;
         if (g != null) {
-          params['genre'] = g.name; // <-- ключ, который ждёт бэкенд
+          params['genre'] = g.name;
         }
       }
       if (selectedAuthor != null) {
         params['author'] = selectedAuthor!.name;
       }
 
+      // При активных фильтрах — просим у API сортировку по популярности (если поддерживает)
+      if (filtersActive) {
+        params['sort'] = 'popular';
+        params['order'] = 'desc';
+      }
+
       final cacheOpts = ApiClient.cacheOptions(
-        policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
+        policy:
+        refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 6),
       );
 
@@ -350,9 +524,14 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
             : (data is Map<String, dynamic>
             ? (data['data'] ?? data['items'] ?? [])
             : []);
-        books = items
-            .map((item) => Book.fromJson(item as Map<String, dynamic>))
-            .toList();
+
+        // Клиентская сортировка на случай, если сервер не отсортировал.
+        if (filtersActive) {
+          items.sort(
+                  (a, b) => _extractPopularity(b).compareTo(_extractPopularity(a)));
+        }
+
+        books = await compute(_parseBooksOffMain, items);
       } else {
         setState(() => error = 'Ошибка загрузки: ${r.statusCode}');
       }
@@ -371,7 +550,6 @@ class _CatalogScreenState extends State<CatalogScreen> with RouteAware {
       selectedAuthor = null;
       searchController.clear();
     });
-    // после сброса — свежий запрос
     fetchBooks(refresh: true);
   }
 }

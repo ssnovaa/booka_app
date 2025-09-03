@@ -17,12 +17,7 @@ class Chapter {
 
   /// Универсальный fromJson — book можно передать отдельно (или взять из json, если есть)
   factory Chapter.fromJson(Map<String, dynamic> json, {Map<String, dynamic>? book}) {
-    // ТВОЙ СЕКРЕТНЫЙ КЛЮЧ
-    const String appKey = ',f,rf vfjrv gjkbdfkf ujcnz enhtyytq hjcs 500hfp';
     String url = json['audio_url'] ?? '';
-    if (url.isNotEmpty && !url.contains('appkey=')) {
-      url += (url.contains('?') ? '&' : '?') + 'appkey=$appKey';
-    }
 
     int? chapterDuration;
     if (json['duration'] != null) {

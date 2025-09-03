@@ -57,7 +57,7 @@ class PopularBooksWidget extends StatelessWidget {
           children: [
             // Заголовок секции
             Padding(
-              padding: const EdgeInsets.only(bottom: 8, left: 4),
+              padding: const EdgeInsets.only(bottom: 4, left: 10),
               child: Text('Найпопулярніші', style: titleStyle),
             ),
 
@@ -86,12 +86,12 @@ class PopularBooksWidget extends StatelessWidget {
                               );
                             },
                             child: Container(
-                              height: 144,
+                              height: 164,
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(10),
                                 // строгая рамка вместо тени
-                                border: Border.all(color: cs.outline, width: 1),
+                                // border: Border.all(color: cs.outline, width: 1),
                                 color: cs.surfaceVariant.withOpacity(0.35),
                               ),
                               clipBehavior: Clip.antiAlias,

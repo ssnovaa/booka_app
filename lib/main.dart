@@ -5,12 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
-import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/theme_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/screens/entry_screen.dart';
 import 'package:booka_app/screens/catalog_screen.dart' show routeObserver; // RouteObserver для событий навигации
+
+// ⬇️ Push
+import 'package:booka_app/core/push/push_service.dart';
+
+// ⬇️ Сеть — ранняя инициализация, чтобы пуш-сервис мог работать
+import 'package:booka_app/core/network/api_client.dart';
+
+// Глобальный ключ навигатора — чтобы открывать экраны из пушей
+final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   // Всё — в одной зоне, чтобы ловить необработанные ошибки.
@@ -37,15 +45,7 @@ Future<void> main() async {
       debugPrint('JustAudioBackground.init failed: $e\n$st');
     }
 
-    // 2) Сеть/кэш Dio
-    try {
-      await ApiClient.init();
-    } catch (e, st) {
-      debugPrint('ApiClient.init failed: $e\n$st');
-      // fallback: ApiClient сам свалится в MemCacheStore
-    }
-
-    // 3) Провайдеры, требующие предварительной инициализации
+    // 2) Провайдеры, требующие предварительной инициализации
     final themeNotifier = ThemeNotifier();
     try {
       await themeNotifier.load(); // подгрузим сохранённый режим (light/dark/system)
@@ -53,18 +53,16 @@ Future<void> main() async {
       debugPrint('ThemeNotifier.load failed: $e\n$st');
     }
 
+    // User & Audio: без ранних tryAutoLogin/restoreProgress.
+    // Всё это централизовано в EntryScreen._bootstrap().
     final userNotifier = UserNotifier();
-    try {
-      await userNotifier.tryAutoLogin();
-    } catch (e, st) {
-      debugPrint('UserNotifier.tryAutoLogin failed: $e\n$st');
-    }
-
     final audioProvider = AudioPlayerProvider();
+
+    // 3) Сеть — инициализация ДО пушей
     try {
-      await audioProvider.restoreProgress();
+      await ApiClient.init();
     } catch (e, st) {
-      debugPrint('AudioPlayerProvider.restoreProgress failed: $e\n$st');
+      debugPrint('ApiClient.init failed: $e\n$st');
     }
 
     // 4) Запуск приложения
@@ -78,6 +76,16 @@ Future<void> main() async {
         child: const BookaApp(),
       ),
     );
+
+    // 5) Push — инициализация FCM (разрешения, токен, диплинки) ПОСЛЕ runApp,
+    // когда уже есть navigatorKey и готов ApiClient
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await PushService.instance.init(navigatorKey: _navKey);
+      } catch (e, st) {
+        debugPrint('PushService.init failed: $e\n$st');
+      }
+    });
   }, (Object error, StackTrace stack) {
     debugPrint('Uncaught error: $error\n$stack');
   });
@@ -104,8 +112,10 @@ class BookaApp extends StatelessWidget {
             brightness: Brightness.dark,
             colorSchemeSeed: Colors.deepPurple,
           ),
-          home: const EntryScreen(),
+          home: const EntryScreen(),                // здесь выполняется bootstrap (Auth/Dio/Player)
           navigatorObservers: [routeObserver],
+          // ⬇️ важно: тот же ключ, что и в PushService
+          navigatorKey: _navKey,
         );
       },
     );

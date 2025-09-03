@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:booka_app/constants.dart';
 
@@ -18,12 +17,11 @@ class ApiClient {
   /// Хранилище кэша (экспортируем для ручной очистки/удаления).
   static late CacheStore cacheStore;
 
-  /// Путь к папке файлового кэша (для отладки, может быть null на web/памяти).
+  /// Путь к папке файлового кэша (для отладки).
   static String? cachePath;
 
   /// Инициализация — вызвать в main() перед использованием ApiClient.i()
   static Future<void> init({
-    int fileCacheMaxSizeBytes = 128 * 1024 * 1024, // актуально только для MemCacheStore (web/fallback)
     Duration defaultMaxStale = const Duration(hours: 12),
   }) async {
     if (_initialized) return;
@@ -39,28 +37,28 @@ class ApiClient {
 
     final dio = Dio(options);
 
-    // Web -> память; платформы -> файловый кэш (fallback в память)
-    if (kIsWeb) {
-      cacheStore = MemCacheStore(maxSize: fileCacheMaxSizeBytes);
-      cachePath = null;
-      if (kDebugMode) debugPrint('ApiClient: using MemCacheStore (web)');
-    } else {
-      try {
-        final tmpDir = await getTemporaryDirectory();
-        final dirPath = p.join(tmpDir.path, 'dio_cache');
-        final dir = Directory(dirPath);
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
-        }
-        cacheStore = FileCacheStore(dirPath); // http_cache_file_store: только путь
-        cachePath = dirPath;
-        if (kDebugMode) debugPrint('ApiClient: using FileCacheStore at $dirPath');
-      } catch (e) {
-        cacheStore = MemCacheStore(maxSize: fileCacheMaxSizeBytes);
-        cachePath = null;
-        if (kDebugMode) {
-          debugPrint('ApiClient: using MemCacheStore (fallback). Reason: $e');
-        }
+    // Файловый кэш (Android/iOS). Без MemCacheStore, чтобы избежать ошибки импорта.
+    try {
+      final tmpDir = await getTemporaryDirectory();
+      final dirPath = p.join(tmpDir.path, 'dio_cache');
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      cacheStore = FileCacheStore(dirPath);
+      cachePath = dirPath;
+      if (kDebugMode) debugPrint('ApiClient: using FileCacheStore at $dirPath');
+    } catch (e) {
+      // Фоллбек: используем системный temp; если и он упадёт — пробрасываем исключение.
+      final altPath = p.join(Directory.systemTemp.path, 'dio_cache_fallback');
+      final dir = Directory(altPath);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      cacheStore = FileCacheStore(altPath);
+      cachePath = altPath;
+      if (kDebugMode) {
+        debugPrint('ApiClient: FileCacheStore fallback at $altPath. Reason: $e');
       }
     }
 
@@ -77,21 +75,8 @@ class ApiClient {
 
     dio.interceptors.add(DioCacheInterceptor(options: defaultCacheOptions));
 
-    // Authorization interceptor — подставляем token из SharedPreferences.
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            final token = prefs.getString('token');
-            if (token != null && token.isNotEmpty) {
-              options.headers['Authorization'] = 'Bearer $token';
-            }
-          } catch (_) {}
-          handler.next(options);
-        },
-      ),
-    );
+    // ⚠️ Нет ручного Authorization-интерцептора.
+    // Актуальная авторизация добавляется через AuthInterceptor (см. EntryScreen).
 
     // Простой retry для GET (при 502/503/504).
     dio.interceptors.add(
@@ -170,14 +155,13 @@ class ApiClient {
     await cacheStore.clean();
   }
 
-  /// Удалить кэш-конкретного запроса по path+queryParams.
+  /// Удалить кэш конкретного запроса по path+queryParams.
   static Future<void> deleteCacheFor(
       String path, {
         Map<String, dynamic>? queryParameters,
       }) async {
     final base = Uri.parse(BASE_URL);
-    final qp = (queryParameters ?? {})
-        .map((k, v) => MapEntry(k, v?.toString()));
+    final qp = (queryParameters ?? {}).map((k, v) => MapEntry(k, v?.toString()));
 
     Uri url;
     if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -188,7 +172,6 @@ class ApiClient {
       url = base.resolve(path).replace(queryParameters: qp);
     }
 
-    // В 4.x builder принимает именованные параметры.
     final cacheKey = CacheOptions.defaultCacheKeyBuilder(url: url, headers: null);
     await cacheStore.delete(cacheKey);
   }
@@ -208,7 +191,7 @@ class ApiClient {
   /// Печать информации о папке кэша (кол-во файлов и размер).
   static Future<void> debugPrintCacheDirInfo() async {
     if (cachePath == null) {
-      debugPrint('Cache dir is null (web или MemCacheStore).');
+      debugPrint('Cache dir is null.');
       return;
     }
     final dir = Directory(cachePath!);

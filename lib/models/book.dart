@@ -1,5 +1,4 @@
 // ПУТЬ: lib/models/book.dart
-import 'package:flutter/foundation.dart'; // для debugPrint
 
 class Book {
   final int id;
@@ -25,21 +24,15 @@ class Book {
   /// Быстрый признак: используется ли миниатюра
   bool get isThumbUsed => (thumbUrl ?? '').trim().isNotEmpty;
 
-  /// Единая точка доступа к изображению:
-  /// отдаёт thumbUrl, если есть, иначе coverUrl, иначе пустую строку.
-  /// Плюс подробные логи в консоль (видно в Run/Debug Android Studio).
+  /// Единая точка доступа к изображению: отдаёт thumbUrl, если есть,
+  /// иначе coverUrl, иначе пустую строку.
   String get displayCoverUrl {
     final t = (thumbUrl ?? '').trim();
-    if (t.isNotEmpty) {
-      debugPrint('[BookaApp] "$title" → ЗАГРУЖАЕТСЯ МИНИАТЮРА: $t');
-      return t;
-    }
+    if (t.isNotEmpty) return t;
+
     final c = (coverUrl ?? '').trim();
-    if (c.isNotEmpty) {
-      debugPrint('[BookaApp] "$title" → ЗАГРУЖАЕТСЯ ОБЛОЖКА: $c');
-      return c;
-    }
-    debugPrint('[BookaApp] "$title" → НЕТ ИЗОБРАЖЕНИЯ');
+    if (c.isNotEmpty) return c;
+
     return '';
   }
 
