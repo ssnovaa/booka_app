@@ -24,7 +24,6 @@ class BookaAppBarTitle extends StatelessWidget {
             ),
           ),
         ),
-        // Текст адаптируем под разные ширины
         Flexible(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -41,7 +40,7 @@ class BookaAppBarTitle extends StatelessWidget {
                 ),
               ),
               Text(
-                'Жіночі Аудіокниги українською',
+                'Жіночі аудіокниги українською',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

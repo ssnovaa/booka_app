@@ -11,7 +11,7 @@ import 'package:booka_app/models/user.dart'; // getUserType, UserType
 // core
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth_interceptor.dart';
-import 'package:booka_app/core/network/auth/auth_store.dart'; // <— единое хранилище токенов
+import 'package:booka_app/core/network/auth/auth_store.dart'; // <— єдине сховище токенів
 
 class EntryScreen extends StatefulWidget {
   const EntryScreen({Key? key}) : super(key: key);
@@ -24,10 +24,10 @@ class _EntryScreenState extends State<EntryScreen> {
   bool _isLoading = true;
   bool _interceptorAttached = false;
 
-  // Автосинхрон при возврате приложения из фона
+  // Автосинхрон при поверненні застосунку з фону
   late final AppLifecycleListener _life;
 
-  // Чтобы heavy-инициализация не запускалась повторно
+  // Щоб heavy-ініціалізація не запускалася повторно
   bool _didPostFrameHeavy = false;
 
   @override
@@ -38,9 +38,9 @@ class _EntryScreenState extends State<EntryScreen> {
         final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
         final userN = Provider.of<UserNotifier>(context, listen: false);
 
-        // Обновляем тип пользователя (вдруг тариф сменился) и подтягиваем прогресс с сервера
+        // Оновлюємо тип користувача (раптом тариф змінився) і підтягуємо прогрес із сервера
         audio.userType = getUserType(userN.user);
-        audio.hydrateFromServerIfAvailable(); // безопасно: LWW-мердж внутри провайдера
+        audio.hydrateFromServerIfAvailable(); // безпечно: LWW-мердж всередині провайдера
       },
     );
     _bootstrap();
@@ -57,49 +57,49 @@ class _EntryScreenState extends State<EntryScreen> {
     final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
 
     try {
-      // 1) Сеть/кэш
+      // 1) Мережа/кеш
       await ApiClient.init();
 
-      // 2) Токены
+      // 2) Токени
       await AuthStore.I.restore();
 
-      // 3) Авторизационный интерцептор (единая точка)
+      // 3) Авторизаційний інтерцептор (єдина точка)
       final dio = ApiClient.i();
       if (!_interceptorAttached) {
         dio.interceptors.removeWhere((it) => it is AuthInterceptor);
-        dio.interceptors.add(AuthInterceptor(dio)); // авто-refresh и ретрай
+        dio.interceptors.add(AuthInterceptor(dio)); // авто-refresh і ретрай
         _interceptorAttached = true;
       }
 
-      // 4) Авторизация пользователя (авто-логин по сохранённым токенам)
+      // 4) Авторизація користувача (авто-логін за збереженими токенами)
       await userNotifier.tryAutoLogin();
 
-      // 5) Тип пользователя для поведения плеера (читать только локальные данные)
+      // 5) Тип користувача для поведінки плеєра (читати лише локальні дані)
       audio.userType = getUserType(userNotifier.user);
 
-      // ⚠️ ТЯЖЁЛОЕ переносим после первого кадра (см. ниже),
-      // чтобы не блокировать старт и уменьшить jank.
+      // ⚠️ ВАЖКЕ переносимо після першого кадру (див. нижче),
+      // щоб не блокувати старт і зменшити jank.
     } catch (_) {
-      // остаёмся в гостевом режиме — ок
+      // залишаємося в гостьовому режимі — ок
     } finally {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      // Heavy-часть: после первого рендера экрана-заглушки.
+      // Heavy-частина: після першого рендера екрана-заглушки.
       if (!_didPostFrameHeavy) {
         _didPostFrameHeavy = true;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
-          // Делаем «тяжёлое» уже после отрисовки первого кадра
+          // Робимо «важке» вже після відмалювання першого кадру
           try {
-            // 6) Прогрев плеера:
-            //    - всегда восстановить локальное
-            //    - ВСЕГДА попробовать подтянуть сервер (LWW-мердж внутри)
-            //    - затем подготовить источник
+            // 6) Прогрів плеєра:
+            //    - завжди відновити локальне
+            //    - ЗАВЖДИ спробувати підвантажити сервер (LWW-мердж всередині)
+            //    - потім підготувати джерело
             await audio.restoreProgress();
             await audio.hydrateFromServerIfAvailable();
             await audio.ensurePrepared();
           } catch (_) {
-            // не критично для первого экрана
+            // не критично для першого екрана
           }
         });
       }

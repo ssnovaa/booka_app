@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/screens/book_detail_screen.dart';
-import 'package:booka_app/constants.dart'; // ensureAbsoluteImageUrl()
+import 'package:booka_app/constants.dart';
 
 class BooksGrid extends StatelessWidget {
   final List<Map<String, dynamic>> items;
@@ -14,13 +14,12 @@ class BooksGrid extends StatelessWidget {
     required this.resolveUrl,
   }) : super(key: key);
 
-  // Более высокий элемент, чтобы избежать overflow на небольших экранах
   double _aspect(BuildContext context) {
     final mq = MediaQuery.of(context);
     final shortest = mq.size.shortestSide;
     final isTablet = shortest >= 600;
     final t = mq.textScaleFactor.clamp(1.0, 1.5);
-    final base = isTablet ? 0.74 : 0.70; // ширина / высота
+    final base = isTablet ? 0.74 : 0.70;
     return (base / (t * 0.95)).clamp(0.60, 0.85);
   }
 
@@ -86,9 +85,7 @@ class BooksGrid extends StatelessWidget {
               color: theme.colorScheme.surface,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: theme.dividerColor.withOpacity(
-                  isDark ? 0.16 : 0.10,
-                ),
+                color: theme.dividerColor.withOpacity(isDark ? 0.16 : 0.10),
               ),
               boxShadow: [
                 BoxShadow(
@@ -100,9 +97,7 @@ class BooksGrid extends StatelessWidget {
             ),
             child: LayoutBuilder(
               builder: (context, bc) {
-                // Ограничиваем высоту обложки, чтобы не было вертикального overflow.
-                // Берём максимум 62% высоты карточки, но не больше «естественной» 3:4.
-                const imageAspect = 3 / 4; // width / height
+                const imageAspect = 3 / 4;
                 const maxImageFraction = 0.62;
 
                 final w = bc.maxWidth;
@@ -114,7 +109,6 @@ class BooksGrid extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Обложка (без пустых полей, заполняем область)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
                       child: SizedBox(
@@ -131,7 +125,7 @@ class BooksGrid extends StatelessWidget {
                           )
                               : CachedNetworkImage(
                             imageUrl: coverUrl,
-                            fit: BoxFit.cover, // заполняем область, без «пустот»
+                            fit: BoxFit.cover,
                             fadeInDuration: const Duration(milliseconds: 120),
                             placeholder: (_, __) => const Center(
                               child: SizedBox(
@@ -150,8 +144,6 @@ class BooksGrid extends StatelessWidget {
                         ),
                       ),
                     ),
-
-                    // Текстовый блок — компактный, но устойчивый к масштабированию шрифта
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                       child: Column(

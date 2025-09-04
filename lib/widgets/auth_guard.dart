@@ -34,10 +34,8 @@ class _AuthGuardState extends State<AuthGuard> {
       return const Center(child: CircularProgressIndicator());
     }
     if (!isAuth!) {
-      // Не авторизован — показываем экран логина
       return const LoginScreen();
     }
-    // Авторизован — показываем защищённый экран
     return widget.child;
   }
 }

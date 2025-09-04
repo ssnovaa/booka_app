@@ -42,9 +42,7 @@ class CatalogFilters extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
-      // лупа теперь только справа, поэтому prefixIcon не используем
       suffixIcon: suffixIcon,
-      // чтобы уместить 2 иконки (❌ и 🔍) без обрезки
       suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
     );
   }
@@ -61,7 +59,6 @@ class CatalogFilters extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           children: [
-            // --- Поиск (лупа справа) ---
             Row(
               children: [
                 Expanded(
@@ -71,7 +68,6 @@ class CatalogFilters extends StatelessWidget {
                     builder: (context, value, _) {
                       final hasText = value.text.trim().isNotEmpty;
 
-                      // справа: если есть текст → [❌, 🔍], если нет → [🔍]
                       final rightIcons = Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -104,7 +100,7 @@ class CatalogFilters extends StatelessWidget {
                         },
                         decoration: _fieldDecoration(
                           context,
-                          hint: 'Пошук по назві або автору',
+                          hint: 'Пошук за назвою або автором',
                           suffixIcon: rightIcons,
                         ),
                       );
@@ -114,8 +110,6 @@ class CatalogFilters extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-
-            // --- Жанр / Автор + Скинути ---
             Row(
               children: [
                 Expanded(

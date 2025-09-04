@@ -2,9 +2,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Оборачивает экран и перехватывает системную кнопку "Назад":
-/// - первый раз: показывает SnackBar "Натисніть ще раз, щоб вийти"
-/// - второй раз (до 2 сек): вихід з програми (Android), на iOS просто ігнор
+/// Обгортає екран і перехоплює системну кнопку «Назад»:
+/// - перше натискання: показує SnackBar "Натисніть ще раз, щоб вийти"
+/// - друге натискання (протягом інтервалу): вихід з програми на Android, на iOS — дозволяємо стандартну поведінку
 class DoubleBackToExit extends StatefulWidget {
   final Widget child;
   final Duration interval;
@@ -25,7 +25,7 @@ class _DoubleBackToExitState extends State<DoubleBackToExit> {
   DateTime? _lastBack;
 
   Future<bool> _onWillPop() async {
-    // Если можно попнуть вложенный стек — не перехватываем
+    // Якщо можна pop-нути вкладений стек — не перехоплюємо
     final canPop = Navigator.of(context).canPop();
     if (canPop) return true;
 
@@ -47,15 +47,15 @@ class _DoubleBackToExitState extends State<DoubleBackToExit> {
             margin: const EdgeInsets.all(12),
           ),
         );
-      return false; // не выходим
+      return false; // не виходимо
     }
 
-    // Повторное нажатие в интервале — закрываем приложение на Android
+    // Повторне натискання в інтервалі — закриваємо додаток на Android
     if (Platform.isAndroid) {
-      await SystemNavigator.pop(); // домой
+      await SystemNavigator.pop();
       return false;
     }
-    // На iOS программный выход не делаем — просто позволим pop (если есть)
+    // На iOS програмний вихід не робимо — дозволяємо pop (якщо є)
     return true;
   }
 

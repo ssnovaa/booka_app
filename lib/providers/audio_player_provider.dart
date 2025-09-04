@@ -1,4 +1,3 @@
-// lib/providers/audio_player_provider.dart
 import 'dart:async';
 import 'dart:convert';
 
@@ -13,17 +12,17 @@ import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/user.dart'; // enum UserType, getUserType
 import 'package:booka_app/core/network/api_client.dart';
-import 'package:booka_app/core/network/auth/auth_store.dart'; // ← правильный путь
-import 'package:booka_app/constants.dart'; // fullResourceUrl для нормализации относительных путей
+import 'package:booka_app/core/network/auth/auth_store.dart'; // ← правильний шлях
+import 'package:booka_app/constants.dart'; // fullResourceUrl для нормалізації відносних шляхів
 
-// ✅ единая точка загрузки профиля вместо /profile
+// ✅ єдина точка завантаження профілю замість /profile
 import 'package:booka_app/repositories/profile_repository.dart';
 
-// ---- КЛЮЧИ ДЛЯ PREFS ----
+// ---- КЛЮЧІ ДЛЯ PREFS ----
 const String _kCurrentListenKey = 'current_listen';
 const String _kProgressMapKey = 'listen_progress_v1';
 
-// ==== helpers для времени
+// ==== допоміжні функції для часу
 DateTime _nowUtc() => DateTime.now().toUtc();
 DateTime? _parseUtc(dynamic v) {
   if (v == null) return null;
@@ -41,7 +40,7 @@ Future<void> saveCurrentListenToPrefs({
   required Book? book,
   required Chapter? chapter,
   required int position,
-  DateTime? updatedAt, // ← НОВОЕ: сохраняем метку времени
+  DateTime? updatedAt, // ← НОВЕ: зберігаємо мітку часу
 }) async {
   final prefs = await SharedPreferences.getInstance();
 
@@ -51,7 +50,7 @@ Future<void> saveCurrentListenToPrefs({
     return;
   }
 
-  // Расширенный формат с явными id и updated_at (обратная совместимость сохранена)
+  // Розширений формат з явними id та updated_at (зворотна сумісність збережена)
   final payload = <String, dynamic>{
     'book': book.toJson(),
     'chapter': chapter.toJson(),
@@ -64,7 +63,7 @@ Future<void> saveCurrentListenToPrefs({
   await prefs.setString(_kCurrentListenKey, json.encode(payload));
 }
 
-// ---------- ЛОКАЛЬНАЯ ЗАГРУЗКА CL ДЛЯ LWW (вынесено на верхний уровень) ----------
+// ---------- ЛОКАЛЬНЕ ЗАВАНТАЖЕННЯ CL ДЛЯ LWW (винесено на верхній рівень) ----------
 class _LocalCL {
   final int? bookId;
   final int? chapterId;
@@ -93,24 +92,24 @@ class AudioPlayerProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // троттлинг сохранения прогресса (локально)
+  // тротлінг збереження прогресу (локально)
   DateTime? _lastPersistAt;
   final Duration _persistEvery = const Duration(seconds: 10);
 
-  // коалессация подготовки/гидратации
+  // коалесценція підготовки/гідратації
   bool _isPreparing = false;
   bool _hydrating = false;
   Completer<bool>? _hydrateCompleter;
   DateTime? _lastHydrate401At;
 
-  // in-memory кэш для listen_progress_v1
+  // in-memory кеш для listen_progress_v1
   Map<String, dynamic>? _progressMapCache;
 
-  // ======= PUSH прогресса на API ======= и дебаунс
+  // ======= PUSH прогресу на API ======= та дебаунс
   Timer? _serverPushTimer;
   String? _lastPushSig; // "bookId:chapterId:pos"
   final Duration _pushDelay = const Duration(seconds: 5);
-  static const int _minAutoPushSec = 2; // не шлём 0/1с автоматически
+  static const int _minAutoPushSec = 2; // не шлемо 0/1с автоматично
 
   UserType _userType = UserType.guest;
   UserType get userType => _userType;
@@ -137,29 +136,29 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   List<Chapter> get chapters => _chapters;
 
-  /// Запрошено UI: текущий URL аудиопотока.
+  /// Запитано від UI: поточний URL аудіопотоку.
   String? get currentUrl => currentChapter?.audioUrl;
 
   bool get _hasSequence => (player.sequenceState?.sequence.isNotEmpty ?? false);
 
   AudioPlayerProvider() {
-    // Позиция
+    // Позиція
     player.positionStream.listen((pos) {
-      if (!_hasSequence) return; // источник ещё не готов → игнор
+      if (!_hasSequence) return; // джерело ще не готове → ігноруємо
 
-      // ВАЖНО: не затираем уже известную положительную позицию нулём,
-      // т.к. после setAudioSource могут прилететь единичные Duration.zero
+      // ВАЖЛИВО: не перезаписуємо вже відому додатну позицію нулем,
+      // оскільки після setAudioSource можуть прилетіти поодинокі Duration.zero
       if (_position > Duration.zero && pos == Duration.zero) {
         return;
       }
 
       _position = pos;
       _saveProgressThrottled();
-      _scheduleServerPush(); // отправка на сервер (дебаунс, без ранних нулей)
+      _scheduleServerPush(); // відправлення на сервер (дебаунс, без ранніх нулів)
       notifyListeners();
     });
 
-    // Длительность текущего элемента
+    // Тривалість поточного елемента
     player.durationStream.listen((dur) {
       if (dur != null) {
         _duration = dur;
@@ -167,39 +166,39 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
 
-    // На смене последовательности — подстрахуемся по длительности
+    // На зміні послідовності — перестрахуємось по тривалості
     player.sequenceStateStream.listen((_) => _pullDurationFromPlayer());
 
-    // Переключение главы
+    // Перемикання розділу
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
         _currentChapterIndex = idx;
 
-        // НЕ обнуляем позицию — берём фактическую у плеера
+        // НЕ обнуляємо позицію — беремо фактичну у плеєра
         _position = player.position;
 
-        _lastPushSig = null; // новая глава → разрешим следующий пуш
+        _lastPushSig = null; // новий розділ → дозволимо наступний пуш
         _pullDurationFromPlayer();
         notifyListeners();
       }
     });
 
-    // Скорость
+    // Швидкість
     player.speedStream.listen((s) {
       _speed = s;
       notifyListeners();
     });
 
-    // Конец трека/главы
+    // Кінець треку/розділу
     player.processingStateStream.listen((state) async {
       if (state == ProcessingState.completed) {
         _saveProgressThrottled(force: true);
-        await _pushProgressToServer(force: true); // завершили — пушим немедленно
+        await _pushProgressToServer(force: true); // завершили — пушимо негайно
 
         final hasNext = _currentChapterIndex + 1 < _chapters.length;
 
         if (_userType == UserType.guest) {
-          _log('ProcessingState.completed for GUEST — stopping');
+          _log('ProcessingState.completed for GUEST — зупинка');
           _onGuestFirstChapterEnd?.call();
           await player.stop();
           return;
@@ -208,7 +207,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         if (hasNext) {
           await nextChapter();
         } else {
-          // конец книги — мягкая остановка
+          // кінець книги — мʼяка зупинка
           await player.seek(Duration.zero);
           await player.pause();
         }
@@ -225,7 +224,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _duration = d ?? Duration.zero;
   }
 
-  // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
+  // ---------- СХОВИЩЕ ПРОГРЕСУ ПО КНИГАХ ----------
 
   Future<Map<String, dynamic>> _readProgressMap() async {
     if (_progressMapCache != null) return _progressMapCache!;
@@ -268,7 +267,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
     };
 
-    // Лимит последних 50 книг (LRU по updatedAt)
+    // Ліміт останніх 50 книг (LRU за updatedAt)
     if (map.length > 50) {
       final entries = map.entries.toList();
       entries.sort((a, b) {
@@ -310,7 +309,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       int? bookId;
       int? chapterId;
-      // сначала явные поля
+      // спочатку явні поля
       if (m['book_id'] is int) {
         bookId = m['book_id'] as int;
       } else if (m['book_id'] != null) {
@@ -321,11 +320,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       } else if (m['chapter_id'] != null) {
         chapterId = int.tryParse('${m['chapter_id']}');
       }
-      // затем пробуем достать из json книги/главы
+      // потім пробуємо дістати з json книги/розділу
       bookId ??= (bookJson?['id'] is int)
           ? bookJson!['id'] as int
           : int.tryParse('${bookJson?['id']}');
-      chapterId ??= (chapterJson?['id'] is int)
+      chapterId ??=
+      (chapterJson?['id'] is int)
           ? chapterJson!['id'] as int
           : int.tryParse('${chapterJson?['id']}');
 
@@ -348,14 +348,14 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  // ---------- СОХРАНЕНИЕ ПРОГРЕССА (локально) ----------
+  // ---------- ЗБЕРЕЖЕННЯ ПРОГРЕСУ (локально) ----------
 
   void _saveProgressThrottled({bool force = false}) {
     final b = currentBook;
     final ch = currentChapter;
     if (b == null || ch == null) return;
 
-    // Не записываем нулевую позицию — защита от случайных «обнулений»
+    // Не записуємо нульову позицію — захист від випадкових «обнулень»
     final posSec = _position.inSeconds;
     if (posSec <= 0) return;
 
@@ -366,7 +366,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
     _lastPersistAt = now;
 
-    // 1) одиночная «current_listen» (для продолжения) + updated_at
+    // 1) одиночний «current_listen» (для продовження) + updated_at
     saveCurrentListenToPrefs(
       book: b,
       chapter: ch,
@@ -374,7 +374,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       updatedAt: _nowUtc(),
     );
 
-    // 2) карта прогресса по книгам
+    // 2) карта прогресу по книгах
     _writeProgressEntry(
       bookId: b.id,
       chapterId: ch.id,
@@ -382,13 +382,13 @@ class AudioPlayerProvider extends ChangeNotifier {
     );
   }
 
-  // ---------- PUSH ПРОГРЕССА НА СЕРВЕР ----------
+  // ---------- PUSH ПРОГРЕСУ НА СЕРВЕР ----------
 
   void _scheduleServerPush() {
-    if (_userType == UserType.guest) return; // гостю нельзя
+    if (_userType == UserType.guest) return; // гостю не можна
     if (currentBook == null || currentChapter == null) return;
-    if (!player.playing) return; // не играем — не шлём
-    if (_position.inSeconds < _minAutoPushSec) return; // ранние нули/единицы — игнор
+    if (!player.playing) return; // не граємо — не шлемо
+    if (_position.inSeconds < _minAutoPushSec) return; // ранні нулі/одиниці — ігнор
 
     _serverPushTimer?.cancel();
     _serverPushTimer = Timer(_pushDelay, () => _pushProgressToServer());
@@ -408,10 +408,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     final pos = _position.inSeconds;
 
-    // Не шлём нули, если явно не разрешено
+    // Не шлемо нулі, якщо явно не дозволено
     if (!allowZero && pos == 0) return;
 
-    // Автопуши: не шлём, если не играем/слишком рано
+    // Автопуші: не шлемо, якщо не граємо/занадто рано
     if (!force) {
       if (!player.playing) return;
       if (pos < _minAutoPushSec) return;
@@ -421,7 +421,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (!force && _lastPushSig == sig) return;
 
     try {
-      // основной современный маршрут
+      // основний сучасний маршрут
       final resp = await ApiClient.i().post(
         '/listens',
         data: {'a_book_id': b.id, 'a_chapter_id': ch.id, 'position': pos},
@@ -429,7 +429,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       );
 
       if (resp.statusCode == 404) {
-        // обратная совместимость
+        // зворотна сумісність
         await ApiClient.i().post(
           '/listen/update',
           data: {'a_book_id': b.id, 'a_chapter_id': ch.id, 'position': pos},
@@ -440,11 +440,11 @@ class AudioPlayerProvider extends ChangeNotifier {
       _log('pushProgress: OK pos=$pos (book=${b.id}, ch=${ch.id})');
     } catch (e) {
       _log('pushProgress: error: $e');
-      // игнорируем, попробуем позже
+      // ігноруємо, спробуємо пізніше
     }
   }
 
-  // ---------- HELPERS: всегда брать свежий Bearer при сборке источников ----------
+  // ---------- HELPERS: завжди брати свіжий Bearer під час складання джерел ----------
 
   Map<String, String>? _authHeaders() {
     final access = AuthStore.I.accessToken;
@@ -454,27 +454,27 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
-  // ✅✅✅ ИЗМЕНЕНИЕ ЗДЕСЬ ✅✅✅
-  // Нормализация относительных аудио-URL в абсолютные (как для обложек)
+  // ✅✅✅ ЗМІНИ ТУТ ✅✅✅
+  // Нормалізація відносних аудіо-URL до абсолютних (як для обкладинок)
   String? _normalizeAudioUrl(String? raw) {
     final s = raw?.trim() ?? '';
     if (s.isEmpty) return null;
 
-    // Если ссылка уже абсолютная, убедимся, что она HTTPS
+    // Якщо посилання вже абсолютне, упевнимось, що воно HTTPS
     if (s.startsWith('http')) {
       return s.replaceFirst('http://', 'https://');
     }
 
-    // если пришёл относительный путь — приведём к /storage и соберём абсолютный
+    // якщо прийшов відносний шлях — зведемо до /storage і зберемо абсолютний
     final path = s.startsWith('storage/')
         ? s
         : (s.startsWith('/storage/') ? s.substring(1) : 'storage/$s');
 
-    // Важно: убедитесь, что fullResourceUrl в constants.dart тоже возвращает HTTPS
+    // Важливо: упевніться, що fullResourceUrl у constants.dart також повертає HTTPS
     return fullResourceUrl(path);
   }
 
-  // Дозагрузка главы по ID из /abooks/{bookId}/chapters, если профиль отдал укороченный JSON
+  // Довантаження розділу за ID з /abooks/{bookId}/chapters, якщо профіль віддав скорочений JSON
   Future<Chapter?> _fetchChapterById(int bookId, int chapterId) async {
     try {
       final resp = await ApiClient.i().get(
@@ -509,24 +509,24 @@ class AudioPlayerProvider extends ChangeNotifier {
       }) {
     final title = (prettyTitle != null && prettyTitle.isNotEmpty)
         ? prettyTitle
-        : (chapter.title.isNotEmpty ? chapter.title : 'Глава');
+        : (chapter.title.isNotEmpty ? chapter.title : 'Розділ');
 
     final normalizedUrl = _normalizeAudioUrl(chapter.audioUrl);
 
     if (normalizedUrl == null || normalizedUrl.isEmpty) {
-      // Защитимся от битого источника — пусть упадёт раньше с понятным логом
+      // Захистимося від «битого» джерела — нехай впаде раніше з зрозумілим логом
       throw StateError('Chapter ${chapter.id} has no valid audioUrl');
     }
 
-    // ⚠️ ВАЖНО: не используем Uri.encodeFull — может поломать подписанные/экранированные ссылки.
-    // Передаём Bearer, иначе сервер может отвечать 403.
+    // ⚠️ ВАЖЛИВО: не використовуємо Uri.encodeFull — може зламати підписані/екрановані посилання.
+    // Передаємо Bearer, інакше сервер може відповісти 403.
     return AudioSource.uri(
       Uri.parse(normalizedUrl),
       headers: _authHeaders(),
       tag: MediaItem(
         id: chapter.id.toString(),
         title: title,
-        artist: artist ?? 'Неизвестно',
+        artist: artist ?? 'Невідомо',
         artUri:
         (coverUrl != null && coverUrl.isNotEmpty) ? Uri.parse(coverUrl) : null,
         duration: (chapter.duration != null && chapter.duration! > 0)
@@ -553,14 +553,14 @@ class AudioPlayerProvider extends ChangeNotifier {
       );
     }).toList();
 
-    // Прогреваем первый трек для быстрого старта
+    // Прогріваємо перший трек для швидкого старту
     return ConcatenatingAudioSource(
       useLazyPreparation: false,
       children: children,
     );
   }
 
-  // ---------- ПУБЛИЧНЫЕ ОБЁРТКИ, которых ждёт ваш UI ----------
+  // ---------- ПУБЛІЧНІ ОБГОРТКИ, яких очікує ваш UI ----------
 
   Future<bool> hydrateFromServerIfAvailable() => _hydrateFromServerIfAvailable();
 
@@ -577,7 +577,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     await setSpeed(next);
   }
 
-  // ---------- Нормализация профиля в Map<String, dynamic> ----------
+  // ---------- Нормалізація профілю в Map<String, dynamic> ----------
 
   Map<String, dynamic>? _normalizeProfile(dynamic raw) {
     if (raw == null) return null;
@@ -591,7 +591,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       return out;
     }
     if (raw is User) {
-      // сначала пытаемся toJson()
+      // спочатку намагаємося toJson()
       try {
         final dyn = raw as dynamic;
         final maybe = dyn.toJson?.call();
@@ -601,7 +601,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           return out;
         }
       } catch (_) {}
-      // минимально нужные для провайдера поля
+      // мінімально потрібні для провайдера поля
       final out = <String, dynamic>{
         'name': raw.name,
         'email': raw.email,
@@ -609,7 +609,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       };
       try {
         final dyn = raw as dynamic;
-        // если в модели есть current_listen — прокинем
+        // якщо в моделі є current_listen — прокинемо
         if (dyn.current_listen != null) out['current_listen'] = dyn.current_listen;
         if (dyn.currentListen != null) out['current_listen'] = dyn.currentListen;
         if (dyn.server_time != null) out['server_time'] = dyn.server_time;
@@ -619,17 +619,17 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
-  // ---------- ВНУТРЕННЯЯ ГИДРАЦИЯ (LWW) ----------
+  // ---------- ВНУТРІШНЯ ГІДРАТАЦІЯ (LWW) ----------
 
   Future<bool> _hydrateFromServerIfAvailable() async {
-    // если совсем нет логина — не долбим сервер
+    // якщо зовсім немає логіна — не «довбимо» сервер
     if (!AuthStore.I.isLoggedIn) {
       _lastHydrate401At = DateTime.now();
       _log('hydrate: not logged in → skip');
       return false;
     }
 
-    // прежний троттл для гостя (на случай рассинхронизации userType)
+    // попередній тротл для гостя (на випадок розсинхронізації userType)
     if (_userType == UserType.guest && _lastHydrate401At != null) {
       final ago = DateTime.now().difference(_lastHydrate401At!);
       if (ago < const Duration(seconds: 60)) {
@@ -647,7 +647,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     try {
       final local = await _loadLocalCL();
 
-      // ⬇️ вместо User берём нормализованную Map (есть current_listen)
+      // ⬇️ замість User беремо нормалізовану Map (є current_listen)
       final profRaw = await ProfileRepository.I.loadMap(
         force: true,
         debugTag: 'AudioPlayer.hydrate',
@@ -667,7 +667,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final serverNow = _parseUtc(data['server_time']) ?? _nowUtc();
 
-      // Функции применения сервера и пуша локального
+      // Функції застосування сервера і пушу локального
       Future<void> _applyServerCL(Map<String, dynamic> clMap) async {
         final bookMap =
         (clMap['book'] is Map) ? Map<String, dynamic>.from(clMap['book']) : null;
@@ -693,7 +693,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
         final DateTime upd = _parseUtc(clMap['updated_at']) ?? serverNow;
 
-        // 1) Собираем book/chapter из профиля (если они есть)
+        // 1) Збираємо book/chapter з профілю (якщо вони є)
         Book? book;
         Chapter? chapter;
         if (bookMap != null) book = Book.fromJson(bookMap);
@@ -704,7 +704,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           );
         }
 
-        // 2) Если нет audioUrl или он битый — дозагружаем главу из /abooks/{id}/chapters
+        // 2) Якщо немає audioUrl або він «битий» — довантажуємо розділ з /abooks/{id}/chapters
         bool _bad(String? s) {
           final v = (s ?? '').trim();
           if (v.isEmpty) return true;
@@ -716,7 +716,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           final fetched = await _fetchChapterById(bookId, chapterId);
           if (fetched != null) {
             chapter = fetched;
-            // если не было book — восстановим его тоже
+            // якщо не було book — відновимо його також
             if (book == null) {
               if (fetched.book != null) {
                 book = Book.fromJson(fetched.book!);
@@ -732,7 +732,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           return;
         }
 
-        // 3) Нормализуем URL и сохраняем локально
+        // 3) Нормалізуємо URL та зберігаємо локально
         final normalized = Chapter(
           id: chapter.id,
           title: chapter.title,
@@ -751,13 +751,14 @@ class AudioPlayerProvider extends ChangeNotifier {
         await _writeProgressEntry(
             bookId: bookId, chapterId: normalized.id, positionSec: pos);
 
-        // 4) Обновляем in-memory и UI
+        // 4) Оновлюємо in-memory та UI
         _chapters = [normalized];
         _currentChapterIndex = 0;
         _position = Duration(seconds: pos);
         _duration = Duration(seconds: normalized.duration ?? 0);
 
-        _log('hydrate: applied server (book=$bookId, ch=${normalized.id}, pos=$pos, upd=$upd)');
+        _log(
+            'hydrate: applied server (book=$bookId, ch=${normalized.id}, pos=$pos, upd=$upd)');
         notifyListeners();
       }
 
@@ -794,7 +795,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
-      // Разбор случаев
+      // Розбір випадків
       if (srv == null && local == null) {
         _log('hydrate: nothing to sync (both empty)');
         _hydrateCompleter!.complete(false);
@@ -813,20 +814,20 @@ class AudioPlayerProvider extends ChangeNotifier {
         return true;
       }
 
-      // Оба есть → сравнение updated_at
+      // Обидва є → порівняння updated_at
       final srvMap = Map<String, dynamic>.from(srv!);
       final srvUpd = _parseUtc(srvMap['updated_at']) ?? serverNow;
-      final locUpd = local!.updatedAt ?? _nowUtc(); // если старый формат — считаем "сейчас"
+      final locUpd = local!.updatedAt ?? _nowUtc(); // якщо старий формат — рахуємо «зараз»
 
       if (_isAfterWithSkew(srvUpd, locUpd)) {
-        // сервер новее
+        // сервер новіший
         await _applyServerCL(srvMap);
       } else if (_isAfterWithSkew(locUpd, srvUpd)) {
-        // локальный новее
+        // локальний новіший
         await _pushLocalUp(local);
-        // локальный уже в prefs, плеер трогать не обязательно
+        // локальний вже у prefs, плеєр чіпати не обовʼязково
       } else {
-        // Ничья → тай-брейк
+        // Нічия → тай-брейк
         final sameChapter = (srvMap['chapter_id']?.toString() ?? '') ==
             (local.chapterId?.toString() ?? '');
         final int srvPos = (srvMap['position'] is int)
@@ -835,7 +836,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         if (sameChapter) {
           final best = (local.position > srvPos) ? local.position : srvPos;
 
-          // Пушим "лучшее" наверх и локально выставляем это же
+          // Пушимо «найкраще» вгору і локально виставляємо те саме
           try {
             await ApiClient.i().post(
               '/listens',
@@ -864,7 +865,7 @@ class AudioPlayerProvider extends ChangeNotifier {
             }
           }
 
-          // Обновим локальные структуры, если есть json
+          // Оновимо локальні структури, якщо є json
           if (local.bookJson != null && local.chapterJson != null) {
             final book = Book.fromJson(local.bookJson!);
             final chapter =
@@ -874,7 +875,7 @@ class AudioPlayerProvider extends ChangeNotifier {
                 book: book, chapter: chapter, position: best);
           }
         } else {
-          // Разные главы при одинаковом времени — предпочитаем сервер (явная сессия с сайта)
+          // Різні розділи при однаковому часі — надаємо перевагу серверу (явна сесія з сайту)
           await _applyServerCL(srvMap);
         }
       }
@@ -890,7 +891,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  // ---------- НАБОР ГЛАВ / ПЛЕЙЛИСТ ----------
+  // ---------- НАБІР РОЗДІЛІВ / ПЛЕЙЛІСТ ----------
 
   Future<void> setChapters(
       List<Chapter> chapters, {
@@ -900,12 +901,12 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? coverUrl,
         Book? book,
       }) async {
-    // Гость — только первая доступная глава: берём с МИНИМАЛЬНЫМ order (а не только == 1)
+    // Гість — лише перший доступний розділ: беремо з МІНІМАЛЬНИМ order (а не тільки == 1)
     List<Chapter> playlistChapters = chapters;
 
     if (_userType == UserType.guest) {
       if (chapters.isEmpty) {
-        _log('setChapters: guest — пустой список глав');
+        _log('setChapters: guest — порожній список розділів');
         _resetState();
         return;
       }
@@ -932,7 +933,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
 
-    // --- применим сохранённый прогресс ДЛЯ ЭТОЙ КНИГИ, если он есть ---
+    // --- застосуємо збережений прогрес ДЛЯ ЦІЄЇ КНИГИ, якщо він є ---
     int initialIndex = (_userType == UserType.guest) ? 0 : startIndex;
     Duration initialPos = Duration.zero;
 
@@ -959,7 +960,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     }
 
-    // теперь зафиксируем список глав внутри провайдера (с переносом book-json)
+    // тепер зафіксуємо список розділів всередині провайдера (з переносом book-json)
     _chapters = playlistChapters
         .map((ch) => Chapter(
       id: ch.id,
@@ -972,7 +973,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         .toList();
 
     _currentChapterIndex = initialIndex;
-    _lastPushSig = null; // новая последовательность — скинем сигнатуру
+    _lastPushSig = null; // нова послідовність — скинемо сигнатуру
 
     final playlist = _playlistFromChapters(
       list: _chapters,
@@ -990,7 +991,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         initialPosition: initialPos,
       );
 
-      // Линейное воспроизведение без петли и перемешивания
+      // Лінійне відтворення без петлі та перемішування
       await player.setShuffleModeEnabled(false);
       await player.setLoopMode(LoopMode.off);
     } catch (e) {
@@ -1018,7 +1019,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- КОНТРОЛЫ ----------
+  // ---------- КОНТРОЛИ ----------
 
   Future<void> play() async {
     await player.play();
@@ -1049,7 +1050,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  /// Явный seek. По умолчанию **не** сохраняет и **не** пушит, если позиция == 0.
+  /// Явний seek. За замовчуванням **не** зберігає і **не** пушить, якщо позиція == 0.
   Future<void> seek(
       Duration position, {
         bool persist = true,
@@ -1074,17 +1075,17 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Следующая глава: сначала сохраняем ТЕКУЩУЮ позицию (>0), затем переключаемся БЕЗ пуша нулём.
+  /// Наступний розділ: спочатку зберігаємо ПОТОЧНУ позицію (>0), потім перемикаємось БЕЗ пушу нулем.
   Future<void> nextChapter() async {
     if (!_hasSequence || _currentChapterIndex + 1 >= _chapters.length) return;
 
-    // 1) сохранить текущую позицию, если есть
+    // 1) зберегти поточну позицію, якщо є
     if (_position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
       await _pushProgressToServer(force: true, allowZero: false);
     }
 
-    // 2) перейти на следующую без мгновенного пуша 0
+    // 2) перейти на наступний без миттєвого пушу 0
     await player.seek(Duration.zero, index: _currentChapterIndex + 1);
     _position = Duration.zero;
     _lastPushSig = null;
@@ -1092,7 +1093,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     await player.play();
   }
 
-  /// Предыдущая глава: сохраняем текущую позицию (>0), затем переключаемся БЕЗ пуша нулём.
+  /// Попередній розділ: зберігаємо поточну позицію (>0), потім перемикаємось БЕЗ пушу нулем.
   Future<void> previousChapter() async {
     if (!_hasSequence || _currentChapterIndex - 1 < 0) return;
 
@@ -1108,8 +1109,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     await player.play();
   }
 
-  /// Переход на главу. Если меняем главу — сперва сохраняем старую позицию (>0).
-  /// Позиция по умолчанию 0, но нулевой прогресс **не пушим** сразу.
+  /// Перехід на розділ. Якщо змінюємо розділ — спершу зберігаємо стару позицію (>0).
+  /// Позиція за замовчуванням 0, але нульовий прогрес **не пушимо** відразу.
   Future<void> seekChapter(
       int index, {
         Duration? position,
@@ -1120,7 +1121,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final isChapterChange = index != _currentChapterIndex;
     final newPos = position ?? Duration.zero;
 
-    // если была другая глава — сперва сохраним текущую позицию (>0)
+    // якщо був інший розділ — спершу збережемо поточну позицію (>0)
     if (isChapterChange && _position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
       await _pushProgressToServer(force: true, allowZero: false);
@@ -1131,7 +1132,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _position = newPos;
     _lastPushSig = null;
 
-    // если явный переход в середину (pos>0) и persist=true — сохраним/пушим
+    // якщо явний перехід у середину (pos>0) і persist=true — збережемо/пушимо
     if (persist && newPos.inSeconds > 0) {
       _saveProgressThrottled(force: true);
       await _pushProgressToServer(force: true, allowZero: false);
@@ -1140,7 +1141,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ ----------
+  // ---------- ПІДГОТОВКА / ВІДНОВЛЕННЯ ----------
 
   Future<bool> _prepareFromSavedIfNeeded() async {
     if (_hasSequence) return true;
@@ -1168,11 +1169,11 @@ class AudioPlayerProvider extends ChangeNotifier {
       final b = currentBook;
       if (ch == null) return false;
 
-      // Защита: у гостя не готовим "не первую доступную" главу
+      // Захист: у гостя не готуємо «не перший доступний» розділ
       if (_userType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
-          _log('_prepare: guest + saved non-first chapter → очистка сохранённого');
+          _log('_prepare: guest + saved non-first chapter → очищення збереженого');
           await saveCurrentListenToPrefs(book: null, chapter: null, position: 0);
           _resetState();
           return false;
@@ -1218,7 +1219,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           seconds: position is int ? position : int.tryParse('$position') ?? 0);
       _duration = Duration(seconds: chapter.duration ?? 0);
 
-      // При восстановлении также синхронизируем карту прогресса
+      // Під час відновлення також синхронізуємо карту прогресу
       await _writeProgressEntry(
         bookId: book.id,
         chapterId: chapter.id,
@@ -1246,7 +1247,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     return true;
   }
 
-  // ==== ВНУТРЕННИЙ метод: быстрая установка текущей сессии
+  // ==== ВНУТРІШНІЙ метод: швидке встановлення поточної сесії
   void _setCurrent({
     required Book book,
     required Chapter chapter,

@@ -20,6 +20,7 @@ class User {
     );
   }
 }
+
 enum UserType { guest, free, paid }
 
 UserType getUserType(User? user) {

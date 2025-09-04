@@ -33,13 +33,14 @@ class _GenresScreenState extends State<GenresScreen> {
     fetchGenres();
   }
 
+  /// Завантажуємо список жанрів (сервіс сам керує кешем)
   Future<void> fetchGenres() async {
     setState(() {
       isLoadingGenres = true;
       error = null;
     });
     try {
-      final res = await CatalogService.fetchGenres(); // /genres — кэш на уровне сервиса
+      final res = await CatalogService.fetchGenres(); // /genres — кеш на рівні сервісу
       setState(() {
         genres = res;
         selectedGenre = null;
@@ -54,7 +55,7 @@ class _GenresScreenState extends State<GenresScreen> {
     }
   }
 
-  /// Отправляем genre по имени (как в CatalogScreen)
+  /// Надсилаємо genre за ім'ям (як у CatalogScreen)
   Future<void> fetchBooksForGenre(Genre genre, {bool refresh = false}) async {
     setState(() {
       isLoadingBooks = true;
@@ -109,7 +110,7 @@ class _GenresScreenState extends State<GenresScreen> {
     }
   }
 
-  // Back: если выбран жанр — сбрасываем выбор, иначе дергаем onReturnToMain
+  // Back: якщо вибрано жанр — скидаємо вибір, інакше викликаємо onReturnToMain
   Future<bool> _onWillPop() async {
     if (selectedGenre != null) {
       setState(() {
@@ -128,7 +129,7 @@ class _GenresScreenState extends State<GenresScreen> {
     if (selectedGenre == null) {
       await fetchGenres();
     } else {
-      await fetchBooksForGenre(selectedGenre!, refresh: true); // жёсткий refresh
+      await fetchBooksForGenre(selectedGenre!, refresh: true); // жорсткий refresh
     }
   }
 
@@ -166,7 +167,7 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Экран жанров (без выбранного жанра) — строгие плитки
+            // --- Екран жанрів (без вибраного жанру) — строгі плитки
             if (selectedGenre == null) {
               return RefreshIndicator(
                 onRefresh: _onPullToRefresh,
@@ -203,7 +204,7 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Экран выбранного жанра: «пилюли» + список
+            // --- Екран вибраного жанру: «пілюлі» + список
             return Column(
               children: [
                 Padding(
@@ -262,7 +263,7 @@ class _GenresScreenState extends State<GenresScreen> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
                         SizedBox(height: 80),
-                        Center(child: Text('Книг не знайдено для цього жанру')),
+                        Center(child: Text('Книги не знайдено для цього жанру')),
                       ],
                     )
                         : ListView.builder(
@@ -287,7 +288,7 @@ class _GenresScreenState extends State<GenresScreen> {
   }
 }
 
-/// Строгая плитка жанра: без теней, с тонкой рамкой и подписью под изображением
+/// Строга плитка жанру: без тіней, з тонкою рамкою і підписом під зображенням
 class _GenreTile extends StatelessWidget {
   final Genre genre;
   final VoidCallback onTap;
@@ -358,7 +359,7 @@ class _GenreTile extends StatelessWidget {
   }
 }
 
-/// Строгая «пилюля» жанра: тонкая рамка, без тени/градиентов
+/// Строга «пілюля» жанру: тонка рамка, без тіні/градієнтів
 class _GenrePill extends StatelessWidget {
   final String label;
   final bool selected;
@@ -373,9 +374,9 @@ class _GenrePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final border = selected ? cs.primary : cs.outline;            // контрастнее в дарке
+    final border = selected ? cs.primary : cs.outline; // контрастніше в темній темі
     final bg = selected ? cs.primaryContainer : cs.surface;
-    final fg = selected ? cs.onPrimaryContainer : cs.onSurface;   // <— фикс читабельности
+    final fg = selected ? cs.onPrimaryContainer : cs.onSurface; // фікс читаємості
 
     return Material(
       color: Colors.transparent,

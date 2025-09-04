@@ -3,11 +3,11 @@ import 'package:dio/dio.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/models/user.dart';
 
-/// Единый источник профиля:
-/// - склеивает параллельные запросы (single-flight)
-/// - мягкий TTL, чтобы не дёргать сеть при быстрых повторах
+/// Єдине джерело профілю:
+/// - склеює паралельні запити (single-flight)
+/// - м’який TTL, щоб не смикати мережу при швидких повторах
 /// - fallback /profile → /me
-/// - *всегда* нормализует payload
+/// - *завжди* нормалізує payload
 class ProfileRepository {
   ProfileRepository._(this._dio);
   final Dio _dio;
@@ -15,15 +15,15 @@ class ProfileRepository {
   static ProfileRepository? _inst;
   static ProfileRepository get I => _inst ??= ProfileRepository._(ApiClient.i());
 
-  // Кэшируем НОРМАЛИЗОВАННУЮ карту (из неё при необходимости строим User)
+  // Кешуємо НОРМАЛІЗОВАНУ карту (з неї при потребі будуємо User)
   Map<String, dynamic>? _cacheMap;
   DateTime? _ts;
   Future<Map<String, dynamic>>? _inflight;
 
-  /// Сколько держим кэш «свежим» для UI-повторов.
+  /// Скільки тримаємо кеш «свіжим» для UI-повторів.
   static const Duration _ttl = Duration(seconds: 5);
 
-  /// Старый контракт: вернуть User (строится из нормализованной карты).
+  /// Старий контракт: повернути User (будується з нормалізованої карти).
   Future<User> load({bool force = false, String? debugTag}) async {
     final map = await loadMap(force: force, debugTag: debugTag);
     final userMap = (map['user'] is Map<String, dynamic>)
@@ -32,11 +32,11 @@ class ProfileRepository {
     return User.fromJson(userMap);
   }
 
-  /// Новый контракт для экранов UI: вернуть нормализованный Map.
+  /// Новий контракт для екранів UI: повернути нормалізований Map.
   ///
-  /// Структура гарантируется:
-  /// - верхний уровень содержит user-поля (`id/name/email/is_paid`)
-  /// - а также сопутствующие коллекции, если они пришли с бэка:
+  /// Структура гарантується:
+  /// - верхній рівень містить user-поля (`id/name/email/is_paid`)
+  /// - а також супутні колекції, якщо вони прийшли з беку:
   ///   `favorites`, `listened`, `current_listen`, `server_time`
   Future<Map<String, dynamic>> loadMap({
     bool force = false,
@@ -44,13 +44,13 @@ class ProfileRepository {
   }) {
     final now = DateTime.now();
 
-    // 1) TTL-кэш
+    // 1) TTL-кеш
     if (!force && _cacheMap != null && _ts != null && now.difference(_ts!) < _ttl) {
       _log('cache-hit', debugTag);
       return Future.value(_cacheMap!);
     }
 
-    // 2) Схлопываем параллельные запросы
+    // 2) Схлопуємо паралельні запити
     if (!force && _inflight != null) {
       _log('inflight-join', debugTag);
       return _inflight!;
@@ -71,23 +71,23 @@ class ProfileRepository {
     return _inflight!;
   }
 
-  /// Принудительно обновить кэш из сети.
+  /// Примусово оновити кеш із мережі.
   Future<Map<String, dynamic>> refresh({String? debugTag}) =>
       loadMap(force: true, debugTag: debugTag);
 
-  /// Взять кэш без сети (может быть null).
+  /// Взяти кеш без мережі (може бути null).
   Map<String, dynamic>? getCachedMap() => _cacheMap;
 
-  /// Инвалидация кэша (logout и т.п.)
+  /// Інвалідація кешу (logout тощо)
   void invalidate() {
     _cacheMap = null;
     _ts = null;
   }
 
-  // ---------------- внутрянка ----------------
+  // ---------------- внутрішня логіка ----------------
 
   Future<Map<String, dynamic>> _fetchMapFromApi() async {
-    // Пытаемся /profile
+    // Пробуємо /profile
     Response r = await _dio.get(
       '/profile',
       options: Options(
@@ -96,7 +96,7 @@ class ProfileRepository {
       ),
     );
 
-    // Если /profile отсутствует на старом бэке — пробуем /me
+    // Якщо /profile відсутній на старому беку — пробуємо /me
     if (r.statusCode == 404 || r.statusCode == 405) {
       r = await _dio.get(
         '/me',
@@ -111,7 +111,7 @@ class ProfileRepository {
       throw DioException(
         requestOptions: r.requestOptions,
         response: r,
-        message: 'Failed to fetch profile',
+        message: 'Не вдалося отримати профіль',
       );
     }
 
@@ -120,28 +120,28 @@ class ProfileRepository {
       throw DioException(
         requestOptions: r.requestOptions,
         response: r,
-        message: 'Bad profile payload',
+        message: 'Некоректний payload профілю',
       );
     }
     return normalized;
   }
 
-  /// Распаковка типичных обёрток ответа.
+  /// Розпакування типових обгорток відповіді.
   dynamic _unwrapPayload(dynamic data) {
     if (data == null) return null;
     dynamic root = data;
 
-    // Вариант: { data: {...} }
+    // Варіант: { data: {...} }
     if (root is Map && root.length == 1 && root.containsKey('data')) {
       root = root['data'];
     }
 
-    // Вариант: { user: {...}, favorites:[], listened:[], current_listen:... }
+    // Варіант: { user: {...}, favorites:[], listened:[], current_listen:... }
     if (root is Map && root['user'] is Map) {
       final Map<String, dynamic> user =
       Map<String, dynamic>.from(root['user'] as Map);
 
-      // Поднимаем user-поля на верхний уровень и доклеиваем коллекции
+      // Піднімаємо user-поля на верхній рівень і доклеюємо колекції
       final out = <String, dynamic>{...user};
 
       for (final k in const [
@@ -153,16 +153,16 @@ class ProfileRepository {
         if (root[k] != null) out[k] = root[k];
       }
 
-      // Дополнительно храним «сырой user» — вдруг где-то нужен
+      // Додатково зберігаємо «сирий user» — раптом десь потрібен
       out['user'] = user;
       return out;
     }
 
-    // Вариант: уже плоский объект пользователя
+    // Варіант: уже плаский обʼєкт користувача
     return root;
   }
 
-  /// Унификация произвольного payload к Map<String, dynamic>.
+  /// Уніфікація довільного payload до Map<String, dynamic>.
   Map<String, dynamic>? _normalizeToMap(dynamic raw) {
     if (raw == null) return null;
 
@@ -181,7 +181,7 @@ class ProfileRepository {
   }
 
   void _log(String kind, String? tag) {
-    // Пример лога: PROFILE[net-force] <ProfileScreen.load>
+    // Приклад логу: PROFILE[net-force] <ProfileScreen.load>
     // ignore: avoid_print
     print('PROFILE[$kind]${tag != null ? " <$tag>" : ""}');
   }

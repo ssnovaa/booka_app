@@ -11,20 +11,20 @@ import 'login_screen.dart';
 import '../user_notifier.dart';
 import 'catalog_and_collections_screen.dart';
 
-// управление плеером напрямую
+// керування плеєром напряму
 import '../providers/audio_player_provider.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({
     Key? key,
-    this.initialIndex, // 0 — "Каталог/Подборки", 1 — "Каталог"
+    this.initialIndex, // 0 — "Каталог/Підбірки", 1 — "Каталог"
   }) : super(key: key);
 
-  /// Опционально можно передать стартовую вкладку:
-  /// 0 — «Каталог/Подборки», 1 — «Каталог».
+  /// Опціонально можна передати стартову вкладку:
+  /// 0 — «Каталог/Підбірки», 1 — «Каталог».
   final int? initialIndex;
 
-  /// Глобальный доступ к state MainScreen (например, из дочерних экранов)
+  /// Глобальний доступ до state MainScreen (наприклад, з дочірніх екранів)
   static _MainScreenState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MainScreenState>();
 
@@ -33,39 +33,39 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  /// 0 — "Каталог/Подборки", 1 — "Каталог", (2 — плеер-кнопка), 3 — Профіль (push поверх)
-  int _selectedIndex = 1; // по умолчанию — Каталог
+  /// 0 — "Каталог/Підбірки", 1 — "Каталог", (2 — кнопка плеєра), 3 — Профіль (відкривається поверх)
+  int _selectedIndex = 1; // за замовчуванням — Каталог
 
-  /// Колбэк «Продовжити», общий для карточки и для центральной кнопки в навбаре.
-  /// Его может установить та часть UI, где рендерится CurrentListenCard.
+  /// Колбек «Продовжити», спільний для картки і для центральної кнопки в навбарі.
+  /// Його може встановити та частина UI, де рендериться CurrentListenCard.
   VoidCallback? _onContinueFromCard;
 
-  /// Для «двойного Назад для выхода» (активно ТОЛЬКО на вкладке Каталог = 1)
+  /// Для «подвійного Назад для виходу» (активно ТІЛЬКИ на вкладці Каталог = 1)
   DateTime? _lastBackTap;
   final Duration _exitInterval = const Duration(seconds: 2);
 
-  /// Ключ для доступа к состоянию экрана каталога — нужен,
-  /// чтобы сбрасывать фильтры по повторному тапу на иконку «Каталог».
+  /// Ключ для доступу до стану екрану каталогу — потрібен,
+  /// щоб скидати фільтри по повторному тапу на іконку «Каталог».
   final GlobalKey<CatalogScreenState> _catalogKey = GlobalKey<CatalogScreenState>();
 
-  /// Ключ для экрана «Каталог/Подборки», чтобы ловить внутренний Back (Серії → Жанри).
+  /// Ключ для екрану «Каталог/Підбірки», щоб ловити внутрішній Back (Серії → Жанри).
   final GlobalKey _cacKey = GlobalKey();
 
-  /// Ленивая инициализация вкладок: создаём экран только в момент показа.
-  /// После создания — кешируем виджет, чтобы IndexedStack сохранял состояние.
+  /// Лінива ініціалізація вкладок: створюємо екран тільки в момент показу.
+  /// Після створення — кешуємо віджет, щоб IndexedStack зберігав стан.
   final List<Widget?> _tabs = <Widget?>[null, null];
 
   @override
   void initState() {
     super.initState();
-    // Применяем initialIndex, если он валиден (0 или 1)
+    // Застосовуємо initialIndex, якщо він валідний (0 або 1)
     final idx = widget.initialIndex;
     if (idx == 0 || idx == 1) {
       _selectedIndex = idx!;
     }
   }
 
-  /// Создаёт и кеширует вкладку i при первом запросе.
+  /// Створює і кешує вкладку i при першому запиті.
   Widget _ensureTab(int i) {
     if (_tabs[i] != null) return _tabs[i]!;
     switch (i) {
@@ -79,14 +79,14 @@ class _MainScreenState extends State<MainScreen> {
     return _tabs[i]!;
   }
 
-  // ===== ПУБЛИЧНЫЕ МЕТОДЫ ДЛЯ ДЕТЕЙ ЭКРАНА =====
+  // ===== ПУБЛІЧНІ МЕТОДИ ДЛЯ ДІТЕЙ ЕКРАНУ =====
 
-  /// Установить единый колбэк «Продовжити» (его же получит и нижняя центральная кнопка).
+  /// Встановити єдиний колбек «Продовжити» (той самий отримає і нижня центральна кнопка).
   void setOnContinue(VoidCallback? cb) {
     _onContinueFromCard = cb;
   }
 
-  /// Публичный метод для внешней смены вкладки (например, из дочерних экранов).
+  /// Публічний метод для зовнішньої зміни вкладки (наприклад, з дочірніх екранів).
   void setTab(int index) {
     if (index == 0 || index == 1) {
       setState(() => _selectedIndex = index);
@@ -95,17 +95,17 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // ===== ВНУТРЕННЯЯ ЛОГИКА НАВИГАЦИИ =====
+  // ===== ВНУТРІШНЯ ЛОГІКА НАВІГАЦІЇ =====
 
   void _onTabSelected(int index) {
-    // Индексы табов, которые мы отображаем в IndexedStack: 0 и 1.
+    // Індекси табів, які ми відображаємо в IndexedStack: 0 і 1.
     if (index == 0 || index == 1) {
-      // Если уже на «Каталоге» и включены фильтры — повторный тап сбрасывает их.
+      // Якщо вже на «Каталозі» і включені фільтри — повторний тап скидає їх.
       if (index == 1 && _selectedIndex == 1) {
         final st = _catalogKey.currentState;
         if (st != null && st.filtersActive) {
-          st.resetFilters(); // ← сброс фильтров
-          return;            // остаёмся на той же вкладке
+          st.resetFilters(); // ← скидаємо фільтри
+          return;            // лишаємося на тій самій вкладці
         }
       }
       setState(() {
@@ -114,7 +114,7 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
-    // Index 3 — профиль. Открываем поверх и НЕ меняем активную вкладку.
+    // Index 3 — профіль. Відкриваємо поверх та НЕ змінюємо активну вкладку.
     if (index == 3) {
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
       if (userNotifier.isAuth) {
@@ -130,38 +130,38 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  /// Центр-кнопка: пытаемся подготовить/восстановить и запустить воспроизведение.
+  /// Центр-кнопка: намагаємося підготувати/відновити і запустити відтворення.
   Future<void> _onPlayerTap() async {
     final p = context.read<AudioPlayerProvider>();
 
-    // Пытаемся поднять сохранённую сессию и сделать play/pause.
+    // Піднімаємо збережену сесію і робимо play/pause.
     final ok = await p.handleBottomPlayTap();
 
-    // Если вообще нет сохранённой сессии — дёргаем тот же «Продовжити», что у карточки.
+    // Якщо взагалі немає збереженої сесії — викликаємо той самий «Продовжити», що у картки.
     if (!ok) {
       _onContinueFromCard?.call();
     }
   }
 
-  /// Маппинг индекса нижней навигации в индекс IndexedStack.
+  /// Відображення індексу для IndexedStack.
   int get _stackIndex => (_selectedIndex == 0) ? 0 : 1;
 
-  /// Централизованный перехват аппаратной «Назад».
-  /// Возвращает false, чтобы не пускать Navigator.pop() у корня.
+  /// Централізований перехоплювач апаратної кнопки "Назад".
+  /// Повертає false, щоб не дозволити Navigator.pop() у корені.
   Future<bool> _onWillPop() async {
-    // Если открыта вкладка «Каталог/Подборки» (нижний таб 0)
+    // Якщо відкрита вкладка «Каталог/Підбірки» (нижній таб 0)
     if (_selectedIndex == 0) {
-      // Дадим экрану шанс «съесть» Back (Серії -> Жанри), если он это умеет.
+      // Дамо екрану шанс «з'їсти» Back (Серії -> Жанри), якщо він вміє.
       final st = _cacKey.currentState;
       final handled = (st as dynamic?)?.handleBackAtRoot?.call() == true;
       if (handled) return false;
 
-      // Иначе мы уже на «Жанри»: просто переключим нижний таб на «Каталог»
+      // Інакше ми вже на «Жанрах»: просто переключимо нижній таб на «Каталог»
       setState(() => _selectedIndex = 1);
       return false;
     }
 
-    // Ниже — логика «двойной Назад — выйти» ТОЛЬКО на табе Каталог (1)
+    // Логіка «подвійний Назад — вийти» ТІЛЬКИ на табі Каталог (1)
     final now = DateTime.now();
     if (_lastBackTap == null || now.difference(_lastBackTap!) > _exitInterval) {
       _lastBackTap = now;
@@ -180,7 +180,7 @@ class _MainScreenState extends State<MainScreen> {
             margin: const EdgeInsets.all(12),
           ),
         );
-      return false; // ждём второй Back
+      return false; // чекаємо другого натискання
     }
 
     if (Platform.isAndroid) {
@@ -193,14 +193,14 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Гарантируем, что видимая вкладка создана (вторая — только при обращении).
+    // Гарантуємо, що видима вкладка створена (інша — тільки при зверненні).
     final Widget tab0 =
     (_stackIndex == 0) ? _ensureTab(0) : (_tabs[0] ?? const SizedBox.shrink());
     final Widget tab1 =
     (_stackIndex == 1) ? _ensureTab(1) : (_tabs[1] ?? const SizedBox.shrink());
 
     return WillPopScope(
-      onWillPop: _onWillPop, // перехватываем Back на уровне главного контейнера
+      onWillPop: _onWillPop, // перехоплюємо Back на рівні головного контейнера
       child: Consumer<UserNotifier>(
         builder: (context, userNotifier, _) {
           return Scaffold(
@@ -211,8 +211,8 @@ class _MainScreenState extends State<MainScreen> {
             bottomNavigationBar: CustomBottomNavBar(
               currentIndex: _selectedIndex,
               onTap: _onTabSelected,
-              onPlayerTap: _onPlayerTap,   // короткое нажатие по центру
-              onOpenPlayer: _onPlayerTap,  // если в виджете есть отдельный колбэк — туда же
+              onPlayerTap: _onPlayerTap,   // коротке натискання по центру
+              onOpenPlayer: _onPlayerTap,  // якщо в виджеті є окремий колбек — туди ж
               onContinue: _onContinueFromCard,
             ),
           );

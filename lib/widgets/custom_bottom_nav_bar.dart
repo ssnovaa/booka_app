@@ -1,4 +1,3 @@
-// lib/widgets/custom_bottom_nav_bar.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,7 +21,7 @@ class CustomBottomNavBar extends StatelessWidget {
     this.onPlayerTap,
     this.onContinue,
   })  : assert(onOpenPlayer != null || onPlayerTap != null,
-  'Передай onOpenPlayer или onPlayerTap'),
+  'Передай onOpenPlayer або onPlayerTap'),
         super(key: key);
 
   static const double _kBarHeight = 64.0;
@@ -47,7 +46,7 @@ class CustomBottomNavBar extends StatelessWidget {
     final double icon = _kBaseIcon * _kOuterScale * _kInnerExtra;
     final double pad = _kBasePad * _kOuterScale;
 
-    const double extraHit = 10.0; // расширение радиуса
+    const double extraHit = 10.0; // розширення радіусу хит-зони
 
     final VoidCallback openPlayer = (onOpenPlayer ?? onPlayerTap)!;
 
@@ -62,7 +61,7 @@ class CustomBottomNavBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               IconButton(
-                tooltip: 'Подборки',
+                tooltip: 'Підбірки',
                 icon: Icon(
                   Icons.collections_bookmark,
                   color: currentIndex == 0 ? selected : unselected,
@@ -96,13 +95,13 @@ class CustomBottomNavBar extends StatelessWidget {
                       maxHeight: childHitSize,
                       child: _PlayerFab(
                         onTap: () async {
-                          // важный момент: перед каждым нажатием синхронизируем тип пользователя
+                          // важливий момент: перед натисканням синхронізуємо тип користувача
                           p.userType = getUserType(userN.user);
-                          // если нет подготовленной сессии — вернёт false → вызовем onContinue()
+                          // якщо сесія не підготовлена — поверне false, тоді викличемо onContinue()
                           final ok = await p.handleBottomPlayTap();
                           if (!ok) onContinue?.call();
                         },
-                        onLongPress: openPlayer, // долгое нажатие — открыть полный плеер
+                        onLongPress: openPlayer, // довге натискання — відкрити повний плеєр
                         isPlaying: isPlaying,
                         bgColor: theme.colorScheme.primary,
                         ringColor: _kRingBlue,
@@ -112,7 +111,7 @@ class CustomBottomNavBar extends StatelessWidget {
                         iconSize: icon,
                         logoPadding: pad,
                         extraHitRadius: extraHit,
-                        debugShowHitArea: false, // включи true для наглядности
+                        debugShowHitArea: false, // увімкни true для наочності
                       ),
                     ),
                   );
@@ -143,8 +142,8 @@ class _PlayerFab extends StatelessWidget {
   final Color ringColor;
   final Color iconColor;
 
-  final double ringVisualSize; // диаметр внешнего «видимого» круга
-  final double extraHitRadius; // расширение радиуса хит-области
+  final double ringVisualSize; // діаметр видимого кільця
+  final double extraHitRadius; // розширення радіусу хит-області
   final double innerSize;
   final double iconSize;
   final double logoPadding;
@@ -177,14 +176,14 @@ class _PlayerFab extends StatelessWidget {
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
-          // ВИЗУАЛЫ
+          // ВІЗУАЛИ
           Align(
             alignment: Alignment.bottomCenter,
             child: Stack(
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // Сиреневый круг (кольцо)
+                // Фіолетове коло (кільце)
                 Container(
                   width: ringVisualSize,
                   height: ringVisualSize,
@@ -200,7 +199,7 @@ class _PlayerFab extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Внутренняя кнопка (без собственного InkWell)
+                // Внутрішня кнопка (без власного InkWell)
                 Container(
                   width: innerSize,
                   height: innerSize,
@@ -218,7 +217,7 @@ class _PlayerFab extends StatelessWidget {
             ),
           ),
 
-          // Единый кликабельный круг, центр внизу, покрывает ВСЮ область
+          // Єдина клікабельна область — центр внизу, покриває всю ділянку
           Align(
             alignment: Alignment.bottomCenter,
             child: SizedBox(

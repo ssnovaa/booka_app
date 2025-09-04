@@ -15,16 +15,18 @@ import 'package:booka_app/screens/profile_screen.dart';
 
 enum NumberCorner { topRight, topLeft, bottomRight, bottomLeft }
 
+/// Сторінка — список книг серії.
+/// Підтримує початкові дані, підвантаження з API та візуальну нумерацію в карточках.
 class SeriesBooksListScreen extends StatefulWidget {
   final String title;
   final String seriesId;
   final List<Map<String, dynamic>>? initialBooks;
 
-  /// Кастомизация метки номера в карточке
+  /// Налаштування мітки номера в картці
   final NumberCorner numberCorner;
   final double numberOpacity;      // 0.0 - 1.0
-  final EdgeInsets numberPadding;  // отступ от краёв карточки
-  final double numberFontSize;     // размер цифры
+  final EdgeInsets numberPadding;  // відступ від країв картки
+  final double numberFontSize;     // розмір цифри
 
   const SeriesBooksListScreen({
     Key? key,
@@ -52,8 +54,8 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
         : _fetchBooks();
   }
 
+  /// Основний шлях: /series/{id}/books
   Future<List<Map<String, dynamic>>> _fetchBooks() async {
-    // Основной путь: /series/{id}/books
     try {
       final r = await ApiClient.i().get(
         '/series/${widget.seriesId}/books',
@@ -68,7 +70,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
       }
     } catch (_) {}
 
-    // Фолбэк: фильтр по серии в /abooks
+    // Альтернативний шлях: фільтр по серії в /abooks
     try {
       final r = await ApiClient.i().get(
         '/abooks',
@@ -99,7 +101,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
     await fut;
   }
 
-  // ---------- helpers ----------
+  // ---------- допоміжні функції ----------
 
   String? _cover(Map<String, dynamic> m) {
     final thumb = (m['thumb_url'] ?? m['thumbUrl'])?.toString();
@@ -200,9 +202,15 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
 
   void _onBottomTap(int i) {
     switch (i) {
-      case 0: _goToMain(0); break; // Жанри
-      case 1: _goToMain(1); break; // Каталог
-      case 2: _openPlayer(); break;
+      case 0:
+        _goToMain(0);
+        break; // Жанри
+      case 1:
+        _goToMain(1);
+        break; // Каталог
+      case 2:
+        _openPlayer();
+        break;
       case 3:
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -211,7 +219,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
     }
   }
 
-  // ---------- UI widgets ----------
+  // ---------- UI-помічники ----------
 
   Widget _chip(BuildContext context, String text, {IconData? icon}) {
     final t = Theme.of(context);
@@ -407,7 +415,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
                   ],
                 ),
               ),
-              _positionedNumber(context, n), // ← цифра в углу карточки
+              _positionedNumber(context, n), // цифра в кутку картки
             ],
           ),
         ),
@@ -415,7 +423,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
     );
   }
 
-  // ---------- build ----------
+  // ---------- UI ----------
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +470,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
                   const SizedBox(height: 12),
                   Center(
                     child: Text(
-                      'Книг у серії поки немає',
+                      'У серії поки що немає книг',
                       style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),

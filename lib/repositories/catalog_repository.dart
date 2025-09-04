@@ -11,18 +11,18 @@ import 'package:booka_app/core/network/json_parsers.dart';
 class CatalogRepository {
   const CatalogRepository();
 
-  /// Получить книги: парсинг в отдельном изоляте.
+  /// Отримати книги: парсинг в окремому ізоляті.
   Future<List<Book>> fetchBooks({Map<String, dynamic>? query}) async {
     final resp = await ApiClient.i().get(
       '/abooks',
       queryParameters: query,
       options: Options(
-        responseType: ResponseType.plain,             // ← важное изменение
+        responseType: ResponseType.plain,             // ← важлива зміна
         validateStatus: (s) => s != null && s < 500,
       ),
     );
     if (resp.statusCode != 200 || resp.data == null) return const <Book>[];
-    // resp.data — String, поэтому compute можно безопасно использовать
+    // resp.data — String, тому compute можна безпечно використовувати
     return compute(parseBooksFromString, resp.data as String);
   }
 

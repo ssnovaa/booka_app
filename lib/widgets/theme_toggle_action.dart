@@ -1,9 +1,9 @@
-// ПУТЬ: lib/widgets/theme_toggle_action.dart
+// lib/widgets/theme_toggle_action.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme_notifier.dart';
 
-/// Иконка-переключатель темы: Light → Dark → Auto → ...
+/// Іконка-перемикач теми: Light → Dark → Auto → ...
 class ThemeToggleAction extends StatelessWidget {
   const ThemeToggleAction({super.key});
 
@@ -11,7 +11,7 @@ class ThemeToggleAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeNotifier>();
 
-    // Иконки: light ☀️, dark 🌙, auto 🅰️
+    // Іконки: light ☀️, dark 🌙, auto 🅰️
     final icon = switch (theme.modeName) {
       'light' => Icons.light_mode,
       'dark'  => Icons.dark_mode,

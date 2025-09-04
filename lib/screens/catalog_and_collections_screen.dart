@@ -21,8 +21,8 @@ class _CatalogAndCollectionsScreenState
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  /// Централизованный хук для MainScreen:
-  /// если открыта «Серії» → переключаем на «Жанри» и возвращаем true.
+  /// Централізований хук для MainScreen:
+  /// якщо відкрита «Серії» → перемикаємо на «Жанри» і повертаємо true.
   bool handleBackAtRoot() {
     if (_tabController.index == 1) {
       _tabController.animateTo(0);
@@ -43,8 +43,8 @@ class _CatalogAndCollectionsScreenState
     super.dispose();
   }
 
-  /// «Как на профиле»: переключить нижний таб MainScreen.
-  /// Если MainScreen недоступен (экран открыт отдельно) — открыть MainScreen с нужной вкладкой.
+  /// «Як у профілі»: переключити нижній таб MainScreen.
+  /// Якщо MainScreen недоступний (екран відкрито окремо) — відкрити MainScreen з потрібною вкладкою.
   Future<void> _switchMainTab(int tab) async {
     final ms = MainScreen.of(context);
     if (ms != null) {
@@ -83,7 +83,7 @@ class _CatalogAndCollectionsScreenState
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Дочерний экран сможет «вернуться на главный каталог»
+          // Дочірній екран зможе «повернутися на головний каталог»
           GenresScreen(
             key: const PageStorageKey('genres_tab'),
             onReturnToMain: () => _switchMainTab(1),
@@ -252,8 +252,8 @@ class _SeriesTabState extends State<_SeriesTab> {
                     ),
                     child: Text(
                       'Серій поки немає',
-                      style:
-                      t.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: t.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -265,7 +265,8 @@ class _SeriesTabState extends State<_SeriesTab> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
@@ -277,7 +278,9 @@ class _SeriesTabState extends State<_SeriesTab> {
                         (context, i) {
                       final series = data[i];
                       final title =
-                      (series['title'] ?? series['name'] ?? '').toString().trim();
+                      (series['title'] ?? series['name'] ?? '')
+                          .toString()
+                          .trim();
                       final booksCount = (series['books_count'] ??
                           series['booksCount'] ??
                           (series['books'] is List
@@ -301,7 +304,8 @@ class _SeriesTabState extends State<_SeriesTab> {
                               child: SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
                               ),
                             );
                           },
@@ -329,8 +333,8 @@ class _SeriesTabState extends State<_SeriesTab> {
                               Text(
                                 'Книг: $booksCount',
                                 style: t.textTheme.bodySmall?.copyWith(
-                                  color:
-                                  t.textTheme.bodySmall?.color?.withOpacity(0.8),
+                                  color: t.textTheme.bodySmall?.color
+                                      ?.withOpacity(0.8),
                                 ),
                               ),
                             ],

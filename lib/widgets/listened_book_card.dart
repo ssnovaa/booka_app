@@ -1,16 +1,17 @@
-// ПУТЬ: lib/widgets/listened_book_card.dart
-
+// lib/widgets/listened_book_card.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../constants.dart'; // fullResourceUrl(...)
-import '../core/network/image_cache.dart'; // BookaImageCacheManager
+import '../constants.dart';
+import '../core/network/image_cache.dart';
 
+/// Компактна картка прослуханої книги.
+/// Підтримує як абсолютні URL, так і відносні шляхи, які конвертує через fullResourceUrl.
 class ListenedBookCard extends StatelessWidget {
   final Map<String, dynamic> book;
 
-  /// Абсолютный URL, если уже вычислен снаружи.
-  /// Если null — сам возьмём thumb_url -> cover_url из [book].
+  /// Абсолютний URL обкладинки, якщо вже обчислений зовні.
+  /// Якщо null — віджет сам спробує взяти thumb_url -> cover_url з [book].
   final String? coverUrl;
 
   const ListenedBookCard({
@@ -19,6 +20,8 @@ class ListenedBookCard extends StatelessWidget {
     this.coverUrl,
   }) : super(key: key);
 
+  /// Повертає thumb_url або cover_url з мапи книги.
+  /// Якщо шлях відносний — збирає абсолютний через fullResourceUrl('storage/...').
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> b) {
     String? pick(dynamic v) {
       if (v == null) return null;
@@ -32,21 +35,22 @@ class ListenedBookCard extends StatelessWidget {
 
     final lower = url.toLowerCase();
     if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return url; // уже абсолютный
+      return url;
     }
-    // относительный -> собрать абсолютный
+    // Відносний шлях -> зібрати абсолютний
     if (lower.startsWith('/storage/')) return fullResourceUrl(url.substring(1));
     if (lower.startsWith('storage/')) return fullResourceUrl(url);
     return fullResourceUrl('storage/$url');
   }
 
+  /// Отримує ім'я автора з варіантів полів у мапі.
   String _authorName(Map<String, dynamic> b) {
     final a = b['author'];
-    if (a is Map && a['name'] != null) return a['name'].toString();
+    if (a is Map && a['name'] != null) return a['name'].toString().trim();
     if (a is String && a.trim().isNotEmpty) return a.trim();
     final an = b['author_name']?.toString();
     if (an != null && an.trim().isNotEmpty) return an.trim();
-    return 'Неизвестно';
+    return 'Невідомо';
   }
 
   @override
@@ -54,7 +58,7 @@ class ListenedBookCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final String title = (book['title'] ?? 'Без названия').toString();
+    final String title = (book['title'] ?? 'Без назви').toString();
     final String author = _authorName(book);
     final String? rawUrl = coverUrl ?? _resolveThumbOrCoverUrl(book);
     final String? imageUrl =
@@ -94,11 +98,11 @@ class ListenedBookCard extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        // onTap: () { /* при необходимости: открыть детальную */ },
       ),
     );
   }
 
+  /// Плейсхолдер для мініатюри книги
   Widget _thumbPlaceholder(bool isDark) {
     return Container(
       width: 48,

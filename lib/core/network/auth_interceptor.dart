@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
 
 class AuthInterceptor extends Interceptor {
-  final Dio dio; // корневой Dio для ретрая
+  final Dio dio; // кореневий Dio для повторних запитів (retry)
   AuthInterceptor(this.dio);
 
   Completer<void>? _refreshing;
@@ -19,7 +19,7 @@ class AuthInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
     if (_isAuthRoute(options)) return handler.next(options);
 
-    // Если access истёк — попытаемся обновить заранее (ленивый preflight)
+    // Якщо access протермінований — спробуємо оновити заздалегідь (лінивий preflight)
     if (AuthStore.I.isAccessExpired && (AuthStore.I.refreshToken?.isNotEmpty ?? false)) {
       await _ensureRefreshed();
     }
@@ -49,7 +49,7 @@ class AuthInterceptor extends Interceptor {
           return handler.resolve(response);
         }
       } catch (_) {
-        // провал рефреша — падаем дальше
+        // помилка при refresh — падаємо далі
       }
     }
     handler.next(err);
@@ -76,7 +76,7 @@ class AuthInterceptor extends Interceptor {
       final resp = await dio.post(
         '/auth/refresh',
         data: {'refresh_token': rt},
-        options: Options(extra: {'skipAuth': true}), // важно: не добавлять старый access
+        options: Options(extra: {'skipAuth': true}), // важливо: не додавати старий access
       );
 
       final data = resp.data as Map<String, dynamic>;
@@ -92,14 +92,14 @@ class AuthInterceptor extends Interceptor {
 
       await AuthStore.I.save(
         access: newAccess,
-        refresh: newRefresh ?? rt, // сервер присылает ротацию — берём новый, иначе оставляем старый
+        refresh: newRefresh ?? rt, // сервер може присилати новий refresh — беремо його, інакше залишаємо старий
         accessExp: accessExp,
       );
       if (kDebugMode) {
         debugPrint('AuthInterceptor: token refreshed, exp=$accessExp');
       }
     } catch (e) {
-      // Рефреш не удался — чистим токены (оставим пользователя гостем)
+      // refresh не вдався — чистимо токени (користувач стає гостем)
       await AuthStore.I.clear();
       rethrow;
     }

@@ -14,13 +14,13 @@ class ApiClient {
   static late Dio _dio;
   static bool _initialized = false;
 
-  /// Хранилище кэша (экспортируем для ручной очистки/удаления).
+  /// Сховище кешу (експортуємо для ручного очищення/видалення).
   static late CacheStore cacheStore;
 
-  /// Путь к папке файлового кэша (для отладки).
+  /// Шлях до папки файлового кешу (для відладки).
   static String? cachePath;
 
-  /// Инициализация — вызвать в main() перед использованием ApiClient.i()
+  /// Ініціалізація — викликати в main() перед використанням ApiClient.i()
   static Future<void> init({
     Duration defaultMaxStale = const Duration(hours: 12),
   }) async {
@@ -37,7 +37,7 @@ class ApiClient {
 
     final dio = Dio(options);
 
-    // Файловый кэш (Android/iOS). Без MemCacheStore, чтобы избежать ошибки импорта.
+    // Файловий кеш (Android/iOS). Без MemCacheStore, щоб уникнути помилки імпорту.
     try {
       final tmpDir = await getTemporaryDirectory();
       final dirPath = p.join(tmpDir.path, 'dio_cache');
@@ -49,7 +49,7 @@ class ApiClient {
       cachePath = dirPath;
       if (kDebugMode) debugPrint('ApiClient: using FileCacheStore at $dirPath');
     } catch (e) {
-      // Фоллбек: используем системный temp; если и он упадёт — пробрасываем исключение.
+      // Фолбек: використовуємо системний temp; якщо і він упаде — пробросимо виняток.
       final altPath = p.join(Directory.systemTemp.path, 'dio_cache_fallback');
       final dir = Directory(altPath);
       if (!await dir.exists()) {
@@ -58,11 +58,11 @@ class ApiClient {
       cacheStore = FileCacheStore(altPath);
       cachePath = altPath;
       if (kDebugMode) {
-        debugPrint('ApiClient: FileCacheStore fallback at $altPath. Reason: $e');
+        debugPrint('ApiClient: FileCacheStore fallback at $altPath. Причина: $e');
       }
     }
 
-    // Глобальные опции кэша для всех запросов (если не переопределить per-request).
+    // Глобальні опції кешу для всіх запитів (якщо не перевизначити per-request).
     final defaultCacheOptions = CacheOptions(
       store: cacheStore,
       policy: CachePolicy.request,
@@ -75,10 +75,10 @@ class ApiClient {
 
     dio.interceptors.add(DioCacheInterceptor(options: defaultCacheOptions));
 
-    // ⚠️ Нет ручного Authorization-интерцептора.
-    // Актуальная авторизация добавляется через AuthInterceptor (см. EntryScreen).
+    // ⚠️ Немає ручного Authorization-інтерсептора.
+    // Актуальна авторизація додається через AuthInterceptor (див. EntryScreen).
 
-    // Простой retry для GET (при 502/503/504).
+    // Простий retry для GET (при 502/503/504).
     dio.interceptors.add(
       InterceptorsWrapper(
         onError: (err, handler) async {
@@ -97,7 +97,7 @@ class ApiClient {
       ),
     );
 
-    // Debug-логи с пометкой HIT/MISS.
+    // Debug-логи з позначкою HIT/MISS.
     if (kDebugMode) {
       dio.interceptors.add(
         InterceptorsWrapper(
@@ -125,12 +125,12 @@ class ApiClient {
 
   static Dio i() {
     if (!_initialized) {
-      throw StateError('ApiClient not initialized. Call ApiClient.init() in main() before using.');
+      throw StateError('ApiClient не ініціалізований. Викличте ApiClient.init() у main() перед використанням.');
     }
     return _dio;
   }
 
-  /// Per-request CacheOptions (можно передавать через `.toOptions()` в Dio).
+  /// Per-request CacheOptions (можна передавати через `.toOptions()` у Dio).
   static CacheOptions cacheOptions({
     CachePolicy policy = CachePolicy.request,
     Duration? maxStale,
@@ -150,12 +150,12 @@ class ApiClient {
     );
   }
 
-  /// Очистить весь кэш.
+  /// Очистити весь кеш.
   static Future<void> clearAllCache() async {
     await cacheStore.clean();
   }
 
-  /// Удалить кэш конкретного запроса по path+queryParams.
+  /// Видалити кеш конкретного запиту по path+queryParams.
   static Future<void> deleteCacheFor(
       String path, {
         Map<String, dynamic>? queryParameters,
@@ -176,19 +176,19 @@ class ApiClient {
     await cacheStore.delete(cacheKey);
   }
 
-  /// ===== Отладочные утилиты для проверки кэша =====
+  /// ===== Відлагоджувальні утиліти для перевірки кешу =====
 
-  /// true, если ответ пришёл из кэша (а не из сети).
+  /// true, якщо відповідь прийшла з кешу (а не з мережі).
   static bool wasFromCache(Response r) {
     final fromNetwork = r.extra[extraFromNetworkKey] == true; // '@fromNetwork@'
     final hasKey = r.extra[extraCacheKey] != null;            // '@cache_key@'
     return hasKey && !fromNetwork;
   }
 
-  /// Возвращает строку-пометку 'HIT(cache)' / 'MISS(net)'.
+  /// Повертає рядок-позначку 'HIT(cache)' / 'MISS(net)'.
   static String cacheMark(Response r) => wasFromCache(r) ? 'HIT(cache)' : 'MISS(net)';
 
-  /// Печать информации о папке кэша (кол-во файлов и размер).
+  /// Друк інформації про папку кешу (кількість файлів і розмір).
   static Future<void> debugPrintCacheDirInfo() async {
     if (cachePath == null) {
       debugPrint('Cache dir is null.');

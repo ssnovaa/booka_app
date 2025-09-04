@@ -1,4 +1,3 @@
-// lib/widgets/current_listen_card.dart
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -9,8 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 
 import 'package:booka_app/providers/audio_player_provider.dart';
-import 'package:booka_app/constants.dart'; // fullResourceUrl()
-import 'package:booka_app/core/network/api_client.dart'; // 🔁 для дозагрузки обложки
+import 'package:booka_app/constants.dart';
+import 'package:booka_app/core/network/api_client.dart';
 
 class CurrentListenCard extends StatefulWidget {
   const CurrentListenCard({
@@ -18,26 +17,21 @@ class CurrentListenCard extends StatefulWidget {
     this.onContinue,
     this.margin,
     this.height,
-    this.widthFactor = 0.90, // −10% ширины
-    this.autoHydrate = true, // 🔄 подтянуть прогресс с сервера при монтировании
+    this.widthFactor = 0.90,
+    this.autoHydrate = true,
   }) : super(key: key);
 
   final VoidCallback? onContinue;
   final EdgeInsetsGeometry? margin;
   final double? height;
-
-  /// Доля ширины родителя
   final double widthFactor;
-
-  /// Автоматически вызвать hydrateFromServerIfAvailable() на старте
   final bool autoHydrate;
 
   static const double _kRadius = 14.0;
-  static const Color _kBlue100 = Color(0xFFBBDEFB); // светлая тема
-  static const Color _kPlayYellow = Color(0xFFFFF59D); // фон кнопки как у Play
+  static const Color _kBlue100 = Color(0xFFBBDEFB);
+  static const Color _kPlayYellow = Color(0xFFFFF59D);
   static const double _kTileHeight = 112.0;
 
-  // ключ prefs, где провайдер хранит last session
   static const String _kCurrentListenKey = 'current_listen';
 
   @override
@@ -46,8 +40,6 @@ class CurrentListenCard extends StatefulWidget {
 
 class _CurrentListenCardState extends State<CurrentListenCard> {
   bool _hydrating = false;
-
-  // 🔽 локальный кэш для дозагруженной обложки
   String? _remoteCoverUrl;
   int? _coverForBookId;
   bool _loadingCover = false;
@@ -70,7 +62,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
     }
   }
 
-  /// Если у текущей книги нет обложки — дотягиваем из `/abooks/{id}` и сохраняем в стейт.
   Future<void> _ensureCoverLoaded(int bookId) async {
     if (_loadingCover) return;
     if (_coverForBookId == bookId && _remoteCoverUrl != null) return;
@@ -94,14 +85,11 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
         }
       }
     } catch (_) {
-      // тихо игнорируем — останется плейсхолдер
     } finally {
       _loadingCover = false;
     }
   }
 
-  /// Читает из SharedPreferences последнюю сохранённую позицию,
-  /// при желании сверяя, что это та же книга (по id).
   static Future<int?> _loadSavedPosition({int? expectBookId}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -132,7 +120,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
         final chapter = p.currentChapter;
         if (book == null || chapter == null) return const SizedBox.shrink();
 
-        // сбросить локальный кэш, если книга поменялась
         if (_coverForBookId != book.id) {
           _remoteCoverUrl = null;
           _coverForBookId = null;
@@ -140,10 +127,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
 
         final theme = Theme.of(context);
 
-        // 1) пытаемся из book
         String? coverUrl = _resolveThumbOrCoverUrl(book.toJson());
 
-        // 2) иначе из chapter.book (иногда там есть обложка)
         if (coverUrl == null || coverUrl.isEmpty) {
           final chBookMap = (chapter.book is Map)
               ? Map<String, dynamic>.from(chapter.book!)
@@ -151,26 +136,20 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
           coverUrl = _resolveThumbOrCoverUrl(chBookMap);
         }
 
-        // 3) иначе — дозагружаем с API и используем локальный кэш
         if ((coverUrl == null || coverUrl.isEmpty) && _remoteCoverUrl == null) {
-          // запрашиваем вне build-цикла
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _ensureCoverLoaded(book.id);
           });
         }
         coverUrl ??= _remoteCoverUrl;
 
-        // 🎨 Автовыбор фона по теме
         final bool isDark = theme.brightness == Brightness.dark;
         final Color cardBg =
         isDark ? theme.colorScheme.surfaceVariant.withOpacity(0.24) : CurrentListenCard._kBlue100;
 
         final double tileHeight = widget.height ?? CurrentListenCard._kTileHeight;
-        final double coverWidth = tileHeight * 3 / 4; // 3:4
+        final double coverWidth = tileHeight * 3 / 4;
 
-        // Если плеер ещё не играет и провайдерская позиция == 0,
-        // подхватываем сохранённую позицию из SharedPreferences,
-        // чтобы карточка не показывала "00:00" до нажатия Play.
         final bool needFallback = !p.isPlaying && p.position.inSeconds == 0;
 
         return FutureBuilder<int?>(
@@ -179,18 +158,15 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
             final int rawPos =
             (p.position.inSeconds > 0) ? p.position.inSeconds : (snap.data ?? 0);
 
-            // 1) Длительность: сначала из плеера, если нет — из модели главы
             final int durationSec =
             (p.duration.inSeconds > 0) ? p.duration.inSeconds : (chapter.duration ?? 0);
 
-            // 2) Позиция
             final int positionSec = (durationSec > 0) ? rawPos.clamp(0, durationSec) : rawPos;
 
-            // 3) Прогресс: determinate если знаем длительность; иначе — indeterminate
             final double? progressValue =
             (durationSec > 0) ? (positionSec / durationSec).clamp(0.0, 1.0) : null;
 
-            final bool isThisBookPlaying = p.isPlaying; // эта карточка всегда показывает текущую
+            final bool isThisBookPlaying = p.isPlaying;
 
             return FractionallySizedBox(
               widthFactor: widget.widthFactor,
@@ -217,7 +193,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                       height: tileHeight,
                       child: Row(
                         children: [
-                          // ===== Обложка по всей высоте карточки =====
                           ClipRRect(
                             borderRadius: const BorderRadius.only(
                               topLeft: Radius.circular(CurrentListenCard._kRadius),
@@ -230,16 +205,12 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                               playing: isThisBookPlaying,
                             ),
                           ),
-
-                          // ===== Контент =====
                           Expanded(
                             child: Padding(
-                              // компактно, без переполнений
                               padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Заголовок
                                   Text(
                                     book.title,
                                     maxLines: 1,
@@ -250,10 +221,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-
-                                  // Подзаголовок: глава + время
                                   Text(
-                                    'Глава ${chapter.order ?? chapter.id} · '
+                                    'Розділ ${chapter.order ?? chapter.id} · '
                                         '${_fmt(Duration(seconds: positionSec))} / '
                                         '${durationSec > 0 ? _fmt(Duration(seconds: durationSec)) : '—:—'}'
                                         '${_hydrating ? '  ·  оновлення…' : ''}',
@@ -264,8 +233,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-
-                                  // Прогресс: determinate, если знаем длительность; иначе — indeterminate
                                   SizedBox(
                                     height: 3,
                                     child: LinearProgressIndicator(
@@ -274,10 +241,7 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                       theme.colorScheme.surfaceVariant.withOpacity(0.5),
                                     ),
                                   ),
-
                                   const Spacer(),
-
-                                  // Кнопка справа: текст "Перейти" ↔ эквалайзер
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: ConstrainedBox(
@@ -306,13 +270,14 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                           duration: const Duration(milliseconds: 180),
                                           switchInCurve: Curves.easeOut,
                                           switchOutCurve: Curves.easeIn,
-                                          layoutBuilder: (currentChild, previousChildren) => Stack(
-                                            alignment: Alignment.center,
-                                            children: <Widget>[
-                                              ...previousChildren,
-                                              if (currentChild != null) currentChild,
-                                            ],
-                                          ),
+                                          layoutBuilder: (currentChild, previousChildren) =>
+                                              Stack(
+                                                alignment: Alignment.center,
+                                                children: <Widget>[
+                                                  ...previousChildren,
+                                                  if (currentChild != null) currentChild,
+                                                ],
+                                              ),
                                           child: isThisBookPlaying
                                               ? const SizedBox(
                                             key: ValueKey('eq'),
@@ -332,7 +297,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                               SizedBox(width: 6),
                                               Text(
                                                 'Перейти',
-                                                style: TextStyle(fontWeight: FontWeight.w600),
+                                                style:
+                                                TextStyle(fontWeight: FontWeight.w600),
                                               ),
                                             ],
                                           ),
@@ -357,15 +323,12 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
     );
   }
 
-  /// Преобразует относительные пути из сайта в абсолютные URL.
-  /// Приоритет: thumb_url → cover_url → cover.
   static String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     String? _pick(dynamic v) {
       if (v == null) return null;
       final s = v.toString().trim();
       if (s.isEmpty) return null;
       if (s.startsWith('http')) return s;
-      // относительный путь → нормализуем под /storage
       final path = s.startsWith('storage/')
           ? s
           : (s.startsWith('/storage/') ? s.substring(1) : 'storage/$s');
@@ -376,7 +339,7 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
     final t2 = _pick(book['thumbUrl']);
     final c1 = _pick(book['cover_url']);
     final c2 = _pick(book['coverUrl']);
-    final c3 = _pick(book['cover']); // fallback
+    final c3 = _pick(book['cover']);
 
     return t1 ?? t2 ?? c1 ?? c2 ?? c3;
   }
@@ -447,7 +410,6 @@ class _CoverCompact extends StatelessWidget {
   }
 }
 
-/// Приватный мини-эквалайзер без зависимостей.
 class _EqualizerIndicator extends StatefulWidget {
   const _EqualizerIndicator({
     Key? key,
@@ -492,11 +454,11 @@ class _EqualizerIndicatorState extends State<_EqualizerIndicator>
         widget.color ?? DefaultTextStyle.of(context).style.color ?? Colors.black87;
 
     return Semantics(
-      label: 'Playing',
+      label: 'Відтворюється',
       child: AnimatedBuilder(
         animation: _c,
         builder: (_, __) {
-          final t = _c.value; // 0..1
+          final t = _c.value;
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(widget.bars, (i) {

@@ -1,4 +1,4 @@
-// ПУТЬ: lib/screens/catalog_and_collections_screen.dart
+// ШЛЯХ: lib/screens/catalog_and_collections_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // для BackButtonListener
@@ -32,21 +32,21 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
     super.dispose();
   }
 
-  /// Универсальный обработчик «Назад» для этого экрана.
-  /// Возвращает true, если событие обработано здесь (Navigator не трогаем).
+  /// Універсальний обробник «Назад» для цього екрана.
+  /// Повертає true, якщо подію оброблено тут (Navigator не чіпаємо).
   bool _handleBackHere() {
     debugPrint('[BACK][CAC] tapped. tabIndex=${_tabController.index}');
 
-    // Если мы на «Серії» (index == 1) — вернуться на «Жанри» (index == 0)
+    // Якщо ми на «Серії» (index == 1) — повернутися на «Жанри» (index == 0)
     if (_tabController.index == 1) {
       _tabController.animateTo(0);
       debugPrint('[BACK][CAC] Switched Series -> Genres');
-      // Визуально покажем, что перехватили назад
+      // Візуально покажемо, що перехопили «назад»
       _showHint('Повернення: Серії → Жанри');
       return true;
     }
 
-    // Мы на «Жанри»: попросим MainScreen переключиться на таб каталога (index 1)
+    // Ми на «Жанри»: попросимо MainScreen переключитися на таб каталогу (index 1)
     final main = MainScreen.of(context);
     if (main != null) {
       main.setTab(1);
@@ -55,14 +55,14 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
       return true;
     }
 
-    // Если MainScreen не найден (не должно быть в обычном потоке),
-    // вернём false, чтобы решить дальше на уровне навигатора.
+    // Якщо MainScreen не знайдено (не повинно бути у звичайному потоці),
+    // повернемо false, щоб вирішити далі на рівні навігатора.
     debugPrint('[BACK][CAC] MainScreen.of(context) == null (not handled here)');
     return false;
   }
 
   void _showHint(String msg) {
-    // короткий snackbar, чтобы было видно «куда повело»
+    // короткий snackbar, щоб було видно «куди повело»
     final sm = ScaffoldMessenger.maybeOf(context);
     if (sm != null) {
       sm.hideCurrentSnackBar();
@@ -81,8 +81,8 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
 
     return BackButtonListener(
       onBackButtonPressed: () {
-        // ВАЖНО: этот колбэк вызывается ДО Navigator.pop().
-        // Если вернём true — событие «съедено», приложение не закроется.
+        // ВАЖЛИВО: цей колбек викликається ДО Navigator.pop().
+        // Якщо повернемо true — подію «зʼїдено», застосунок не закриється.
         final handled = _handleBackHere();
         return handled;
       },

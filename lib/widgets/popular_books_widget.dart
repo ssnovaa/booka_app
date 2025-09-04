@@ -1,4 +1,4 @@
-// ПУТЬ: lib/widgets/popular_books_widget.dart
+// lib/widgets/popular_books_widget.dart
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,14 +8,16 @@ import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 import '../core/network/image_cache.dart'; // BookaImageCacheManager
 
+/// Віджет «Найпопулярніші книги» — показує карусель зі слайдами по 3 елементи.
 class PopularBooksWidget extends StatelessWidget {
   final List<Book> books;
 
   const PopularBooksWidget({Key? key, required this.books}) : super(key: key);
 
+  /// Повертає популярні книги.
+  /// Зараз просто перші 6; за потреби змініть логіку/сортування.
   List<Book> getPopularBooks() {
     if (books.isEmpty) return [];
-    // Просто первые 6 (или подправь сортировку под себя)
     return List<Book>.from(books).take(6).toList();
   }
 
@@ -36,7 +38,7 @@ class PopularBooksWidget extends StatelessWidget {
       );
     }
 
-    // Контрастный заголовок для лайт/дарк тем
+    // Контрастний заголовок, коректний у світлій/темній темі
     final baseTitle = Theme.of(context).textTheme.titleLarge ??
         const TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
     final titleStyle = GoogleFonts.pangolin(textStyle: baseTitle).copyWith(
@@ -46,7 +48,7 @@ class PopularBooksWidget extends StatelessWidget {
     );
 
     return Card(
-      elevation: 0, // строже — без тени
+      elevation: 0, // строго — без тіні
       margin: const EdgeInsets.symmetric(vertical: 2),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       color: Theme.of(context).cardColor,
@@ -55,13 +57,13 @@ class PopularBooksWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Заголовок секции
+            // Заголовок секції
             Padding(
               padding: const EdgeInsets.only(bottom: 4, left: 10),
               child: Text('Найпопулярніші', style: titleStyle),
             ),
 
-            // Карусель
+            // Карусель зі слайдами по 3 елементи
             SizedBox(
               height: 164,
               child: PageView.builder(
@@ -73,7 +75,7 @@ class PopularBooksWidget extends StatelessWidget {
                     children: List.generate(3, (i) {
                       if (i < slide.length) {
                         final book = slide[i];
-                        final imageUrl = book.displayCoverUrl; // thumb с фолбэком на cover
+                        final imageUrl = (book.displayCoverUrl ?? '').trim();
 
                         return Flexible(
                           child: GestureDetector(
@@ -90,7 +92,7 @@ class PopularBooksWidget extends StatelessWidget {
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(10),
-                                // строгая рамка вместо тени
+                                // строга рамка замість тіні (при бажанні розкоментуй)
                                 // border: Border.all(color: cs.outline, width: 1),
                                 color: cs.surfaceVariant.withOpacity(0.35),
                               ),
@@ -109,6 +111,7 @@ class PopularBooksWidget extends StatelessWidget {
                           ),
                         );
                       } else {
+                        // Порожній слот для вирівнювання
                         return const Flexible(child: SizedBox());
                       }
                     }),

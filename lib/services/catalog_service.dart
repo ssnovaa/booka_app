@@ -8,15 +8,15 @@ import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/genre.dart';
 import 'package:booka_app/models/author.dart';
 
-/// Сервис каталога — использует ApiClient (Dio + кэш)
+/// Сервіс каталогу — використовує ApiClient (Dio + кеш).
 class CatalogService {
-  /// Получить список книг с поддержкой per-request кэша и парсингом в isolate.
+  /// Отримати список книг з підтримкою per-request кешу та парсингом в isolate.
   ///
-  /// Параметры:
-  /// - search, genre, author, page, perPage — как обычно
-  /// - forceCache: если true — сначала попробуем отдать данные из кэша (CachePolicy.forceCache).
-  ///               полезно для мгновенного отображения UI; затем можно вручную вызвать fetchBooks(refresh: true)
-  /// - cacheMaxStale: время жизни кэша (по умолчанию 6 часов)
+  /// Параметри:
+  /// - search, genre, author, page, perPage — як зазвичай
+  /// - forceCache: якщо true — спочатку намагаємось віддати дані з кешу (CachePolicy.forceCache).
+  ///               Це корисно для миттєвого відображення UI; потім можна вручну викликати fetchBooks(refresh: true)
+  /// - cacheMaxStale: час життя кешу (за замовчуванням 6 годин)
   static Future<List<Book>> fetchBooks({
     String? search,
     Genre? genre,
@@ -48,20 +48,20 @@ class CatalogService {
       );
 
       if (r.statusCode == 200) {
-        // Парсинг в isolate, чтобы не блокировать главный поток при больших ответах
+        // Парсинг у isolate, щоб не блокувати головний потік при великих відповідях
         final parsed = await compute(_parseBooksPayload, r.data);
         return parsed;
       }
 
-      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
     } catch (e) {
-      throw AppNetworkException('Parsing error: $e');
+      throw AppNetworkException('Помилка парсингу: $e');
     }
   }
 
-  /// Быстрый "refresh" — запрос без использования кэша (обновляет кэш на серверный ответ)
+  /// Швидкий "refresh" — запит без використання кеша (оновлює кеш на серверну відповідь)
   static Future<List<Book>> fetchBooksRefresh({
     String? search,
     Genre? genre,
@@ -79,7 +79,7 @@ class CatalogService {
         cacheMaxStale: const Duration(hours: 0),
       );
 
-  /// Жёсткая проверка/игнор кэша (noCache)
+  /// Жорстке ігнорування кеша (noCache)
   static Future<List<Book>> fetchBooksNoCache({
     String? search,
     Genre? genre,
@@ -113,15 +113,15 @@ class CatalogService {
         return parsed;
       }
 
-      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
     } catch (e) {
-      throw AppNetworkException('Parsing error: $e');
+      throw AppNetworkException('Помилка парсингу: $e');
     }
   }
 
-  /// Получить список жанров (кэшируем дольше — 24 часа)
+  /// Отримати список жанрів (кешуємо довше — 24 години)
   static Future<List<Genre>> fetchGenres({Duration? cacheMaxStale}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
@@ -140,13 +140,13 @@ class CatalogService {
             : []);
         return raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
       }
-      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
     }
   }
 
-  /// Получить список авторов (кэш 24 часа)
+  /// Отримати список авторів (кеш 24 години)
   static Future<List<Author>> fetchAuthors({Duration? cacheMaxStale}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
@@ -165,28 +165,35 @@ class CatalogService {
             : []);
         return raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
       }
-      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
     }
   }
 
-  /// Получить одну книгу (кэш по умолчанию request)
+  /// Отримати одну книгу (кеш за замовчуванням request)
   static Future<Book> fetchBook(String id, {Duration? cacheMaxStale}) async {
     try {
-      final cacheOpts = ApiClient.cacheOptions(policy: CachePolicy.request, maxStale: cacheMaxStale ?? const Duration(hours: 12));
+      final cacheOpts = ApiClient.cacheOptions(
+          policy: CachePolicy.request, maxStale: cacheMaxStale ?? const Duration(hours: 12));
       final r = await ApiClient.i().get('/books/$id', options: cacheOpts.toOptions());
       if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
         return Book.fromJson(r.data as Map<String, dynamic>);
       }
-      throw AppNetworkException('Unexpected response', statusCode: r.statusCode);
+      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Network error', statusCode: e.response?.statusCode);
+      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
     }
   }
 
-  /// Удалить кэш конкретного запроса (по пути и query params)
-  static Future<void> deleteCacheForBooks({String? search, Genre? genre, Author? author, int page = 1, int perPage = 20}) async {
+  /// Видалити кеш для конкретного запиту (шлях + query params)
+  static Future<void> deleteCacheForBooks({
+    String? search,
+    Genre? genre,
+    Author? author,
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final qp = <String, dynamic>{
       if (search != null && search.isNotEmpty) 'search': search,
       if (genre != null) 'genre_id': genre.id,
@@ -197,13 +204,13 @@ class CatalogService {
     await ApiClient.deleteCacheFor('/books', queryParameters: qp);
   }
 
-  /// Очистить весь кэш каталога (весь store)
+  /// Очистити увесь кеш каталогу (весь store)
   static Future<void> clearAllCache() async {
     await ApiClient.clearAllCache();
   }
 }
 
-/// PARSING UTIL — вызывается в isolate (compute)
+/// PARSING UTIL — викликається в isolate (compute)
 List<Book> _parseBooksPayload(dynamic raw) {
   final List<dynamic> items;
   if (raw is List) {

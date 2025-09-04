@@ -1,4 +1,4 @@
-// ПУТЬ: lib/models/book.dart
+// ШЛЯХ: lib/models/book.dart
 
 class Book {
   final int id;
@@ -7,25 +7,25 @@ class Book {
   final String? reader;
   final String? description;
 
-  /// Полный URL обложки (может отсутствовать)
+  /// Повний URL обкладинки (може бути відсутній).
   final String? coverUrl;
 
-  /// Миниатюра (может отсутствовать). При наличии используем её в карточках.
+  /// Мініатюра (може бути відсутня). Якщо є — використовуємо її в картках.
   final String? thumbUrl;
 
-  /// ВАЖНО: у тебя duration — всегда String (оставляем так)
+  /// ВАЖЛИВО: duration завжди приходить як String (залишаємо так).
   final String duration;
 
-  /// Жанры приводим к List<String>
+  /// Жанри приводимо до List<String>.
   final List<String> genres;
 
   final String? series;
 
-  /// Быстрый признак: используется ли миниатюра
+  /// Швидка ознака: чи використовується мініатюра.
   bool get isThumbUsed => (thumbUrl ?? '').trim().isNotEmpty;
 
-  /// Единая точка доступа к изображению: отдаёт thumbUrl, если есть,
-  /// иначе coverUrl, иначе пустую строку.
+  /// Єдина точка доступу до зображення: повертає thumbUrl, якщо є,
+  /// інакше coverUrl, інакше порожній рядок.
   String get displayCoverUrl {
     final t = (thumbUrl ?? '').trim();
     if (t.isNotEmpty) return t;
@@ -50,7 +50,7 @@ class Book {
   });
 
   factory Book.fromJson(Map<String, dynamic> json) {
-    // --- Универсальный парсинг genres ---
+    // --- Універсальний парсинг genres ---
     List<String> parsedGenres = [];
     final genresJson = json['genres'];
     if (genresJson is List) {
@@ -62,7 +62,7 @@ class Book {
       }).toList();
     }
 
-    // --- Универсальный парсинг series (строка или объект) ---
+    // --- Універсальний парсинг series (рядок або обʼєкт) ---
     String? parsedSeries;
     if (json['series'] is Map && json['series']?['name'] != null) {
       parsedSeries = json['series']?['name'].toString();
@@ -77,7 +77,7 @@ class Book {
       reader: json['reader']?.toString(),
       description: json['description']?.toString(),
       coverUrl: json['cover_url']?.toString(),
-      thumbUrl: json['thumb_url']?.toString(), // ← миниатюра
+      thumbUrl: json['thumb_url']?.toString(), // ← мініатюра
       duration: json['duration']?.toString() ?? '',
       genres: parsedGenres,
       series: parsedSeries,

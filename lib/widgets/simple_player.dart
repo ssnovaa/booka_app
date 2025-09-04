@@ -8,6 +8,8 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/models/user.dart';
 
+/// Простий плеєр — список розділів + базове керування відтворенням.
+/// Тексти інтерфейсу та коментарі українською.
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
   final String author;
@@ -15,7 +17,7 @@ class SimplePlayer extends StatefulWidget {
   final int? selectedChapterId;
   final Function(Chapter) onChapterSelected;
   final Chapter? initialChapter;
-  final int? initialPosition; // секунды
+  final int? initialPosition; // секунди
 
   const SimplePlayer({
     super.key,
@@ -36,7 +38,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
   bool _didSeek = false;
 
-  double? _dragValueSecs; // временное значение слайдера во время перетягивания
+  double? _dragValueSecs; // тимчасове значення слайдера під час перетягування
 
   @override
   void initState() {
@@ -48,7 +50,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Хук по окончанию 1-й главы для гостя
+    // Колбек на завершення першого розділу для гостя
     final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
     audioProvider.onGuestFirstChapterEnd = () {
       final user = Provider.of<UserNotifier>(context, listen: false).user;
@@ -56,29 +58,32 @@ class _SimplePlayerState extends State<SimplePlayer> {
       if (userType == UserType.guest && !_showedEndDialog) {
         _showedEndDialog = true;
         Future.microtask(() {
-          showDialog(context: context, useRootNavigator: true, builder: (ctx) => AlertDialog(
-            title: const Text('Доступ ограничен'),
-            content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Отмена'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
+          showDialog(
+            context: context,
+            useRootNavigator: true,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Доступ обмежено'),
+              content: const Text('Увійдіть, щоб отримати доступ до інших розділів.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Скасувати'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      Navigator.of(ctx, rootNavigator: true).push(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        Navigator.of(ctx, rootNavigator: true).push(
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        );
+                      });
                     });
-                  });
-                },
-                child: const Text('Войти'),
-              ),
-            ],
-          ),
+                  },
+                  child: const Text('Увійти'),
+                ),
+              ],
+            ),
           );
         });
       }
@@ -92,10 +97,10 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   Future<void> _maybeSeekToInitial() async {
-    // Один раз переводим на стартовую позицию, если задана
+    // Один раз перемістимо позицію на початкову, якщо вона задана
     if (!_didSeek && widget.initialPosition != null) {
       final provider = context.read<AudioPlayerProvider>();
-      // дать источнику подготовиться
+      // даємо джерелу трохи часу на підготовку
       await Future.delayed(const Duration(milliseconds: 400));
       await provider.seek(Duration(seconds: widget.initialPosition!), persist: false);
       _didSeek = true;
@@ -103,7 +108,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   void _resetDialogStateIfReplayed() {
-    // Сброс флага при старте первой главы заново
+    // Скидаємо флаг діалогу при повторному запуску першої глави
     final audioProvider = context.read<AudioPlayerProvider>();
     final user = Provider.of<UserNotifier>(context, listen: false).user;
     final userType = getUserType(user);
@@ -130,7 +135,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
     if (target < Duration.zero) target = Duration.zero;
     if (dur > Duration.zero && target > dur) target = dur;
 
-    await provider.seek(target); // через провайдер — с сохранением/пушем
+    await provider.seek(target); // через провайдер — зберігаємо/синхронізуємо
   }
 
   void _nextChapter(BuildContext context, UserType userType) {
@@ -165,37 +170,40 @@ class _SimplePlayerState extends State<SimplePlayer> {
         _showAuthDialog(context);
       }
     } else {
-      // Если уже первая — просто в начало
+      // Якщо вже перша — переміститись на початок
       provider.seek(const Duration(seconds: 0));
     }
   }
 
   void _showAuthDialog(BuildContext context) {
-    showDialog(context: context, useRootNavigator: true, builder: (ctx) {
-      return AlertDialog(
-        title: const Text('Доступ ограничен'),
-        content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              WidgetsBinding.instance.addPostFrameCallback((_) {
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Доступ обмежено'),
+          content: const Text('Увійдіть, щоб отримати доступ до інших розділів.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Скасувати'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  Navigator.of(ctx, rootNavigator: true).push(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  );
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Navigator.of(ctx, rootNavigator: true).push(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  });
                 });
-              });
-            },
-            child: const Text('Войти'),
-          ),
-        ],
-      );
-    },
+              },
+              child: const Text('Увійти'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -214,7 +222,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final position = provider.position;
     final duration = provider.duration;
 
-    // Значение слайдера: показываем "временное" во время драга
+    // Значення слайдера: показуємо тимчасове під час перетягування
     final double sliderMax =
     duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0;
     final double rawValue = (_dragValueSecs ?? position.inSeconds.toDouble());
@@ -225,7 +233,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
     );
 
     return Material(
-      color: Colors.transparent, // нет чёрного фона
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -263,7 +271,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
-              // Слайдер
+              // Слайдер позиції
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
@@ -284,7 +292,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                 ),
               ),
 
-              // Тайминги
+              // Таймінги
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
@@ -298,28 +306,27 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 8),
 
-              // Кнопки управления (скорость перенесена в самое начало)
+              // Кнопки керування
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // ← скорость здесь
+                  // Кнопка зміни швидкості
                   const _SpeedButton(),
 
                   IconButton(
-                    tooltip: 'Предыдущая глава',
+                    tooltip: 'Попередній розділ',
                     onPressed: () => _previousChapter(context, userType),
                     icon: const Icon(Icons.skip_previous_rounded, size: 30),
                   ),
                   IconButton(
-                    tooltip: '-15 сек',
+                    tooltip: '-15 с',
                     onPressed: () => _skipSeconds(context, -15),
-                    // Иконки 15с в Material нет — используем 10с-вариант
                     icon: const Icon(Icons.replay_10_rounded, size: 28),
                   ),
 
                   // Play / Pause
                   Semantics(
-                    label: provider.isPlaying ? 'Пауза' : 'Воспроизвести',
+                    label: provider.isPlaying ? 'Пауза' : 'Відтворити',
                     button: true,
                     child: _RoundPlayButton(
                       size: 64,
@@ -329,13 +336,12 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   ),
 
                   IconButton(
-                    tooltip: '+15 сек',
+                    tooltip: '+15 с',
                     onPressed: () => _skipSeconds(context, 15),
-                    // Иконки 15с в Material нет — используем 10с-вариант
                     icon: const Icon(Icons.forward_10_rounded, size: 28),
                   ),
                   IconButton(
-                    tooltip: 'Следующая глава',
+                    tooltip: 'Наступний розділ',
                     onPressed: () => _nextChapter(context, userType),
                     icon: const Icon(Icons.skip_next_rounded, size: 30),
                   ),
@@ -344,7 +350,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
-              // Баннер для free (весь каталог доступен, но с рекламой)
+              // Банер для free (каталог доступний, але з рекламою)
               if (userType == UserType.free)
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -360,7 +366,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "Реклама: купите подписку и слушайте без рекламы!",
+                          "Реклама: придбайте підписку та слухайте без реклами!",
                           style: theme.textTheme.bodySmall,
                         ),
                       ),
@@ -372,11 +378,11 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Выберите главу', style: theme.textTheme.titleSmall),
+                child: Text('Оберіть розділ', style: theme.textTheme.titleSmall),
               ),
               const SizedBox(height: 8),
 
-              // Список глав
+              // Список розділів
               Expanded(
                 child: ListView.builder(
                   itemCount: widget.chapters.length,
@@ -398,9 +404,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                         style: TextStyle(
                           color: isSelected
                               ? cs.primary
-                              : (isAvailable
-                              ? cs.onSurface
-                              : cs.onSurface.withOpacity(0.35)),
+                              : (isAvailable ? cs.onSurface : cs.onSurface.withOpacity(0.35)),
                           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                         ),
                       ),
@@ -432,7 +436,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 }
 
-/// Кнопка скорости с текущим значением (1×, 1.25× ...).
+/// Кнопка швидкості з поточним значенням (1×, 1.25× ...).
 class _SpeedButton extends StatelessWidget {
   const _SpeedButton();
 
@@ -442,7 +446,7 @@ class _SpeedButton extends StatelessWidget {
     final audio = context.read<AudioPlayerProvider>();
 
     return StreamBuilder<double>(
-      // just_audio: speedStream есть у player
+      // just_audio: speedStream є у player
       stream: audio.player.speedStream,
       initialData: audio.player.speed,
       builder: (context, snap) {
@@ -470,7 +474,7 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-/// Круглая кнопка play/pause «как в нижнем баре», c градиентным кольцом.
+/// Кругла кнопка play/pause з градієнтним кільцем.
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
@@ -517,7 +521,7 @@ class _RoundPlayButton extends StatelessWidget {
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: iconSize, color: Color(0xFF7C4DFF)),
+                  child: Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
                 ),
               ),
             ),

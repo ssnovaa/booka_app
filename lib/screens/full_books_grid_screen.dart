@@ -13,10 +13,10 @@ import 'package:booka_app/constants.dart'; // ensureAbsoluteImageUrl
 class FullBooksGridScreen extends StatelessWidget {
   final String title;
   final List<Map<String, dynamic>> items;
-  /// Верните (возможно относительный) URL обложки/thumb
+  /// Поверніть (можливо відносний) URL обкладинки/thumb
   final String? Function(Map<String, dynamic>) resolveUrl;
 
-  /// Обычно сюда приходим из профиля → подсветим профиль
+  /// Зазвичай сюди приходимо з профілю → підсвітимо профіль
   final int currentIndex;
 
   const FullBooksGridScreen({
@@ -30,15 +30,15 @@ class FullBooksGridScreen extends StatelessWidget {
   void _goToMain(BuildContext context, int tabIndex) {
     final ms = MainScreen.of(context);
     if (ms != null) {
-      ms.setTab(tabIndex);     // 0 — жанры, 1 — каталог
-      // Закрываем текущий экран и профиль под ним (если есть),
-      // чтобы вернуться на MainScreen.
+      ms.setTab(tabIndex);     // 0 — жанри, 1 — каталог
+      // Закриваємо поточний екран і профіль під ним (якщо є),
+      // щоб повернутися на MainScreen.
       Navigator.of(context).pop();
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
     } else {
-      // Фолбэк, если внезапно вне MainScreen
+      // Фолбек, якщо раптово поза MainScreen
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tabIndex)),
             (route) => false,
@@ -60,27 +60,27 @@ class FullBooksGridScreen extends StatelessWidget {
     }
   }
 
-  /// Нормализуем карту книги: принудительно делаем абсолютные URL для миниатюры/обложки,
-  /// чтобы не ловить «No host specified» на старых данных.
+  /// Нормалізуємо карту книги: примусово робимо абсолютні URL для мініатюри/обкладинки,
+  /// щоб не ловити «No host specified» на старих даних.
   Map<String, dynamic> _normalizedMap(
       Map<String, dynamic> m,
       String? Function(Map<String, dynamic>) parentResolveUrl,
       ) {
     final map = Map<String, dynamic>.from(m);
 
-    // 1) Лучший URL через resolveUrl родителя (как в превью профиля)
+    // 1) Найкращий URL через resolveUrl батька (як у превʼю профілю)
     String? best = parentResolveUrl.call(map);
 
-    // 2) Если родитель не дал — пробуем стандартные поля
+    // 2) Якщо батько не дав — пробуємо стандартні поля
     best ??= map['thumb_url']?.toString();
     best ??= map['thumbUrl']?.toString();
     best ??= map['cover_url']?.toString();
     best ??= map['coverUrl']?.toString();
 
-    // 3) Делаем абсолютным (covers/... → https://.../storage/covers/...)
+    // 3) Робимо абсолютним (covers/... → https://.../storage/covers/...)
     final abs = ensureAbsoluteImageUrl(best);
 
-    // 4) Сохраняем во все известные поля (на всякий)
+    // 4) Зберігаємо у всі відомі поля (про всяк випадок)
     if (abs != null) {
       map['thumb_url'] = abs;
       map['thumbUrl'] = abs;
@@ -91,7 +91,7 @@ class FullBooksGridScreen extends StatelessWidget {
     return map;
   }
 
-  /// Обёртка над resolveUrl: всегда отдаёт абсолютный URL.
+  /// Обгортка над resolveUrl: завжди віддає абсолютний URL.
   String? _resolvedAbsolute(
       Map<String, dynamic> m,
       String? Function(Map<String, dynamic>) parentResolveUrl,
@@ -103,7 +103,7 @@ class FullBooksGridScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Нормализуем список заранее (lazy недорого)
+    // Нормалізуємо список заздалегідь (lazy недорого)
     final normalizedItems = items
         .map((m) => _normalizedMap(m, resolveUrl))
         .toList(growable: false);
@@ -125,8 +125,8 @@ class FullBooksGridScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              // Используем готовый виджет с кликабельными карточками:
-              // он сам делает Book.fromJson(...) и открывает BookDetailScreen.
+              // Використовуємо готовий віджет з клікабельними картками:
+              // він сам робить Book.fromJson(...) і відкриває BookDetailScreen.
               child: BooksGrid(
                 items: normalizedItems,
                 resolveUrl: (m) => _resolvedAbsolute(m, resolveUrl),
@@ -136,16 +136,16 @@ class FullBooksGridScreen extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: currentIndex, // обычно 3 (профиль)
+        currentIndex: currentIndex, // зазвичай 3 (профіль)
         onTap: (i) {
           if (i == 0 || i == 1) _goToMain(context, i);
           if (i == 2) _openPlayer(context);
           if (i == 3) {
-            // Мы уже над профилем → просто вернёмся
+            // Ми вже над профілем → просто повернемося
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             } else {
-              // редкий случай: попросим MainScreen открыть профиль
+              // рідкісний випадок: попросимо MainScreen відкрити профіль
               final ms = MainScreen.of(context);
               if (ms != null) ms.setTab(3);
             }

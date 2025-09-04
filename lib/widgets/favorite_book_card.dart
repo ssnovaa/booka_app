@@ -1,16 +1,16 @@
-// ПУТЬ: lib/widgets/favorite_book_card.dart
-
+// lib/widgets/favorite_book_card.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../constants.dart'; // fullResourceUrl(...)
-import '../core/network/image_cache.dart'; // BookaImageCacheManager
+import '../constants.dart';
+import '../core/network/image_cache.dart';
 
+/// Картка улюбленої книги — компактна, підходить для списків.
+/// Підтримує як абсолютні URL, так і відносні шляхи з /storage.
 class FavoriteBookCard extends StatelessWidget {
   final Map<String, dynamic> book;
 
-  /// Абсолютный URL обложки/миниатюры (если уже рассчитан снаружи).
-  /// Если null — виджет сам попробует достать thumb_url -> cover_url из [book].
+  /// Абсолютний URL обкладинки (за бажанням можна передати зовні).
   final String? coverUrl;
 
   const FavoriteBookCard({
@@ -19,8 +19,8 @@ class FavoriteBookCard extends StatelessWidget {
     this.coverUrl,
   });
 
-  /// Берём thumb_url (если есть), иначе cover_url.
-  /// Если путь относительный — конвертируем в абсолютный через fullResourceUrl('storage/...').
+  /// Витягує thumb_url або cover_url з мапи книги.
+  /// Якщо шлях відносний — повертає абсолютний через fullResourceUrl('storage/...').
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> b) {
     String? pick(dynamic v) {
       if (v == null) return null;
@@ -34,10 +34,9 @@ class FavoriteBookCard extends StatelessWidget {
 
     final lower = url.toLowerCase();
     if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return url; // уже абсолютный
+      return url;
     }
 
-    // Относительный путь -> нормализуем
     if (lower.startsWith('storage/')) {
       return fullResourceUrl(url);
     }
@@ -47,14 +46,14 @@ class FavoriteBookCard extends StatelessWidget {
     return fullResourceUrl('storage/$url');
   }
 
+  /// Формує ім'я автора з можливих варіантів поля.
   String _authorName(Map<String, dynamic> b) {
     final a = b['author'];
-    if (a is Map && a['name'] != null) return a['name'].toString();
+    if (a is Map && a['name'] != null) return a['name'].toString().trim();
     if (a is String && a.trim().isNotEmpty) return a.trim();
-    // иногда автор хранится как 'author_name'
     final an = b['author_name']?.toString();
     if (an != null && an.trim().isNotEmpty) return an.trim();
-    return 'Автор неизвестен';
+    return 'Автор невідомий';
   }
 
   @override
@@ -67,7 +66,7 @@ class FavoriteBookCard extends StatelessWidget {
     final String? imageUrl =
     (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl.trim() : null;
 
-    final String title = (book['title'] ?? 'Без названия').toString();
+    final String title = (book['title'] ?? 'Без назви').toString();
     final String author = _authorName(book);
 
     return Card(
@@ -128,6 +127,7 @@ class FavoriteBookCard extends StatelessWidget {
     );
   }
 
+  /// Плейсхолдер для обкладинки
   Widget _coverPlaceholder(bool isDark) {
     return Container(
       width: 64,

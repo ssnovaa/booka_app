@@ -1,11 +1,11 @@
 /// lib/core/push/push_service.dart
 /// FCM bootstrap для Flutter (Android/iOS).
-/// - init() вызывает Firebase.initializeApp(), затем лениво инициализирует FirebaseMessaging
-/// - запрашивает разрешения (iOS + Android 13+)
-/// - обрабатывает bg/fg сообщения
-/// - регистрирует токен на бэкенде (Laravel)
+/// - init() викликає Firebase.initializeApp(), потім ліниво ініціалізує FirebaseMessaging
+/// - запитує дозволи (iOS + Android 13+)
+/// - обробляє bg/fg повідомлення
+/// - реєструє токен на бекенді (Laravel)
 ///
-/// В main.dart:  await PushService.instance.init(navigatorKey: _navKey);
+/// У main.dart:  await PushService.instance.init(navigatorKey: _navKey);
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -26,14 +26,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
   } catch (_) {}
-  // логирование bg-сообщений при необходимости
+  // логування bg-повідомлень за потреби
 }
 
 class PushService {
   PushService._();
   static final PushService instance = PushService._();
 
-  // ❗ Лениво инициализируем после Firebase.initializeApp()
+  // ❗ Ліниво ініціалізуємо після Firebase.initializeApp()
   late final FirebaseMessaging _fcm;
 
   final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
@@ -55,13 +55,13 @@ class PushService {
       if (kDebugMode) print('Firebase.initializeApp failed: $e');
     }
 
-    // 1.1) Теперь можно брать instance
+    // 1.1) Тепер можна брати instance
     _fcm = FirebaseMessaging.instance;
 
     // 2) BG handler
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    // 3) Local notifications (foreground)
+    // 3) Локальні нотифікації (foreground)
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
@@ -75,7 +75,7 @@ class PushService {
       onDidReceiveBackgroundNotificationResponse: _onLocalTap,
     );
 
-    // 4) iOS permissions
+    // 4) iOS дозволи
     if (Platform.isIOS) {
       final settings = await _fcm.requestPermission(
         alert: true, badge: true, sound: true,
@@ -86,21 +86,21 @@ class PushService {
       }
     }
 
-    // 5) Heads-up в fg (и на iOS презентация)
+    // 5) Heads-up у fg (і на iOS презентація)
     await _fcm.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
 
     // 6) Android канал
     const androidChannel = AndroidNotificationChannel(
       'booka_default',
       'Booka · Push',
-      description: 'Default channel for Booka notifications',
+      description: 'Канал за замовчуванням для push-сповіщень Booka',
       importance: Importance.high,
     );
     await _local
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(androidChannel);
 
-    // 6.1) Android 13+ — runtime permission
+    // 6.1) Android 13+ — runtime-дозвіл
     if (Platform.isAndroid) {
       final status = await Permission.notification.status;
       if (!status.isGranted) {
@@ -109,18 +109,18 @@ class PushService {
       }
     }
 
-    // 7) Handlers
+    // 7) Обробники
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpenedApp);
 
-    // 8) App открыт из пуша
+    // 8) App відкрито з пушу
     final initialMessage = await _fcm.getInitialMessage();
     if (initialMessage != null) _handleDeepLink(initialMessage.data);
 
-    // 9) Регистрация токена
+    // 9) Реєстрація токена
     await _registerToken();
 
-    // 10) Обновление токена
+    // 10) Оновлення токена
     _fcm.onTokenRefresh.listen((token) => _registerToken(force: true, overrideToken: token));
   }
 
@@ -148,7 +148,7 @@ class PushService {
   }
 
   static void _onLocalTap(NotificationResponse resp) {
-    // разбор payload при необходимости
+    // розбір payload за потреби
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
@@ -183,14 +183,14 @@ class PushService {
           'platform': Platform.isAndroid ? 'android' : (Platform.isIOS ? 'ios' : 'other'),
           'app_version': appVersion,
         },
-        // сервер стабильно принимает form-urlencoded
+        // сервер стабільно приймає form-urlencoded
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
       _lastTokenSent = token;
-      if (kDebugMode) print('✅ Push token registered');
+      if (kDebugMode) print('✅ Push token зареєстрований');
     } catch (e) {
-      if (kDebugMode) print('⚠️ Failed to register push token: $e');
+      if (kDebugMode) print('⚠️ Не вдалося зареєструвати push-token: $e');
     }
   }
 }

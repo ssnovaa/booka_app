@@ -1,4 +1,3 @@
-// lib/widgets/book_card.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/book.dart';
@@ -15,9 +14,8 @@ class BookCardWidget extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // [STYLE] Токены
     const double cardRadius = 14;
-    const double imageWidth = 96; // заметно крупнее
+    const double imageWidth = 96;
     const double vPad = 12;
     const double hPad = 12;
 
@@ -50,12 +48,11 @@ class BookCardWidget extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // [IMG] Обложка 2:3, без кропа по ширине блока
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
                   width: imageWidth,
-                  height: imageWidth * 1.5, // 2:3
+                  height: imageWidth * 1.5,
                   color: isDark ? Colors.white10 : Colors.black12,
                   alignment: Alignment.center,
                   child: imageUrl.isNotEmpty
@@ -78,19 +75,15 @@ class BookCardWidget extends StatelessWidget {
                       : Icon(Icons.book, size: 40, color: isDark ? Colors.white54 : Colors.black45),
                 ),
               ),
-
               const SizedBox(width: 12),
-
-              // [TEXT] Контент
               Expanded(
                 child: SizedBox(
-                  height: imageWidth * 1.5, // выравниваем по высоте с обложкой
+                  height: imageWidth * 1.5,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Заголовок
                       Text(
-                        (book.title ?? '').trim().isNotEmpty ? book.title!.trim() : 'Без названия',
+                        (book.title ?? '').trim().isNotEmpty ? book.title!.trim() : 'Без назви',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -99,8 +92,6 @@ class BookCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-
-                      // Автор (серый вторичный)
                       if ((book.author ?? '').trim().isNotEmpty)
                         Text(
                           book.author!.trim(),
@@ -111,22 +102,15 @@ class BookCardWidget extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-
                       const SizedBox(height: 8),
-
-                      // Жанры (до 3 штук), компактный серый текст
                       if (book.genres.isNotEmpty)
                         Text(
-                          'Жанры: ${book.genres.take(3).join(", ")}',
+                          'Жанри: ${book.genres.take(3).join(", ")}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
                         ),
-
-                      // Spacer + метаданные снизу одной строкой
                       const Spacer(),
-
-                      // Низ карточки: длительность + серия (если есть)
                       Wrap(
                         spacing: 10,
                         crossAxisAlignment: WrapCrossAlignment.center,
@@ -155,7 +139,6 @@ class BookCardWidget extends StatelessWidget {
   }
 }
 
-// [WIDGET] Маленький «чип» метаданных (иконка + текст)
 class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String text;

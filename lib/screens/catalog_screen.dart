@@ -2,7 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // compute (парсинг вне UI изолята)
+import 'package:flutter/foundation.dart'; // compute (парсинг поза UI ізолятом)
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,16 +23,16 @@ import 'package:booka_app/widgets/book_card.dart';
 import 'package:booka_app/widgets/catalog_filters.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 
-// ⬇️ провайдер плеера
+// ⬇️ провайдер плеєра
 import 'package:booka_app/providers/audio_player_provider.dart';
 
-// ⬇️ единый репозиторий профиля (single-flight + TTL)
+// ⬇️ єдиний репозиторій профілю (single-flight + TTL)
 import 'package:booka_app/repositories/profile_repository.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver =
 RouteObserver<ModalRoute<void>>();
 
-/// ===== Парсинг вне главного изолята (ускоряет первый рендер при больших списках) =====
+/// ===== Парсинг поза головним ізолятом (прискорює перший рендер при великих списках) =====
 List<Book> _parseBooksOffMain(List<dynamic> items) =>
     items.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
 
@@ -67,7 +67,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
   bool isLoading = false;
   String? error;
 
-  // Вместо прямого GET /profile — «прогрев» через репозиторий (результат в UI не используется)
+  // Замість прямого GET /profile — «прогрів» через репозиторій (результат у UI не використовується)
   late Future<void> profileFuture;
 
   Key currentListenCardKey = UniqueKey();
@@ -80,7 +80,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     return null;
   }
 
-  /// Фильтры активны, когда выбран жанр или автор
+  /// Фільтри активні, коли обрано жанр або автора
   bool get filtersActive => selectedGenreId != null || selectedAuthor != null;
 
   @override
@@ -88,10 +88,10 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     super.initState();
     selectedGenreId = widget.selectedGenreId;
 
-    // Профиль «прогреваем» сразу — через репозиторий (single-flight + TTL)
+    // Профіль «прогріваємо» одразу — через репозиторій (single-flight + TTL)
     profileFuture = _warmupProfile();
 
-    // Тяжёлые загрузки — после первого кадра, чтобы не блокировать старт
+    // Важкі завантаження — після першого кадру, щоб не блокувати старт
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) fetchFiltersAndBooks();
     });
@@ -118,25 +118,25 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     });
   }
 
-  /// Однократная фоновая загрузка профиля через репозиторий (без прямого /profile)
+  /// Одноразове фонове завантаження профілю через репозиторій (без прямого /profile)
   Future<void> _warmupProfile() async {
     try {
       await ProfileRepository.I.load(debugTag: 'CatalogScreen.init');
     } catch (_) {
-      // тихо игнорируем: экран каталога не зависит от профиля для рендера
+      // тихо ігноруємо: екран каталогу не залежить від профілю для рендера
     }
   }
 
   /// «Продовжити прослуховування»
-  /// 1) Тянем сервер в провайдере (LWW), 2) если ок — готовим и играем,
-  /// 3) иначе — читаем локальные prefs. (Без прямого дёргания /profile)
+  /// 1) Тягнемо сервер у провайдері (LWW), 2) якщо ок — готуємо і граємо,
+  /// 3) інакше — читаємо локальні prefs. (Без прямого звернення до /profile)
   void _continueListening() async {
     final audio = context.read<AudioPlayerProvider>();
 
-    // 1) Всегда подтянуть актуальное состояние с сервера (LWW безопасен)
+    // 1) Завжди підтягнути актуальний стан із сервера (LWW безпечний)
     await audio.hydrateFromServerIfAvailable();
 
-    // 2) Если после гидратации в провайдере есть книга/глава — готовим и переходим
+    // 2) Якщо після гідратації у провайдері є книга/глава — готуємо і переходимо
     if (audio.currentBook != null && audio.currentChapter != null) {
       await audio.ensurePrepared();
       if (!mounted) return;
@@ -153,7 +153,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       return;
     }
 
-    // 3) Fallback: читаем локальные prefs (без лишних сетевых запросов)
+    // 3) Fallback: читаємо локальні prefs (без зайвих мережевих запитів)
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = prefs.getString('current_listen');
@@ -197,7 +197,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final content = FutureBuilder<void>(
-      future: profileFuture, // просто ждём прогрева профиля (без данных)
+      future: profileFuture, // просто чекаємо прогріву профілю (без даних)
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -218,16 +218,14 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     );
   }
 
-  // === ВСПОМОГАТЕЛЬНОЕ: «прозрачная плитка» + чуть шире ===
+  // === ДОДАТКОВЕ: «прозора плитка» + трохи ширше ===
   Widget _tile(BuildContext context, Widget child) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      // шире: меньше горизонтальный отступ чем обычно
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        // полупрозрачная подложка
-        color: cs.surface.withOpacity(0.28),
+        color: cs.surface.withOpacity(0.28), // напівпрозора підкладка
         boxShadow: [
           BoxShadow(
             blurRadius: 14,
@@ -237,7 +235,6 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
           ),
         ],
       ),
-      // скругляем содержимое, чтобы совпадали углы
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: child,
@@ -245,7 +242,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     );
   }
 
-  // обёртка для обычных элементов — стандартная ширина
+  // обгортка для звичайних елементів — стандартна ширина
   Widget _padNormal(Widget child) =>
       Padding(padding: const EdgeInsets.all(8), child: child);
 
@@ -253,7 +250,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     final bool isAuth = userNotifier.isAuth;
 
-    // Когда фильтры активны — оставляем только панель фильтров.
+    // Коли фільтри активні — залишаємо тільки панель фільтрів.
     final List<Widget> headerWidgets = filtersActive
         ? <Widget>[
       _padNormal(
@@ -313,7 +310,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             ? Center(child: Text(error!))
             : RefreshIndicator(
           onRefresh: () async {
-            // тянем всё + освежаем карточку current_listen
+            // тягнемо все + освіжаємо картку current_listen
             setState(() {
               profileFuture = _warmupProfile();
               currentListenCardKey = UniqueKey();
@@ -352,7 +349,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       await fetchBooks(refresh: refresh);
     } catch (e) {
       setState(() {
-        error = 'Ошибка загрузки фильтров: $e';
+        error = 'Помилка завантаження фільтрів: $e';
       });
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -362,7 +359,6 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
   Future<List<Genre>> fetchGenres({bool refresh = false}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-        // совместимо с твоей версией плагина
         policy:
         refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
@@ -382,9 +378,9 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
         genres = await compute(_parseGenresOffMain, raw);
         return genres;
       }
-      throw Exception('Ошибка загрузки жанров: ${r.statusCode}');
+      throw Exception('Помилка завантаження жанрів: ${r.statusCode}');
     } on DioException catch (e) {
-      throw Exception('Ошибка загрузки жанров: ${e.message}');
+      throw Exception('Помилка завантаження жанрів: ${e.message}');
     }
   }
 
@@ -410,14 +406,14 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
         authors = await compute(_parseAuthorsOffMain, raw);
         return authors;
       }
-      throw Exception('Ошибка загрузки авторов: ${r.statusCode}');
+      throw Exception('Помилка завантаження авторів: ${r.statusCode}');
     } on DioException catch (e) {
-      throw Exception('Ошибка загрузки авторов: ${e.message}');
+      throw Exception('Помилка завантаження авторів: ${e.message}');
     }
   }
 
-  /// Извлекаем «оценку популярности» из сырого JSON-книги.
-  /// Набор ключей подобран с запасом, чтобы не падать, если API меняется.
+  /// Витягуємо «оцінку популярності» з сирого JSON-книги.
+  /// Набір ключів підібрано з запасом, щоб не падати, якщо API змінюється.
   double _extractPopularity(dynamic item) {
     if (item is! Map<String, dynamic>) return 0;
 
@@ -428,7 +424,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       return num.tryParse(s);
     }
 
-    // Проверяем несколько возможных полей
+    // Перевіряємо кілька можливих полів
     const keys = <String>[
       'popularity',
       'popular',
@@ -455,7 +451,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       }
     }
 
-    // Иногда бывает вложенный объект статистики
+    // Іноді буває вкладений обʼєкт статистики
     final stats = item['stats'];
     if (stats is Map<String, dynamic>) {
       const statKeys = <String>[
@@ -499,7 +495,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
         params['author'] = selectedAuthor!.name;
       }
 
-      // При активных фильтрах — просим у API сортировку по популярности (если поддерживает)
+      // При активних фільтрах — просимо у API сортування за популярністю (якщо підтримує)
       if (filtersActive) {
         params['sort'] = 'popular';
         params['order'] = 'desc';
@@ -525,7 +521,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             ? (data['data'] ?? data['items'] ?? [])
             : []);
 
-        // Клиентская сортировка на случай, если сервер не отсортировал.
+        // Клієнтське сортування на випадок, якщо сервер не відсортував.
         if (filtersActive) {
           items.sort(
                   (a, b) => _extractPopularity(b).compareTo(_extractPopularity(a)));
@@ -533,12 +529,12 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
 
         books = await compute(_parseBooksOffMain, items);
       } else {
-        setState(() => error = 'Ошибка загрузки: ${r.statusCode}');
+        setState(() => error = 'Помилка завантаження: ${r.statusCode}');
       }
     } on DioException catch (e) {
-      setState(() => error = 'Ошибка подключения: ${e.message}');
+      setState(() => error = 'Помилка підключення: ${e.message}');
     } catch (e) {
-      setState(() => error = 'Ошибка: $e');
+      setState(() => error = 'Помилка: $e');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }

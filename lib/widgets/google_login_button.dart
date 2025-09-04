@@ -4,7 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:dio/dio.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
-import 'package:booka_app/core/auth/google_oauth.dart'; // ← kGoogleWebClientId
+import 'package:booka_app/core/auth/google_oauth.dart';
 
 typedef OnGoogleSignedIn = Future<void> Function(
     String token,
@@ -28,13 +28,17 @@ class GoogleLoginButton extends StatefulWidget {
 class _GoogleLoginButtonState extends State<GoogleLoginButton> {
   bool _loading = false;
 
+  /// Обробник натискання на кнопку логіну через Google.
+  /// 1. Відкриває діалог вибору акаунту.
+  /// 2. Отримує id_token з Google.
+  /// 3. Посилає id_token на бекенд (/auth/google).
+  /// 4. Викликає onSignedIn(token, user) при успіху.
   Future<void> _handleTap() async {
     if (_loading) return;
     setState(() => _loading = true);
 
     try {
-      // ВАЖНО: передаём serverClientId (Web Client ID из проекта 356…),
-      // чтобы гарантированно получить валидний idToken на девайсах.
+      // Використовуємо serverClientId (Web client ID), щоб Google повертав валідний idToken.
       final g = GoogleSignIn(
         scopes: const ['email', 'profile'],
         serverClientId: kGoogleWebClientId.isNotEmpty ? kGoogleWebClientId : null,
@@ -42,7 +46,7 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
 
       final acc = await g.signIn();
       if (acc == null) {
-        // користувач скасував вибір акаунта
+        // Користувач відмінив вибір акаунту.
         return;
       }
 
@@ -59,7 +63,7 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
       );
 
       if (r.statusCode != 200 || r.data == null) {
-        // Попробуем показать понятную ошибку, если сервер её вернул
+        // Показуємо зрозумілу помилку, якщо сервер її повернув.
         String msg = 'Помилка входу (код ${r.statusCode})';
         final d = r.data;
         if (d is Map && (d['message'] != null || d['error'] != null)) {
@@ -70,16 +74,18 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
         throw msg;
       }
 
-      final data = r.data as Map;
+      final data = (r.data is Map) ? Map<String, dynamic>.from(r.data as Map) : <String, dynamic>{};
       final token = (data['token'] ?? data['access_token'] ?? '').toString();
-      final user  = (data['user']  ?? {}) as Map<String, dynamic>;
+      final user = (data['user'] is Map) ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+
       if (token.isEmpty) throw 'Сервер не повернув токен';
 
       await widget.onSignedIn(token, user);
     } catch (e) {
       if (!mounted) return;
+      final msg = e?.toString() ?? 'Невідома помилка';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(content: Text(msg)),
       );
     } finally {
       if (mounted) setState(() => _loading = false);

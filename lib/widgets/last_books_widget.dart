@@ -1,4 +1,4 @@
-// ПУТЬ: lib/widgets/last_books_widget.dart
+// lib/widgets/last_books_widget.dart
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,15 +8,19 @@ import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 import '../core/network/image_cache.dart'; // BookaImageCacheManager
 
+/// Віджет з останніми книгам — показує слайди по 3 елементи.
+/// За замовчуванням бере до 6 останніх (можна змінити в getLastBooks).
 class LastBooksWidget extends StatelessWidget {
   final List<Book> books;
 
   const LastBooksWidget({Key? key, required this.books}) : super(key: key);
 
+  /// Повертає останні книги, відсортовані за id у спадному порядку.
+  /// Зараз береться максимум 6 елементів.
   List<Book> getLastBooks() {
     if (books.isEmpty) return [];
     final sorted = List<Book>.from(books)..sort((a, b) => b.id.compareTo(a.id));
-    return sorted.take(6).toList(); // при необходимости поменяй количество
+    return sorted.take(6).toList();
   }
 
   @override
@@ -26,13 +30,13 @@ class LastBooksWidget extends StatelessWidget {
     final lastBooks = getLastBooks();
     if (lastBooks.isEmpty) return const SizedBox();
 
-    // Группируем по 3 в ряд для "карусели"
+    // Групуємо по 3 елементи для «каруселі»
     final List<List<Book>> slides = [];
     for (int i = 0; i < lastBooks.length; i += 3) {
       slides.add(lastBooks.sublist(i, (i + 3) > lastBooks.length ? lastBooks.length : (i + 3)));
     }
 
-    // Контрастный заголовок, корректный в светлой/тёмной теме
+    // Контрастний заголовок, коректний у світлій/темній темі
     final baseTitle = Theme.of(context).textTheme.titleLarge ??
         const TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
     final titleStyle = GoogleFonts.pangolin(textStyle: baseTitle).copyWith(
@@ -42,7 +46,7 @@ class LastBooksWidget extends StatelessWidget {
     );
 
     return Card(
-      elevation: 0, // строже без тени
+      elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 2),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       color: Theme.of(context).cardColor,
@@ -51,13 +55,13 @@ class LastBooksWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Заголовок
+            // Заголовок секції
             Padding(
               padding: const EdgeInsets.only(bottom: 4, left: 10),
               child: Text('Найсвіжіші історії', style: titleStyle),
             ),
 
-            // Карусель
+            // Карусель зі слайдами
             SizedBox(
               height: 164,
               child: PageView.builder(
@@ -69,7 +73,7 @@ class LastBooksWidget extends StatelessWidget {
                     children: List.generate(3, (i) {
                       if (i < slide.length) {
                         final book = slide[i];
-                        final imageUrl = book.displayCoverUrl; // thumb с фолбэком на cover
+                        final imageUrl = (book.displayCoverUrl ?? '').trim();
 
                         return Flexible(
                           child: GestureDetector(
@@ -86,8 +90,6 @@ class LastBooksWidget extends StatelessWidget {
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(10),
-                                // строгая рамка вместо тени
-                                // border: Border.all(color: cs.outline, width: 1),
                                 color: cs.surfaceVariant.withOpacity(0.35),
                               ),
                               clipBehavior: Clip.antiAlias,
@@ -105,7 +107,7 @@ class LastBooksWidget extends StatelessWidget {
                           ),
                         );
                       } else {
-                        // Пустой Flexible для выравнивания
+                        // Порожній слот для вирівнювання
                         return const Flexible(child: SizedBox());
                       }
                     }),

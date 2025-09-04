@@ -9,10 +9,12 @@ import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 
+/// Віджет-ворота старту: виконує початковий бутстрап (токени, профіль, плеєр)
+/// і переходить до [child], коли все готово.
 class StartupGate extends StatefulWidget {
   const StartupGate({super.key, required this.child});
 
-  final Widget child; // куда перейдём после бутстрапа (например, MainScreen)
+  final Widget child; // куди перейдемо після бутстрапу (наприклад, MainScreen)
 
   @override
   State<StartupGate> createState() => _StartupGateState();
@@ -24,27 +26,27 @@ class _StartupGateState extends State<StartupGate> {
   @override
   void initState() {
     super.initState();
-    // Запускаем после первого кадра, чтобы сразу показать Lottie
+    // Запускаємо після першого кадру, щоб одразу показати Lottie-анімацію
     WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
   Future<void> _bootstrap() async {
-    // снимаем нативный сплэш — теперь будет виден наш лоадер
+    // Прибираємо нативний сплеш — тепер буде видно наш лоадер
     FlutterNativeSplash.remove();
 
     try {
-      // 1) Токены/авторизация
+      // 1) Відновлення токенів / авторизації
       await AuthStore.I.restore();
 
-      // 2) Профиль/текущая сессия
+      // 2) Підвантаження профілю / поточної сесії
       await ProfileRepository.I.loadMap(force: true);
 
-      // 3) Гидратация плеера (если провайдер смонтирован выше по дереву)
+      // 3) Гідратація плеєра (якщо провайдер змонтований у дереві)
       final app = context.read<AudioPlayerProvider>();
       await app.hydrateFromServerIfAvailable();
       await app.ensurePrepared();
     } catch (_) {
-      // мягко игнорируем — всё равно пустим в приложение
+      // М'яко ігноруємо помилки бутстрапу — все одно пропускаємо в додаток
     }
 
     if (!mounted) return;
@@ -55,7 +57,7 @@ class _StartupGateState extends State<StartupGate> {
   Widget build(BuildContext context) {
     if (_ready) return widget.child;
 
-    // Полноэкранный прелоадер с Lottie
+    // Повноекранний прелоадер з Lottie
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0C),
       body: Center(

@@ -1,5 +1,5 @@
+// ПУТЬ: lib/widgets/mini_player.dart
 import 'package:booka_app/screens/login_screen.dart';
-// lib/widgets/mini_player.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +12,7 @@ import 'package:booka_app/user_notifier.dart';
 class MiniPlayerWidget extends StatefulWidget {
   final Chapter chapter;
   final String bookTitle;
-  final String? coverUrl; // міні-обкладинка
+  final String? coverUrl;
   final VoidCallback onExpand;
 
   const MiniPlayerWidget({
@@ -42,42 +42,45 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
       _showedEndDialog = true;
       Future.microtask(() {
-        showDialog(context: context, useRootNavigator: true, builder: (ctx) => AlertDialog(
-          title: const Text('Доступ обмежено'),
-          content: const Text('Авторизуйтеся, щоб отримати доступ до інших розділів.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Скасувати'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          useRootNavigator: true,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Доступ обмежено'),
+            content: const Text('Авторизуйтеся, щоб отримати доступ до інших розділів.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Скасувати'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Navigator.of(ctx, rootNavigator: true).push(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    );
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      Navigator.of(ctx, rootNavigator: true).push(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    });
                   });
-                });
-              },
-              child: const Text('Увійти'),
-            ),
-          ],
-        ),
+                },
+                child: const Text('Увійти'),
+              ),
+            ],
+          ),
         );
       });
     };
   }
 
-  // Формат часу mm:ss
+  /// Формат часу mm:ss
   String _fmt(Duration d) {
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$mm:$ss';
   }
 
-  // Тап по прогрес-бару → seek
+  /// Тап по прогрес-бару → seek
   void _seekByTap(BuildContext context, TapDownDetails details, double width) {
     final audio = context.read<AudioPlayerProvider>();
     final dur = audio.duration;
@@ -89,7 +92,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     audio.seekTo(target);
   }
 
-  // Відкрити повний плеєр або показати гостевий екран
+  /// Відкрити повний плеєр або показати гостевий екран
   void _handleExpandTap() {
     final isGuest = context.read<UserNotifier>().isGuest;
     if (isGuest) {
@@ -113,7 +116,10 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
           children: [
             const Icon(Icons.lock_outline, size: 28),
             const SizedBox(height: 8),
-            const Text('Доступ обмежено', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const Text(
+              'Доступ обмежено',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
             const SizedBox(height: 6),
             const Text(
               'Увійдіть, щоб мати доступ до всіх розділів і повноцінного плеєра.',
@@ -181,13 +187,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
           behavior: HitTestBehavior.opaque,
           onTap: _handleExpandTap,
           onVerticalDragUpdate: (d) {
-            if (d.delta.dy < -8) _handleExpandTap(); // свайп догори → розгорнути
+            if (d.delta.dy < -8) _handleExpandTap();
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Stack(
               children: [
-                // Фон з блюром (glass-card)
+                // Фон з блюром (glass-картка)
                 BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
@@ -204,13 +210,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                   ),
                 ),
 
-                // Контент
+                // Контент міні-плеєра
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Хендл-підказка (пилюля)
+                      // Хендл-підказка (пілюля)
                       Container(
                         width: 28,
                         height: 4,
@@ -235,7 +241,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                                   currentChapter.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                  style: theme.textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -252,7 +259,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                           const SizedBox(width: 8),
 
-                          // Кнопка play/pause «як у нижньому барі» (менша)
+                          // Кнопка play/pause
                           Semantics(
                             label: audio.isPlaying ? 'Пауза' : 'Відтворити',
                             button: true,
@@ -272,7 +279,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             child: IconButton(
                               iconSize: 28,
                               padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(), // без мінімальних 48×48
+                              constraints: const BoxConstraints(),
                               onPressed: _handleExpandTap,
                               icon: Stack(
                                 clipBehavior: Clip.none,
@@ -383,8 +390,8 @@ class _CoverThumb extends StatelessWidget {
   }
 }
 
-/// Кругла кнопка «як у нижньому барі», але меншого розміру і без невидимих полів.
-/// Зовнішнє кільце — градієнт, всередині — біле коло з іконкою play/pause.
+/// Кругла кнопка для відтворення/паузи у міні-плеєрі.
+/// Зовнішнє кільце — градієнт, всередині — біле коло з іконкою.
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
@@ -414,10 +421,10 @@ class _RoundPlayButton extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: const SweepGradient(
                   colors: [
-                    Color(0xFFF48FB1), // pink
-                    Color(0xFF7C4DFF), // deep purple
-                    Color(0xFF448AFF), // blue
-                    Color(0xFF00BCD4), // cyan
+                    Color(0xFFF48FB1),
+                    Color(0xFF7C4DFF),
+                    Color(0xFF448AFF),
+                    Color(0xFF00BCD4),
                     Color(0xFFF48FB1),
                   ],
                   stops: [0.0, 0.33, 0.66, 0.85, 1.0],
@@ -432,13 +439,13 @@ class _RoundPlayButton extends StatelessWidget {
               ),
               child: Center(
                 child: Container(
-                  width: size - 8, // товщина кільця ~4dp
+                  width: size - 8,
                   height: size - 8,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: iconSize, color: Color(0xFF7C4DFF)),
+                  child: Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
                 ),
               ),
             ),

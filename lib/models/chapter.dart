@@ -4,7 +4,7 @@ class Chapter {
   final int order;
   final String audioUrl;
   final int? duration;
-  final Map<String, dynamic>? book; // Вся информация о книге (название, обложка и т.д.)
+  final Map<String, dynamic>? book; // Вся інформація про книгу (назва, обкладинка тощо)
 
   Chapter({
     required this.id,
@@ -15,7 +15,7 @@ class Chapter {
     this.book,
   });
 
-  /// Универсальный fromJson — book можно передать отдельно (или взять из json, если есть)
+  /// Універсальний fromJson — [book] можна передати окремо (або взяти з json, якщо є).
   factory Chapter.fromJson(Map<String, dynamic> json, {Map<String, dynamic>? book}) {
     String url = json['audio_url'] ?? '';
 
@@ -28,7 +28,7 @@ class Chapter {
       }
     }
 
-    // Если явно передали book — используем, иначе ищем в json['book'] (универсальность)
+    // Якщо явно передали [book] — використовуємо його, інакше шукаємо в json['book'] (універсальність).
     final bookData = book ?? (json['book'] is Map<String, dynamic> ? json['book'] : null);
 
     return Chapter(
@@ -41,6 +41,7 @@ class Chapter {
     );
   }
 
+  /// Перетворює [Chapter] у JSON.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -52,7 +53,7 @@ class Chapter {
     };
   }
 
-  /// Удобные геттеры для UI:
+  /// Зручні гетери для UI:
   String get bookTitle => (book?['title'] ?? '') as String;
   String? get coverUrl => book?['cover_url'] as String?;
   String? get description => book?['description'] as String?;

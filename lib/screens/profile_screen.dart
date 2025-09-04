@@ -15,7 +15,7 @@ import 'package:booka_app/screens/full_books_grid_screen.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/models/book.dart';
 
-// ✅ единая точка загрузки профиля (теперь возвращает Map)
+/// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -33,7 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     profileFuture = _fetchUserProfile();
 
-    // подтянуть server-side current_listen (LWW в провайдере)
+    // підвантажити server-side current_listen (LWW у провайдері)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<AudioPlayerProvider>().hydrateFromServerIfAvailable();
@@ -132,7 +132,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// Нижний бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
+  /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
   void _onBottomTab(int index) {
     switch (index) {
       case 0:
@@ -140,7 +140,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         break; // Жанри
       case 1:
         _switchMainTabAndClose(1);
-        break; // Каталог (главный)
+        break; // Каталог (головний)
       case 2:
         _openPlayer();
         break;
@@ -149,7 +149,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// thumb_url > cover_url → абсолютный URL
+  /// thumb_url > cover_url → абсолютний URL
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     String? pick(dynamic v) {
       if (v == null) return null;
@@ -171,7 +171,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return null;
   }
 
-  /// Нормализуем карту книги, чтобы Book.fromJson получил абсолютные поля обложки
+  /// Нормалізуємо карту книги, щоб Book.fromJson отримав абсолютні поля обкладинки
   Map<String, dynamic> _normalizedBookMap(Map<String, dynamic> m) {
     final map = Map<String, dynamic>.from(m);
     final abs = _resolveThumbOrCoverUrl(map);
@@ -250,8 +250,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           final String name = (data['name'] ?? '').toString();
           final String email = (data['email'] ?? '').toString();
-          final bool isPaid =
-              (data['is_paid'] == true) || (data['isPaid'] == true);
+          final bool isPaid = (data['is_paid'] == true) || (data['isPaid'] == true);
 
           return RefreshIndicator.adaptive(
             onRefresh: _refresh,
@@ -278,7 +277,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    // реактивная карточка — слушает AudioPlayerProvider
+                    // реактивна картка — слухає AudioPlayerProvider
                     child: CurrentListenCard(onContinue: _continueListening),
                   ),
                 ),
@@ -357,7 +356,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-/// ===== Вспомогательные мини-виджеты профиля =====
+/// ===== Допоміжні міні-виджети профілю =====
 
 class _SectionTitle extends StatelessWidget {
   final String text;
@@ -472,8 +471,8 @@ class _PreviewCover extends StatelessWidget {
     // Картинка
     final image = frame(
       Image.network(
-        imageUrl!,
-        fit: BoxFit.contain, // не обрезаем миниатюру
+        imageUrl ?? '',
+        fit: BoxFit.contain, // не обрізаємо мініатюру
         alignment: Alignment.center,
         filterQuality: FilterQuality.medium,
         errorBuilder: (_, __, ___) => placeholder,
@@ -490,10 +489,9 @@ class _PreviewCover extends StatelessWidget {
       ),
     );
 
-    final coverCore =
-    (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
+    final coverCore = (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
 
-    // Делаем кликабельным (если onTap есть)
+    // Клікабельна обкладинка (якщо onTap передано)
     final cover = onTap == null
         ? coverCore
         : Material(
@@ -542,8 +540,7 @@ class _CenteredMessage extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style:
-                theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 8),
@@ -632,8 +629,7 @@ class _ProfileHeader extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -641,14 +637,12 @@ class _ProfileHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color:
-                    theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -671,10 +665,8 @@ class _ProfileHeader extends StatelessWidget {
             onPressed: onLogout,
             style: TextButton.styleFrom(
               foregroundColor: Colors.redAccent,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Вийти'),
@@ -685,14 +677,12 @@ class _ProfileHeader extends StatelessWidget {
   }
 
   String _initialsOf(String name) {
-    final parts =
-    name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final parts = name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     if (parts.isEmpty) return 'U';
     if (parts.length == 1) {
       return parts.first.characters.first.toUpperCase();
     }
-    return (parts.first.characters.first + parts.last.characters.first)
-        .toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
   }
 }
 
@@ -741,15 +731,14 @@ class _ProfileLoadingSkeleton extends StatelessWidget {
       theme.brightness == Brightness.dark ? 0.24 : 0.35,
     );
 
-    Widget bar({double h = 12, double w = double.infinity, double r = 8}) =>
-        Container(
-          height: h,
-          width: w,
-          decoration: BoxDecoration(
-            color: base,
-            borderRadius: BorderRadius.circular(r),
-          ),
-        );
+    Widget bar({double h = 12, double w = double.infinity, double r = 8}) => Container(
+      height: h,
+      width: w,
+      decoration: BoxDecoration(
+        color: base,
+        borderRadius: BorderRadius.circular(r),
+      ),
+    );
 
     return SafeArea(
       child: CustomScrollView(

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'booka_app_bar_title.dart';
 import 'theme_toggle_action.dart';
 
-/// Единый AppBar приложения.
-/// Добавляет заголовок и ГЛОБАЛЬНУЮ кнопку переключения темы в конец actions.
 PreferredSizeWidget bookaAppBar({
   List<Widget> actions = const [],
   PreferredSizeWidget? bottom,
@@ -16,8 +14,8 @@ PreferredSizeWidget bookaAppBar({
     centerTitle: centerTitle,
     title: const BookaAppBarTitle(),
     actions: [
-      ...actions,               // твои кнопки (настройки и т.п.)
-      const ThemeToggleAction() // глобальная кнопка темы — всегда есть
+      ...actions,
+      const ThemeToggleAction(),
     ],
     bottom: bottom,
   );

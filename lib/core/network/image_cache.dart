@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-/// Кастомный менеджер кеша для изображений (для cached_network_image 3.x).
+/// Кастомний менеджер кешу для зображень (для cached_network_image 3.x).
 class BookaImageCacheManager extends CacheManager {
   static const key = 'booka_image_cache';
 
-  /// Синглтон
+  /// Сінглтон
   static final BookaImageCacheManager instance =
   BookaImageCacheManager._internal();
 
@@ -15,13 +15,13 @@ class BookaImageCacheManager extends CacheManager {
       : super(
     Config(
       key,
-      stalePeriod: const Duration(days: 30), // срок «годности» файла
-      maxNrOfCacheObjects: 400,              // лимит объектов в кэше
-      fileService: HttpFileService(),        // стандартный HTTP-сервис
+      stalePeriod: const Duration(days: 30), // строк «придатності» файлу
+      maxNrOfCacheObjects: 400,              // ліміт об’єктів у кеші
+      fileService: HttpFileService(),        // стандартний HTTP-сервіс
     ),
   );
 
-  /// Полная очистка файлового кеша картинок
+  /// Повне очищення файлового кешу картинок
   Future<void> clearAll() async {
     await emptyCache();
     if (kDebugMode) {
@@ -29,7 +29,7 @@ class BookaImageCacheManager extends CacheManager {
     }
   }
 
-  /// Удалить один файл по URL
+  /// Видалити один файл за URL
   Future<void> remove(String url) async {
     await removeFile(url);
     if (kDebugMode) {

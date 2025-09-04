@@ -5,14 +5,14 @@ class CollectionsStubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Просто сетка или список "тематических подборок"
+    // Просто сітка чи список "тематичних добірок"
     return ListView(
       padding: const EdgeInsets.all(20),
       children: const [
-        Card(child: ListTile(title: Text('Романтические истории (заглушка)'))),
-        Card(child: ListTile(title: Text('Книги для мотивации (заглушка)'))),
-        Card(child: ListTile(title: Text('Популярные новинки (заглушка)'))),
-        // ...можно сколько угодно
+        Card(child: ListTile(title: Text('Романтичні історії (заглушка)'))),
+        Card(child: ListTile(title: Text('Книги для мотивації (заглушка)'))),
+        Card(child: ListTile(title: Text('Популярні новинки (заглушка)'))),
+        // ...можна скільки завгодно
       ],
     );
   }

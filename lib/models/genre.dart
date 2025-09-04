@@ -4,6 +4,7 @@ class Genre {
 
   Genre({required this.id, required this.name});
 
+  /// Створює об'єкт [Genre] з JSON.
   factory Genre.fromJson(Map<String, dynamic> json) {
     return Genre(
       id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
@@ -11,6 +12,7 @@ class Genre {
     );
   }
 
+  /// Перетворює об'єкт [Genre] у JSON.
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,

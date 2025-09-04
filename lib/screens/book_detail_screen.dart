@@ -37,21 +37,21 @@ class BookDetailScreen extends StatefulWidget {
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
-  // Текущая "полная" книга (может обновиться после догрузки)
+  // Поточна «повна» книга (може оновитися після догрузки)
   late Book _book;
 
-  // Главы
+  // Розділи
   List<Chapter> chapters = [];
   int selectedChapterIndex = 0;
 
-  // Флаги загрузки/ошибок
-  bool isLoading = true; // загрузка глав
+  // Прапорці завантаження/помилок
+  bool isLoading = true; // завантаження розділів
   String? error;
 
   bool _playerInitialized = false;
   bool _autoStartPending = false;
 
-  // Загрузка книги (если пришла урезанной)
+  // Завантаження книги (якщо прийшла урізаною)
   bool _bookLoading = false;
   String? _bookError;
 
@@ -59,11 +59,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   void initState() {
     super.initState();
     _book = widget.book;
-    _maybeLoadFullBook(); // подтягиваем недостающую информацию о книге
-    fetchChapters();      // и параллельно тянем главы
+    _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
+    fetchChapters();      // паралельно підтягнути розділи
   }
 
-  // Проверяем, "урезан" ли объект книги
+  // Перевірка, чи «урізаний» об’єкт книги
   bool _isSparse(Book b) {
     return (b.description == null || b.description!.trim().isEmpty) ||
         b.genres.isEmpty ||
@@ -96,7 +96,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         } else if (data is Map<String, dynamic>) {
           raw = data;
         } else {
-          throw Exception('Unexpected response');
+          throw Exception('Несподівана відповідь');
         }
 
         final full = Book.fromJson(raw);
@@ -215,7 +215,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (mounted) super.setState(fn);
   }
 
-  // Привести относительный путь к абсолютному
+  // Привести відносний шлях до абсолютного
   String _absUrl(String? path) {
     if (path == null || path.trim().isEmpty) return '';
     final s = path.trim();
@@ -279,9 +279,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  /// BG для плеєра: миниатюра, если есть, иначе обложка (всегда абсолютный URL)
+  /// BG для плеєра: мініатюра, якщо є, інакше обкладинка (завжди абсолютний URL)
   String? _resolveBgUrl(Book book) {
-    // Попытка вычитать возможные альтернативные поля миниатюры
+    // Спроба зчитати можливі альтернативні поля мініатюри
     try {
       final dynamic dyn = book;
       final String? thumb1 = dyn.thumbnailUrl as String?;
@@ -306,7 +306,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       builder: (_) => FullPlayerBottomSheet(
         title: _book.title,
         author: _book.author,
-        coverUrl: bgUrl, // ← миниатюра (если есть) или обложка
+        coverUrl: bgUrl, // ← мініатюра (якщо є) або обкладинка
         chapters: chapters,
         selectedChapter: chapters[selectedChapterIndex],
         onChapterSelected: _onChapterSelected,
@@ -335,7 +335,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final audio = Provider.of<AudioPlayerProvider>(context);
     final currentChapter = audio.currentChapter;
 
-    // Отложенная инициализация плеера после загрузки глав
+    // Відкладена ініціалізація плеєра після завантаження розділів
     if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
       _autoStartPending = false;
       _initAudioPlayer();
@@ -376,7 +376,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       )
           : Stack(
         children: [
-          // Топ-градієнтний фон (не перехоплює тачи)
+          // Топ-градієнтний фон (не перехоплює торки)
           IgnorePointer(
             child: Align(
               alignment: Alignment.topCenter,
@@ -455,7 +455,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Название
+                  // Назва
                   Text(
                     _book.title.isNotEmpty ? _book.title : 'Без назви',
                     textAlign: TextAlign.start,
@@ -467,7 +467,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
                   const SizedBox(height: 6),
 
-                  // Автор + Чтец
+                  // Автор + Читець
                   Row(
                     children: [
                       if (_book.author.trim().isNotEmpty)

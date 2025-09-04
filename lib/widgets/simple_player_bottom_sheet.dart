@@ -6,10 +6,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/chapter.dart';
 import 'simple_player.dart';
 
+/// Повноекранний bottom sheet з плеєром.
+/// Підтримує фон-обкладинку, розмиття та прозору поверхню для читабельності.
 class FullPlayerBottomSheet extends StatelessWidget {
   final String title;
   final String author;
-  final String? coverUrl; // опціонально: обкладинка для фону
+  final String? coverUrl; // опційно: обкладинка для фону
   final List<Chapter> chapters;
   final Chapter selectedChapter;
   final void Function(Chapter) onChapterSelected;
@@ -38,7 +40,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: Stack(
             children: [
-              // 1) Фоновая обложка на весь лист (с кешем и фолбэком)
+              // 1) Фонова обкладинка на весь лист (якщо є)
               if (coverUrl != null && coverUrl!.isNotEmpty)
                 Positioned.fill(
                   child: CachedNetworkImage(
@@ -51,7 +53,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                   ),
                 ),
 
-              // 2) Размытие под «glass»
+              // 2) Розмиття під «glass»
               Positioned.fill(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -59,7 +61,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                 ),
               ),
 
-              // 3) Полупрозрачная поверхность (чуть прозрачнее, чтобы обложку было видно)
+              // 3) Напівпрозора поверхня поверх обкладинки (щоб краще читалося)
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -78,7 +80,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                 ),
               ),
 
-              // 4) Слабый градиент сверху/снизу для читабельности
+              // 4) Слабкий вертикальний градієнт для додаткової читабельності
               Positioned.fill(
                 child: IgnorePointer(
                   child: Container(
@@ -87,9 +89,9 @@ class FullPlayerBottomSheet extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.white.withOpacity(0.06),
-                          Colors.white.withOpacity(0.00),
-                          Colors.white.withOpacity(0.06),
+                          cs.onSurface.withOpacity(0.06),
+                          cs.onSurface.withOpacity(0.00),
+                          cs.onSurface.withOpacity(0.06),
                         ],
                         stops: const [0.0, 0.5, 1.0],
                       ),
@@ -103,7 +105,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                 top: false,
                 child: Stack(
                   children: [
-                    // Хендл
+                    // Ручка-підказка для перетягування
                     Align(
                       alignment: Alignment.topCenter,
                       child: Container(
@@ -117,7 +119,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                       ),
                     ),
 
-                    // Закрыть
+                    // Кнопка закриття
                     Positioned(
                       top: 2,
                       right: 2,
@@ -129,7 +131,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                       ),
                     ),
 
-                    // Сам плеер
+                    // Сам плеєр всередині паддінгу
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 28 + 12, 12, 12),
                       child: Material(

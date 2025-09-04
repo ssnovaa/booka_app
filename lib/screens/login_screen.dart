@@ -12,8 +12,9 @@ import 'package:booka_app/models/user.dart'; // UserType, getUserType
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
-import 'package:booka_app/core/auth/google_oauth.dart'; // kGoogleWebClientId (Web Client ID из проекта 356…)
+import 'package:booka_app/core/auth/google_oauth.dart'; // kGoogleWebClientId (Web Client ID)
 
+// Екран входу — весь текст інтерфейсу українською, коментарі українською.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
   @override
@@ -28,6 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _gLoading = false;
   String? _error;
 
+  // Вхід по email/password
   Future<void> _doLogin() async {
     setState(() {
       _loading = true;
@@ -42,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
 
-      // Запускаем подготовку плеера в фоне
+      // Підготуємо плеєр у фоновому режимі
       ap.ensurePrepared();
 
       if (!mounted) return;
@@ -59,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // Продовжити як гість
   Future<void> _continueAsGuest() async {
     final userNotifier = Provider.of<UserNotifier>(context, listen: false);
     await userNotifier.continueAsGuest();
@@ -73,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Вхід через Google → /api/auth/google → збереження токена і профілю
+  // Вхід через Google: отримуємо id_token і міняємо стан додатку
   Future<void> _loginWithGoogle() async {
     if (_gLoading) return;
     setState(() {
@@ -84,13 +87,13 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final google = GoogleSignIn(
         scopes: const ['email', 'profile'],
-        // Web Client ID з Google Cloud (проект 356…)
+        // Web Client ID з Google Cloud (проект)
         serverClientId: kGoogleWebClientId,
       );
 
       final acc = await google.signIn();
       if (acc == null) {
-        // користувач скасував
+        // користувач скасував авторизацію
         return;
       }
       final auth = await acc.authentication;
@@ -123,6 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
       (data['token'] ?? data['access_token'] ?? '').toString();
       if (token.isEmpty) throw 'Сервер не повернув токен';
 
+      // Зберігаємо токен у AuthStore (refresh може бути відсутнім)
       await AuthStore.I.save(access: token, refresh: null, accessExp: null);
 
       final userN = Provider.of<UserNotifier>(context, listen: false);
@@ -131,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
 
-      // Запускаем подготовку плеера в фоне
+      // Підготуємо плеєр
       ap.ensurePrepared();
 
       if (!mounted) return;
@@ -219,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // --- Google ---
+                    // Кнопка входу через Google
                     OutlinedButton.icon(
                       onPressed: _gLoading ? null : _loginWithGoogle,
                       icon: _gLoading
@@ -241,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        'Входя, ви приймаєте правила сервісу',
+                        'Увійшовши, ви погоджуєтесь з правилами сервісу',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color:
                           theme.textTheme.bodySmall?.color?.withOpacity(0.7),
