@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../constants.dart';
 import '../core/network/image_cache.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Картка улюбленої книги — компактна, підходить для списків.
 /// Підтримує як абсолютні URL, так і відносні шляхи з /storage.
@@ -87,7 +88,8 @@ class FavoriteBookCard extends StatelessWidget {
                 height: 64,
                 fit: BoxFit.cover,
                 useOldImageOnUrlChange: true,
-                placeholder: (ctx, _) => _coverPlaceholder(isDark),
+                // 🔄 Показуємо Lottie-індикатор на час завантаження
+                placeholder: (ctx, _) => _coverLoadingPlaceholder(isDark),
                 errorWidget: (ctx, _, __) => Icon(
                   Icons.broken_image,
                   size: 64,
@@ -127,7 +129,7 @@ class FavoriteBookCard extends StatelessWidget {
     );
   }
 
-  /// Плейсхолдер для обкладинки
+  /// Плейсхолдер для обкладинки (коли немає картинки)
   Widget _coverPlaceholder(bool isDark) {
     return Container(
       width: 64,
@@ -139,6 +141,41 @@ class FavoriteBookCard extends StatelessWidget {
         size: 40,
         color: isDark ? Colors.white54 : Colors.black45,
       ),
+    );
+  }
+
+  /// Плейсхолдер під час завантаження (фон + Lottie поверх)
+  Widget _coverLoadingPlaceholder(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: const [
+        // Базовий фон з іконкою
+        // Використовуємо той самий стиль, що і у _coverPlaceholder
+        // (перевикористовуємо шляхом інлайна для уникнення рекурсії у Stack)
+        ColoredBox(color: Colors.transparent), // заповнювач розміру
+      ],
+    ).buildBackgroundWith(
+      child: _coverPlaceholder(isDark),
+      overlay: const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: LoadingIndicator(size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+/// Маленький хелпер-розширення для складання фонового виджета з оверлеєм.
+extension _BgWithOverlay on Widget {
+  Widget buildBackgroundWith({required Widget child, required Widget overlay}) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        overlay,
+      ],
     );
   }
 }

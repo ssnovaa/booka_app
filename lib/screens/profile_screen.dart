@@ -14,6 +14,7 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/screens/full_books_grid_screen.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/models/book.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного спінера
 
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
@@ -250,7 +251,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           final String name = (data['name'] ?? '').toString();
           final String email = (data['email'] ?? '').toString();
-          final bool isPaid = (data['is_paid'] == true) || (data['isPaid'] == true);
+          final bool isPaid =
+              (data['is_paid'] == true) || (data['isPaid'] == true);
 
           return RefreshIndicator.adaptive(
             onRefresh: _refresh,
@@ -468,7 +470,7 @@ class _PreviewCover extends StatelessWidget {
       Center(child: Icon(Icons.book_rounded, color: iconColor, size: 30)),
     );
 
-    // Картинка
+    // Картинка (із Lottie-лоадером під час завантаження)
     final image = frame(
       Image.network(
         imageUrl ?? '',
@@ -482,14 +484,16 @@ class _PreviewCover extends StatelessWidget {
             child: SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              // 🔄 Lottie-індикатор замість стандартного бублика
+              child: LoadingIndicator(size: 20),
             ),
           );
         },
       ),
     );
 
-    final coverCore = (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
+    final coverCore =
+    (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
 
     // Клікабельна обкладинка (якщо onTap передано)
     final cover = onTap == null
@@ -508,7 +512,8 @@ class _PreviewCover extends StatelessWidget {
       children: [
         cover,
         const SizedBox(height: 6),
-        Opacity(opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
+        Opacity(
+            opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
       ],
     );
   }
@@ -540,7 +545,8 @@ class _CenteredMessage extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 8),
@@ -548,7 +554,8 @@ class _CenteredMessage extends StatelessWidget {
                   subtitle!,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                    color:
+                    theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
                   ),
                 ),
               ],
@@ -629,7 +636,8 @@ class _ProfileHeader extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -637,12 +645,14 @@ class _ProfileHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                    color:
+                    theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -665,8 +675,10 @@ class _ProfileHeader extends StatelessWidget {
             onPressed: onLogout,
             style: TextButton.styleFrom(
               foregroundColor: Colors.redAccent,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Вийти'),
@@ -677,12 +689,14 @@ class _ProfileHeader extends StatelessWidget {
   }
 
   String _initialsOf(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final parts =
+    name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     if (parts.isEmpty) return 'U';
     if (parts.length == 1) {
       return parts.first.characters.first.toUpperCase();
     }
-    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 }
 
@@ -705,7 +719,8 @@ class _EmptySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(text, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(text,
+              style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
           if (hint != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -731,14 +746,15 @@ class _ProfileLoadingSkeleton extends StatelessWidget {
       theme.brightness == Brightness.dark ? 0.24 : 0.35,
     );
 
-    Widget bar({double h = 12, double w = double.infinity, double r = 8}) => Container(
-      height: h,
-      width: w,
-      decoration: BoxDecoration(
-        color: base,
-        borderRadius: BorderRadius.circular(r),
-      ),
-    );
+    Widget bar({double h = 12, double w = double.infinity, double r = 8}) =>
+        Container(
+          height: h,
+          width: w,
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: BorderRadius.circular(r),
+          ),
+        );
 
     return SafeArea(
       child: CustomScrollView(

@@ -7,8 +7,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 import '../core/network/image_cache.dart'; // BookaImageCacheManager
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
-/// Віджет з останніми книгам — показує слайди по 3 елементи.
+/// Віджет з останніми книгами — показує слайди по 3 елементи.
 /// За замовчуванням бере до 6 останніх (можна змінити в getLastBooks).
 class LastBooksWidget extends StatelessWidget {
   final List<Book> books;
@@ -33,12 +34,14 @@ class LastBooksWidget extends StatelessWidget {
     // Групуємо по 3 елементи для «каруселі»
     final List<List<Book>> slides = [];
     for (int i = 0; i < lastBooks.length; i += 3) {
-      slides.add(lastBooks.sublist(i, (i + 3) > lastBooks.length ? lastBooks.length : (i + 3)));
+      slides.add(
+        lastBooks.sublist(i, (i + 3) > lastBooks.length ? lastBooks.length : (i + 3)),
+      );
     }
 
     // Контрастний заголовок, коректний у світлій/темній темі
-    final baseTitle = Theme.of(context).textTheme.titleLarge ??
-        const TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
+    final baseTitle =
+        Theme.of(context).textTheme.titleLarge ?? const TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
     final titleStyle = GoogleFonts.pangolin(textStyle: baseTitle).copyWith(
       color: cs.onSurface.withOpacity(0.92),
       fontWeight: FontWeight.w700,
@@ -99,7 +102,8 @@ class LastBooksWidget extends StatelessWidget {
                                 cacheManager: BookaImageCacheManager.instance,
                                 fit: BoxFit.cover,
                                 useOldImageOnUrlChange: true,
-                                placeholder: (ctx, _) => const _TilePlaceholder(),
+                                // 🔄 Lottie-лоадер під час завантаження обкладинки
+                                placeholder: (ctx, _) => const _TileLoading(),
                                 errorWidget: (ctx, _, __) => const _TileError(),
                               )
                                   : const _TilePlaceholder(),
@@ -132,6 +136,33 @@ class _TilePlaceholder extends StatelessWidget {
       color: cs.surfaceVariant.withOpacity(0.35),
       alignment: Alignment.center,
       child: Icon(Icons.book, size: 40, color: cs.onSurfaceVariant),
+    );
+  }
+}
+
+/// Стан «завантаження» для плитки — фоновий плейсхолдер + Lottie зверху.
+class _TileLoading extends StatelessWidget {
+  const _TileLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          color: cs.surfaceVariant.withOpacity(0.35),
+          alignment: Alignment.center,
+          child: Icon(Icons.book, size: 40, color: cs.onSurfaceVariant),
+        ),
+        Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: LoadingIndicator(size: 22),
+          ),
+        ),
+      ],
     );
   }
 }

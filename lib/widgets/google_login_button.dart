@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/auth/google_oauth.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 typedef OnGoogleSignedIn = Future<void> Function(
     String token,
@@ -83,7 +84,7 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
       await widget.onSignedIn(token, user);
     } catch (e) {
       if (!mounted) return;
-      final msg = e?.toString() ?? 'Невідома помилка';
+      final msg = e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg)),
       );
@@ -104,7 +105,8 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
             ? const SizedBox(
           width: 20,
           height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          // 🔄 Єдиний індикатор завантаження по всьому проекту — Lottie
+          child: LoadingIndicator(size: 20),
         )
             : Image.asset(
           'lib/assets/images/google_g.png',

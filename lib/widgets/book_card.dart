@@ -1,7 +1,9 @@
+// lib/widgets/book_card.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 class BookCardWidget extends StatelessWidget {
   final Book book;
@@ -61,10 +63,11 @@ class BookCardWidget extends StatelessWidget {
                     width: imageWidth,
                     height: imageWidth * 1.5,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => const SizedBox(
+                    placeholder: (context, url) => SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      // 🔄 Lottie-індикатор під час завантаження обкладинки
+                      child: LoadingIndicator(size: 22),
                     ),
                     errorWidget: (context, url, error) => Icon(
                       Icons.broken_image,
@@ -72,7 +75,11 @@ class BookCardWidget extends StatelessWidget {
                       color: isDark ? Colors.white30 : Colors.black26,
                     ),
                   )
-                      : Icon(Icons.book, size: 40, color: isDark ? Colors.white54 : Colors.black45),
+                      : Icon(
+                    Icons.book,
+                    size: 40,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -83,7 +90,9 @@ class BookCardWidget extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        (book.title ?? '').trim().isNotEmpty ? book.title!.trim() : 'Без назви',
+                        (book.title ?? '').trim().isNotEmpty
+                            ? book.title!.trim()
+                            : 'Без назви',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -98,7 +107,8 @@ class BookCardWidget extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.textTheme.bodySmall?.color?.withOpacity(0.8),
+                            color: theme.textTheme.bodySmall?.color
+                                ?.withOpacity(0.8),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -120,7 +130,8 @@ class BookCardWidget extends StatelessWidget {
                               icon: Icons.schedule,
                               text: book.duration!.trim(),
                             ),
-                          if (((book.series ?? '').toString().trim()).isNotEmpty)
+                          if (((book.series ?? '').toString().trim())
+                              .isNotEmpty)
                             _MetaChip(
                               icon: Icons.auto_stories_outlined,
                               text: (book.series ?? '').toString().trim(),

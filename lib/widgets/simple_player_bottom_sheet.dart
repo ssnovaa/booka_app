@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/chapter.dart';
 import 'simple_player.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Повноекранний bottom sheet з плеєром.
 /// Підтримує фон-обкладинку, розмиття та прозору поверхню для читабельності.
@@ -48,8 +49,15 @@ class FullPlayerBottomSheet extends StatelessWidget {
                     fit: BoxFit.cover,
                     alignment: Alignment.topCenter,
                     fadeInDuration: const Duration(milliseconds: 180),
+                    // 🔄 Під час завантаження показуємо єдиний Lottie-лоадер
+                    placeholder: (_, __) => const Center(
+                      child: SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: LoadingIndicator(size: 36),
+                      ),
+                    ),
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                    placeholder: (_, __) => const SizedBox.shrink(),
                   ),
                 ),
 

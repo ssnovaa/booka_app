@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 import '../core/network/image_cache.dart'; // BookaImageCacheManager
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Віджет «Найпопулярніші книги» — показує карусель зі слайдами по 3 елементи.
 class PopularBooksWidget extends StatelessWidget {
@@ -100,11 +101,15 @@ class PopularBooksWidget extends StatelessWidget {
                               child: imageUrl.isNotEmpty
                                   ? CachedNetworkImage(
                                 imageUrl: imageUrl,
-                                cacheManager: BookaImageCacheManager.instance,
+                                cacheManager:
+                                BookaImageCacheManager.instance,
                                 fit: BoxFit.cover,
                                 useOldImageOnUrlChange: true,
-                                placeholder: (ctx, _) => const _TilePlaceholder(),
-                                errorWidget: (ctx, _, __) => const _TileError(),
+                                // 🔄 Lottie-лоадер під час завантаження обкладинки
+                                placeholder: (ctx, _) =>
+                                const _TileLoading(),
+                                errorWidget: (ctx, _, __) =>
+                                const _TileError(),
                               )
                                   : const _TilePlaceholder(),
                             ),
@@ -136,6 +141,33 @@ class _TilePlaceholder extends StatelessWidget {
       color: cs.surfaceVariant.withOpacity(0.35),
       alignment: Alignment.center,
       child: Icon(Icons.book, size: 40, color: cs.onSurfaceVariant),
+    );
+  }
+}
+
+/// Стан «завантаження» для плитки — фоновий плейсхолдер + Lottie зверху.
+class _TileLoading extends StatelessWidget {
+  const _TileLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          color: cs.surfaceVariant.withOpacity(0.35),
+          alignment: Alignment.center,
+          child: Icon(Icons.book, size: 40, color: cs.onSurfaceVariant),
+        ),
+        Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: LoadingIndicator(size: 22),
+          ),
+        ),
+      ],
     );
   }
 }

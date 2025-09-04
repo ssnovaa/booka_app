@@ -1,3 +1,4 @@
+// lib/widgets/current_listen_card.dart
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -10,6 +11,7 @@ import 'package:dio/dio.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 class CurrentListenCard extends StatefulWidget {
   const CurrentListenCard({
@@ -97,12 +99,14 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
       if (raw == null || raw.isEmpty) return null;
 
       final Map<String, dynamic> data = json.decode(raw);
-      final Map<String, dynamic>? book = (data['book'] as Map?)?.cast<String, dynamic>();
+      final Map<String, dynamic>? book =
+      (data['book'] as Map?)?.cast<String, dynamic>();
       final pos = data['position'];
 
       if (expectBookId != null && book != null) {
         final savedId = book['id'];
-        final savedBookId = (savedId is int) ? savedId : int.tryParse('$savedId');
+        final savedBookId =
+        (savedId is int) ? savedId : int.tryParse('$savedId');
         if (savedBookId != expectBookId) return null;
       }
 
@@ -144,27 +148,35 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
         coverUrl ??= _remoteCoverUrl;
 
         final bool isDark = theme.brightness == Brightness.dark;
-        final Color cardBg =
-        isDark ? theme.colorScheme.surfaceVariant.withOpacity(0.24) : CurrentListenCard._kBlue100;
+        final Color cardBg = isDark
+            ? theme.colorScheme.surfaceVariant.withOpacity(0.24)
+            : CurrentListenCard._kBlue100;
 
-        final double tileHeight = widget.height ?? CurrentListenCard._kTileHeight;
+        final double tileHeight =
+            widget.height ?? CurrentListenCard._kTileHeight;
         final double coverWidth = tileHeight * 3 / 4;
 
         final bool needFallback = !p.isPlaying && p.position.inSeconds == 0;
 
         return FutureBuilder<int?>(
-          future: needFallback ? _loadSavedPosition(expectBookId: book.id) : Future.value(null),
+          future: needFallback
+              ? _loadSavedPosition(expectBookId: book.id)
+              : Future.value(null),
           builder: (context, snap) {
-            final int rawPos =
-            (p.position.inSeconds > 0) ? p.position.inSeconds : (snap.data ?? 0);
+            final int rawPos = (p.position.inSeconds > 0)
+                ? p.position.inSeconds
+                : (snap.data ?? 0);
 
-            final int durationSec =
-            (p.duration.inSeconds > 0) ? p.duration.inSeconds : (chapter.duration ?? 0);
+            final int durationSec = (p.duration.inSeconds > 0)
+                ? p.duration.inSeconds
+                : (chapter.duration ?? 0);
 
-            final int positionSec = (durationSec > 0) ? rawPos.clamp(0, durationSec) : rawPos;
+            final int positionSec =
+            (durationSec > 0) ? rawPos.clamp(0, durationSec) : rawPos;
 
-            final double? progressValue =
-            (durationSec > 0) ? (positionSec / durationSec).clamp(0.0, 1.0) : null;
+            final double? progressValue = (durationSec > 0)
+                ? (positionSec / durationSec).clamp(0.0, 1.0)
+                : null;
 
             final bool isThisBookPlaying = p.isPlaying;
 
@@ -174,20 +186,24 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
               child: Container(
                 margin: widget.margin ?? const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(CurrentListenCard._kRadius),
+                  borderRadius:
+                  BorderRadius.circular(CurrentListenCard._kRadius),
                   boxShadow: [
                     BoxShadow(
                       blurRadius: 14,
                       offset: const Offset(0, 6),
-                      color: theme.colorScheme.primary.withOpacity(isDark ? 0.10 : 0.06),
+                      color: theme.colorScheme.primary
+                          .withOpacity(isDark ? 0.10 : 0.06),
                     ),
                   ],
                 ),
                 child: Material(
                   color: cardBg,
-                  borderRadius: BorderRadius.circular(CurrentListenCard._kRadius),
+                  borderRadius:
+                  BorderRadius.circular(CurrentListenCard._kRadius),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(CurrentListenCard._kRadius),
+                    borderRadius:
+                    BorderRadius.circular(CurrentListenCard._kRadius),
                     onTap: widget.onContinue,
                     child: SizedBox(
                       height: tileHeight,
@@ -195,8 +211,10 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                         children: [
                           ClipRRect(
                             borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(CurrentListenCard._kRadius),
-                              bottomLeft: Radius.circular(CurrentListenCard._kRadius),
+                              topLeft:
+                              Radius.circular(CurrentListenCard._kRadius),
+                              bottomLeft:
+                              Radius.circular(CurrentListenCard._kRadius),
                             ),
                             child: _CoverCompact(
                               coverUrl: coverUrl,
@@ -207,7 +225,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                           ),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                              padding:
+                              const EdgeInsets.fromLTRB(10, 8, 10, 6),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -229,7 +248,9 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                      color: theme
+                                          .colorScheme.onSurface
+                                          .withOpacity(0.7),
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -237,29 +258,34 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                     height: 3,
                                     child: LinearProgressIndicator(
                                       value: progressValue,
-                                      backgroundColor:
-                                      theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                                      backgroundColor: theme
+                                          .colorScheme.surfaceVariant
+                                          .withOpacity(0.5),
                                     ),
                                   ),
                                   const Spacer(),
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: ConstrainedBox(
-                                      constraints: const BoxConstraints(minHeight: 28),
+                                      constraints: const BoxConstraints(
+                                          minHeight: 28),
                                       child: ElevatedButton(
                                         onPressed: widget.onContinue,
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: CurrentListenCard._kPlayYellow,
+                                          backgroundColor:
+                                          CurrentListenCard._kPlayYellow,
                                           foregroundColor: Colors.black87,
                                           elevation: 0,
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 12,
                                             vertical: 2,
                                           ),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                           minimumSize: const Size(0, 28),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(10),
+                                            borderRadius:
+                                            BorderRadius.circular(10),
                                           ),
                                           visualDensity: const VisualDensity(
                                             horizontal: -2,
@@ -267,15 +293,18 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                           ),
                                         ),
                                         child: AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 180),
+                                          duration: const Duration(
+                                              milliseconds: 180),
                                           switchInCurve: Curves.easeOut,
                                           switchOutCurve: Curves.easeIn,
-                                          layoutBuilder: (currentChild, previousChildren) =>
+                                          layoutBuilder: (currentChild,
+                                              previousChildren) =>
                                               Stack(
                                                 alignment: Alignment.center,
                                                 children: <Widget>[
                                                   ...previousChildren,
-                                                  if (currentChild != null) currentChild,
+                                                  if (currentChild != null)
+                                                    currentChild,
                                                 ],
                                               ),
                                           child: isThisBookPlaying
@@ -290,15 +319,22 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                             ),
                                           )
                                               : Row(
-                                            key: const ValueKey('text'),
-                                            mainAxisSize: MainAxisSize.min,
+                                            key:
+                                            const ValueKey('text'),
+                                            mainAxisSize:
+                                            MainAxisSize.min,
                                             children: const [
-                                              Icon(Icons.play_arrow_rounded, size: 18),
+                                              Icon(
+                                                Icons
+                                                    .play_arrow_rounded,
+                                                size: 18,
+                                              ),
                                               SizedBox(width: 6),
                                               Text(
                                                 'Перейти',
-                                                style:
-                                                TextStyle(fontWeight: FontWeight.w600),
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                    FontWeight.w600),
                                               ),
                                             ],
                                           ),
@@ -367,12 +403,28 @@ class _CoverCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = Container(
+    // Базовий плейсхолдер (фон + іконка)
+    Widget _basePlaceholder() => Container(
       width: width,
       height: height,
-      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
+      color:
+      Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
       alignment: Alignment.center,
       child: const Icon(Icons.audiotrack_rounded),
+    );
+
+    // Плейсхолдер для етапу завантаження з Lottie-лоадером поверх
+    Widget _loadingPlaceholder() => Stack(
+      children: [
+        _basePlaceholder(),
+        const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: LoadingIndicator(size: 22),
+          ),
+        ),
+      ],
     );
 
     final image = (coverUrl != null && coverUrl!.isNotEmpty)
@@ -382,10 +434,10 @@ class _CoverCompact extends StatelessWidget {
       height: height,
       fit: BoxFit.cover,
       fadeInDuration: const Duration(milliseconds: 180),
-      placeholder: (_, __) => placeholder,
-      errorWidget: (_, __, ___) => placeholder,
+      placeholder: (_, __) => _loadingPlaceholder(),
+      errorWidget: (_, __, ___) => _basePlaceholder(),
     )
-        : placeholder;
+        : _basePlaceholder();
 
     return Stack(
       children: [
@@ -463,19 +515,21 @@ class _EqualizerIndicatorState extends State<_EqualizerIndicator>
             mainAxisSize: MainAxisSize.min,
             children: List.generate(widget.bars, (i) {
               final phase = (i / widget.bars) * 2 * math.pi;
-              final amp =
-                  0.35 + 0.65 * (0.5 + 0.5 * math.sin(2 * math.pi * t + phase));
+              final amp = 0.35 +
+                  0.65 * (0.5 + 0.5 * math.sin(2 * math.pi * t + phase));
               final h = amp * widget.maxHeight;
 
               return Padding(
-                padding: EdgeInsets.symmetric(horizontal: widget.gap / 2),
+                padding:
+                EdgeInsets.symmetric(horizontal: widget.gap / 2),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
                   width: widget.barWidth,
                   height: h,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: BorderRadius.circular(widget.barWidth),
+                    borderRadius:
+                    BorderRadius.circular(widget.barWidth),
                   ),
                 ),
               );

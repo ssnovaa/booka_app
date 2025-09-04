@@ -13,6 +13,7 @@ import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/core/auth/google_oauth.dart'; // kGoogleWebClientId (Web Client ID)
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного спінера
 
 // Екран входу — весь текст інтерфейсу українською, коментарі українською.
 class LoginScreen extends StatefulWidget {
@@ -76,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Вхід через Google: отримуємо id_token і міняємо стан додатку
+  // Вхід через Google: отримуємо id_token і міняємо стан застосунку
   Future<void> _loginWithGoogle() async {
     if (_gLoading) return;
     setState(() {
@@ -87,13 +88,13 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final google = GoogleSignIn(
         scopes: const ['email', 'profile'],
-        // Web Client ID з Google Cloud (проект)
+        // Web Client ID з Google Cloud (проєкт)
         serverClientId: kGoogleWebClientId,
       );
 
       final acc = await google.signIn();
       if (acc == null) {
-        // користувач скасував авторизацію
+        // Користувач скасував авторизацію
         return;
       }
       final auth = await acc.authentication;
@@ -213,11 +214,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ElevatedButton(
                       onPressed: _loading ? null : _doLogin,
                       child: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                         height: 18,
                         width: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                        // Lottie-лоадер у кнопці входу
+                        child: LoadingIndicator(size: 18),
                       )
                           : const Text('Увійти'),
                     ),
@@ -227,10 +228,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     OutlinedButton.icon(
                       onPressed: _gLoading ? null : _loginWithGoogle,
                       icon: _gLoading
-                          ? const SizedBox(
+                          ? SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        // Lottie-лоадер у кнопці Google
+                        child: LoadingIndicator(size: 18),
                       )
                           : const Icon(Icons.g_mobiledata, size: 20),
                       label: const Text('Увійти через Google'),

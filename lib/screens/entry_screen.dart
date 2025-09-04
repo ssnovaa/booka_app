@@ -1,5 +1,6 @@
 // lib/screens/entry_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 
 // app
@@ -11,10 +12,13 @@ import 'package:booka_app/models/user.dart'; // getUserType, UserType
 // core
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth_interceptor.dart';
-import 'package:booka_app/core/network/auth/auth_store.dart'; // <— єдине сховище токенів
+import 'package:booka_app/core/network/auth/auth_store.dart';
+
+// ui
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← єдина точка Lottie-лоадера
 
 class EntryScreen extends StatefulWidget {
-  const EntryScreen({Key? key}) : super(key: key);
+  const EntryScreen({super.key});
 
   @override
   State<EntryScreen> createState() => _EntryScreenState();
@@ -24,10 +28,7 @@ class _EntryScreenState extends State<EntryScreen> {
   bool _isLoading = true;
   bool _interceptorAttached = false;
 
-  // Автосинхрон при поверненні застосунку з фону
   late final AppLifecycleListener _life;
-
-  // Щоб heavy-ініціалізація не запускалася повторно
   bool _didPostFrameHeavy = false;
 
   @override
@@ -35,12 +36,11 @@ class _EntryScreenState extends State<EntryScreen> {
     super.initState();
     _life = AppLifecycleListener(
       onResume: () {
-        final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
-        final userN = Provider.of<UserNotifier>(context, listen: false);
+        final audio = context.read<AudioPlayerProvider>();
+        final userN = context.read<UserNotifier>();
 
-        // Оновлюємо тип користувача (раптом тариф змінився) і підтягуємо прогрес із сервера
         audio.userType = getUserType(userN.user);
-        audio.hydrateFromServerIfAvailable(); // безпечно: LWW-мердж всередині провайдера
+        audio.hydrateFromServerIfAvailable();
       },
     );
     _bootstrap();
@@ -53,8 +53,11 @@ class _EntryScreenState extends State<EntryScreen> {
   }
 
   Future<void> _bootstrap() async {
-    final userNotifier = Provider.of<UserNotifier>(context, listen: false);
-    final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
+    // Прибираємо нативний сплеш, щоб показати нашу анімацію
+    FlutterNativeSplash.remove();
+
+    final userNotifier = context.read<UserNotifier>();
+    final audio = context.read<AudioPlayerProvider>();
 
     try {
       // 1) Мережа/кеш
@@ -67,7 +70,7 @@ class _EntryScreenState extends State<EntryScreen> {
       final dio = ApiClient.i();
       if (!_interceptorAttached) {
         dio.interceptors.removeWhere((it) => it is AuthInterceptor);
-        dio.interceptors.add(AuthInterceptor(dio)); // авто-refresh і ретрай
+        dio.interceptors.add(AuthInterceptor(dio));
         _interceptorAttached = true;
       }
 
@@ -76,25 +79,16 @@ class _EntryScreenState extends State<EntryScreen> {
 
       // 5) Тип користувача для поведінки плеєра (читати лише локальні дані)
       audio.userType = getUserType(userNotifier.user);
-
-      // ⚠️ ВАЖКЕ переносимо після першого кадру (див. нижче),
-      // щоб не блокувати старт і зменшити jank.
     } catch (_) {
       // залишаємося в гостьовому режимі — ок
     } finally {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      // Heavy-частина: після першого рендера екрана-заглушки.
       if (!_didPostFrameHeavy) {
         _didPostFrameHeavy = true;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
-          // Робимо «важке» вже після відмалювання першого кадру
           try {
-            // 6) Прогрів плеєра:
-            //    - завжди відновити локальне
-            //    - ЗАВЖДИ спробувати підвантажити сервер (LWW-мердж всередині)
-            //    - потім підготувати джерело
             await audio.restoreProgress();
             await audio.hydrateFromServerIfAvailable();
             await audio.ensurePrepared();
@@ -109,8 +103,25 @@ class _EntryScreenState extends State<EntryScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      // 🔄 Єдина анімація завантаження у всьому застосунку
+      return Scaffold(
+        backgroundColor: const Color(0xFF0B0B0C),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LoadingIndicator(size: 160), // ← Lottie через спільний віджет
+              const SizedBox(height: 16),
+              Text(
+                'Завантаження…',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withOpacity(0.8),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
     return const MainScreen();

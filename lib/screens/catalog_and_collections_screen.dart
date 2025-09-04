@@ -1,3 +1,4 @@
+// lib/screens/catalo g_and_collections_screen.dart
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
@@ -7,6 +8,7 @@ import 'main_screen.dart';
 import '../core/network/api_client.dart';
 import '../constants.dart';
 import 'series_books_list_screen.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -300,12 +302,12 @@ class _SeriesTabState extends State<_SeriesTab> {
                           errorBuilder: (_, __, ___) => placeholderCard(),
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
+                            // 🔄 Lottie-індикатор під час завантаження обкладинки серії
                             return const Center(
                               child: SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
+                                child: LoadingIndicator(size: 22),
                               ),
                             );
                           },

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../constants.dart';
 import '../core/network/image_cache.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Компактна картка прослуханої книги.
 /// Підтримує як абсолютні URL, так і відносні шляхи, які конвертує через fullResourceUrl.
@@ -74,7 +75,8 @@ class ListenedBookCard extends StatelessWidget {
         height: 64,
         fit: BoxFit.cover,
         useOldImageOnUrlChange: true,
-        placeholder: (ctx, _) => _thumbPlaceholder(isDark),
+        // 🔄 Показуємо Lottie-індикатор під час завантаження
+        placeholder: (ctx, _) => _thumbLoadingPlaceholder(isDark),
         errorWidget: (ctx, _, __) => Icon(
           Icons.broken_image,
           size: 48,
@@ -102,7 +104,7 @@ class ListenedBookCard extends StatelessWidget {
     );
   }
 
-  /// Плейсхолдер для мініатюри книги
+  /// Плейсхолдер для мініатюри книги (коли немає картинки)
   Widget _thumbPlaceholder(bool isDark) {
     return Container(
       width: 48,
@@ -112,7 +114,28 @@ class ListenedBookCard extends StatelessWidget {
         color: isDark ? Colors.white10 : Colors.black12,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Icon(Icons.book, size: 32, color: isDark ? Colors.white54 : Colors.black45),
+      child: Icon(
+        Icons.book,
+        size: 32,
+        color: isDark ? Colors.white54 : Colors.black45,
+      ),
+    );
+  }
+
+  /// Плейсхолдер під час завантаження (фон + Lottie зверху)
+  Widget _thumbLoadingPlaceholder(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _thumbPlaceholder(isDark),
+        const Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: LoadingIndicator(size: 18),
+          ),
+        ),
+      ],
     );
   }
 }

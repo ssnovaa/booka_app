@@ -1,5 +1,5 @@
-// lib/screens/book_detail_screen.dart
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
+import 'package:booka_app/widgets/loading_indicator.dart'; // <--- 1. ДОДАНО ІМПОРТ
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -16,7 +16,7 @@ import 'package:booka_app/models/user.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/image_cache.dart';
-import 'package:booka_app/widgets/booka_app_bar.dart'; // спільний AppBar з глобальною кнопкою теми
+import 'package:booka_app/widgets/booka_app_bar.dart';
 
 class BookDetailScreen extends StatefulWidget {
   final Book book;
@@ -25,19 +25,19 @@ class BookDetailScreen extends StatefulWidget {
   final bool autoPlay;
 
   const BookDetailScreen({
-    Key? key,
+    super.key,
     required this.book,
     this.initialChapter,
     this.initialPosition,
     this.autoPlay = false,
-  }) : super(key: key);
+  });
 
   @override
   State<BookDetailScreen> createState() => _BookDetailScreenState();
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
-  // Поточна «повна» книга (може оновитися після догрузки)
+  // Поточна «повна» книга (може оновитися після довантаження)
   late Book _book;
 
   // Розділи
@@ -60,7 +60,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     super.initState();
     _book = widget.book;
     _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
-    fetchChapters();      // паралельно підтягнути розділи
+    fetchChapters(); // паралельно підтягнути розділи
   }
 
   // Перевірка, чи «урізаний» об’єкт книги
@@ -226,8 +226,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (_playerInitialized || chapters.isEmpty) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
-      final user = Provider.of<UserNotifier>(context, listen: false).user;
+      if (!mounted) return;
+      final audio = context.read<AudioPlayerProvider>();
+      final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
 
       final startIndex = selectedChapterIndex;
@@ -243,9 +244,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           chapters,
           book: _book,
           startIndex: startIndex,
-          bookTitle: _book.title,
-          artist: _book.author,
-          coverUrl: _absUrl(_book.coverUrl),
         );
       }
 
@@ -273,15 +271,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final index = chapters.indexWhere((c) => c.id == chapter.id);
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
-      final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
+      final audio = context.read<AudioPlayerProvider>();
       await audio.player.seek(Duration.zero, index: index);
       await audio.play();
     }
   }
 
-  /// BG для плеєра: мініатюра, якщо є, інакше обкладинка (завжди абсолютний URL)
   String? _resolveBgUrl(Book book) {
-    // Спроба зчитати можливі альтернативні поля мініатюри
     try {
       final dynamic dyn = book;
       final String? thumb1 = dyn.thumbnailUrl as String?;
@@ -306,7 +302,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       builder: (_) => FullPlayerBottomSheet(
         title: _book.title,
         author: _book.author,
-        coverUrl: bgUrl, // ← мініатюра (якщо є) або обкладинка
+        coverUrl: bgUrl,
         chapters: chapters,
         selectedChapter: chapters[selectedChapterIndex],
         onChapterSelected: _onChapterSelected,
@@ -319,10 +315,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    final user = Provider.of<UserNotifier>(context).user;
+    final user = context.watch<UserNotifier>().user;
     final userType = getUserType(user);
 
-    // ==== Візуальні штрихи ====
     final size = MediaQuery.of(context).size;
     final coverHeight = size.height * 0.5;
 
@@ -332,11 +327,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     final double topGradientHeight = coverHeight + 120;
 
-    final audio = Provider.of<AudioPlayerProvider>(context);
+    final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
 
-    // Відкладена ініціалізація плеєра після завантаження розділів
-    if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
+    if (!_playerInitialized &&
+        _autoStartPending &&
+        !isLoading &&
+        chapters.isNotEmpty) {
       _autoStartPending = false;
       _initAudioPlayer();
     }
@@ -346,7 +343,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return Scaffold(
       appBar: bookaAppBar(actions: const []),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingIndicator() // <--- 2. ЗАМІНЕНО
           : (error != null)
           ? Center(
         child: Padding(
@@ -376,7 +373,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       )
           : Stack(
         children: [
-          // Топ-градієнтний фон (не перехоплює торки)
           IgnorePointer(
             child: Align(
               alignment: Alignment.topCenter,
@@ -397,7 +393,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
           ),
-
           RefreshIndicator(
             onRefresh: () async {
               await _maybeLoadFullBook(refresh: true);
@@ -412,7 +407,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   if (coverUrlAbs.isNotEmpty)
                     Center(
                       child: Container(
-                        // м’яка тінь навколо обкладинки
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
@@ -426,36 +420,28 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: FractionallySizedBox(
-                            widthFactor: 1.0,
-                            child: CachedNetworkImage(
-                              imageUrl: coverUrlAbs,
-                              cacheManager:
-                              BookaImageCacheManager.instance,
+                          child: CachedNetworkImage(
+                            imageUrl: coverUrlAbs,
+                            cacheManager:
+                            BookaImageCacheManager.instance,
+                            height: coverHeight,
+                            fit: BoxFit.contain,
+                            placeholder: (_, __) => SizedBox(
                               height: coverHeight,
-                              fit: BoxFit.contain,
-                              placeholder: (_, __) => SizedBox(
-                                height: coverHeight,
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                ),
-                              ),
-                              errorWidget: (_, __, ___) => SizedBox(
-                                height: coverHeight,
-                                child: const Icon(Icons.broken_image,
-                                    size: 48),
-                              ),
-                              memCacheHeight: memCacheHeight,
+                              // 3. ЗАМІНЕНО
+                              child: const LoadingIndicator(size: 80),
                             ),
+                            errorWidget: (_, __, ___) => SizedBox(
+                              height: coverHeight,
+                              child: const Icon(Icons.broken_image,
+                                  size: 48),
+                            ),
+                            memCacheHeight: memCacheHeight,
                           ),
                         ),
                       ),
                     ),
-
                   const SizedBox(height: 16),
-
-                  // Назва
                   Text(
                     _book.title.isNotEmpty ? _book.title : 'Без назви',
                     textAlign: TextAlign.start,
@@ -464,10 +450,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                       height: 1.1,
                     ),
                   ),
-
                   const SizedBox(height: 6),
-
-                  // Автор + Читець
                   Row(
                     children: [
                       if (_book.author.trim().isNotEmpty)
@@ -476,7 +459,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                             _book.author,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
+                            style:
+                            theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: theme.textTheme.bodyMedium?.color
                                   ?.withOpacity(0.85),
@@ -493,7 +477,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                             _book.reader!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(
                               color: theme.textTheme.bodyMedium?.color
                                   ?.withOpacity(0.78),
                             ),
@@ -502,14 +487,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                       ],
                     ],
                   ),
-
                   const SizedBox(height: 12),
-
-                  // Метадані (легка glass-картка)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      filter:
+                      ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
@@ -517,7 +500,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                           color: cs.surface.withOpacity(0.65),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: cs.outlineVariant.withOpacity(0.2),
+                            color:
+                            cs.outlineVariant.withOpacity(0.2),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -528,7 +512,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                           ],
                         ),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
                           children: [
                             if (_book.genres.isNotEmpty)
                               Text(
@@ -551,12 +536,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: const [
-                                  SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
+                                  // 4. ЗАМІНЕНО
+                                  LoadingIndicator(size: 16),
                                   SizedBox(width: 8),
                                   Text('Оновлення даних книги…'),
                                 ],
@@ -567,7 +548,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                               Text(
                                 _bookError!,
                                 style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: Colors.redAccent),
+                                    ?.copyWith(
+                                    color: Colors.redAccent),
                               ),
                             ],
                           ],
@@ -575,18 +557,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 16),
-
                   if ((_book.description ?? '').trim().isNotEmpty)
                     Text(
                       _book.description!.trim(),
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(height: 1.5),
                     ),
-
                   const SizedBox(height: 16),
-
                   if (userType == UserType.guest)
                     Text(
                       'Увійдіть або зареєструйтесь, щоб отримати доступ до інших розділів.',
@@ -603,8 +581,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
           ),
-
-          // Міні-плеєр
           if (currentChapter != null)
             Positioned(
               left: 0,
@@ -613,7 +589,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               child: MiniPlayerWidget(
                 chapter: currentChapter,
                 bookTitle: _book.title,
-                coverUrl: _resolveBgUrl(_book), // мініатюра або обкладинка
+                coverUrl: _resolveBgUrl(_book),
                 onExpand: _openFullPlayer,
               ),
             ),

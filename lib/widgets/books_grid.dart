@@ -1,8 +1,10 @@
+// lib/widgets/books_grid.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/screens/book_detail_screen.dart';
 import 'package:booka_app/constants.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 class BooksGrid extends StatelessWidget {
   final List<Map<String, dynamic>> items;
@@ -104,7 +106,8 @@ class BooksGrid extends StatelessWidget {
                 final h = bc.maxHeight;
                 final naturalImageH = w / imageAspect;
                 final maxImageH = h * maxImageFraction;
-                final imageH = naturalImageH > maxImageH ? maxImageH : naturalImageH;
+                final imageH =
+                naturalImageH > maxImageH ? maxImageH : naturalImageH;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -118,26 +121,34 @@ class BooksGrid extends StatelessWidget {
                           borderRadius: BorderRadius.circular(10),
                           child: (coverUrl == null || coverUrl.isEmpty)
                               ? Container(
-                            color: isDark ? Colors.white10 : Colors.black12,
+                            color:
+                            isDark ? Colors.white10 : Colors.black12,
                             child: const Center(
-                              child: Icon(Icons.book_rounded, size: 32),
+                              child:
+                              Icon(Icons.book_rounded, size: 32),
                             ),
                           )
                               : CachedNetworkImage(
                             imageUrl: coverUrl,
                             fit: BoxFit.cover,
-                            fadeInDuration: const Duration(milliseconds: 120),
+                            fadeInDuration:
+                            const Duration(milliseconds: 120),
+                            // 🔄 Lottie-лоадер під час завантаження обкладинки
                             placeholder: (_, __) => const Center(
                               child: SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: LoadingIndicator(size: 20),
                               ),
                             ),
                             errorWidget: (_, __, ___) => Container(
-                              color: isDark ? Colors.white10 : Colors.black12,
+                              color: isDark
+                                  ? Colors.white10
+                                  : Colors.black12,
                               child: const Center(
-                                child: Icon(Icons.broken_image_rounded, size: 28),
+                                child: Icon(
+                                    Icons.broken_image_rounded,
+                                    size: 28),
                               ),
                             ),
                           ),
@@ -166,7 +177,8 @@ class BooksGrid extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.textTheme.bodySmall?.color?.withOpacity(0.82),
+                                color: theme.textTheme.bodySmall?.color
+                                    ?.withOpacity(0.82),
                                 fontWeight: FontWeight.w600,
                                 height: 1.05,
                               ),
@@ -176,7 +188,8 @@ class BooksGrid extends StatelessWidget {
                           _MetaRow(
                             children: [
                               if (duration.isNotEmpty)
-                                _MetaChipSmall(icon: Icons.schedule, text: duration),
+                                _MetaChipSmall(
+                                    icon: Icons.schedule, text: duration),
                               if (series.isNotEmpty)
                                 _MetaChipSmall(
                                   icon: Icons.auto_stories_outlined,
@@ -235,7 +248,8 @@ class _MetaChipSmall extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: t.dividerColor.withOpacity(isDark ? 0.18 : 0.12)),
+        border: Border.all(
+            color: t.dividerColor.withOpacity(isDark ? 0.18 : 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

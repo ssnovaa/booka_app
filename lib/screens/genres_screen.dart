@@ -9,6 +9,7 @@ import '../models/genre.dart';
 import '../models/book.dart';
 import '../services/catalog_service.dart';
 import '../widgets/book_card.dart';
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 class GenresScreen extends StatefulWidget {
   final VoidCallback? onReturnToMain;
@@ -143,7 +144,8 @@ class _GenresScreenState extends State<GenresScreen> {
         body: Builder(
           builder: (context) {
             if (isLoadingGenres && genres.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
+              // 🔄 Поки жанри ще не завантажились — показуємо Lottie-індикатор
+              return Center(child: LoadingIndicator());
             }
 
             if (error != null && genres.isEmpty) {
@@ -243,36 +245,46 @@ class _GenresScreenState extends State<GenresScreen> {
                     child: isLoadingBooks
                         ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 120),
-                        Center(child: CircularProgressIndicator()),
+                      children: [
+                        const SizedBox(height: 120),
+                        // 🔄 Під час завантаження книг — також Lottie
+                        Center(child: LoadingIndicator()),
                       ],
                     )
                         : (error != null && books.isEmpty)
                         ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
+                      physics:
+                      const AlwaysScrollableScrollPhysics(),
                       children: [
                         _ErrorPanel(
-                          message: error ?? 'Помилка завантаження книг',
-                          onRetry: () => fetchBooksForGenre(selectedGenre!, refresh: true),
+                          message:
+                          error ?? 'Помилка завантаження книг',
+                          onRetry: () => fetchBooksForGenre(
+                              selectedGenre!,
+                              refresh: true),
                         ),
                       ],
                     )
                         : (books.isEmpty)
                         ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
+                      physics:
+                      const AlwaysScrollableScrollPhysics(),
                       children: const [
                         SizedBox(height: 80),
-                        Center(child: Text('Книги не знайдено для цього жанру')),
+                        Center(
+                            child: Text(
+                                'Книги не знайдено для цього жанру')),
                       ],
                     )
                         : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8),
                       itemCount: books.length,
                       itemBuilder: (context, index) {
                         final book = books[index];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
+                          padding:
+                          const EdgeInsets.only(bottom: 8),
                           child: BookCardWidget(book: book),
                         );
                       },

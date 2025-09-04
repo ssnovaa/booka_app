@@ -29,6 +29,9 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 // ⬇️ єдиний репозиторій профілю (single-flight + TTL)
 import 'package:booka_app/repositories/profile_repository.dart';
 
+// ⬇️ наш Lottie-лоадер (замість стандартного бублика)
+import 'package:booka_app/widgets/loading_indicator.dart';
+
 final RouteObserver<ModalRoute<void>> routeObserver =
 RouteObserver<ModalRoute<void>>();
 
@@ -200,7 +203,8 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       future: profileFuture, // просто чекаємо прогріву профілю (без даних)
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          // 🔄 Наш глобальний Lottie-індикатор замість стандартного бублика
+          return const Center(child: LoadingIndicator());
         }
         return buildMainContent();
       },
@@ -305,7 +309,8 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
     return Stack(
       children: [
         isLoading
-            ? const Center(child: CircularProgressIndicator())
+        // 🔄 Тут також показуємо Lottie, поки тягнемо книги/фільтри
+            ? const Center(child: LoadingIndicator())
             : error != null
             ? Center(child: Text(error!))
             : RefreshIndicator(
@@ -523,8 +528,8 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
 
         // Клієнтське сортування на випадок, якщо сервер не відсортував.
         if (filtersActive) {
-          items.sort(
-                  (a, b) => _extractPopularity(b).compareTo(_extractPopularity(a)));
+          items.sort((a, b) =>
+              _extractPopularity(b).compareTo(_extractPopularity(a)));
         }
 
         books = await compute(_parseBooksOffMain, items);
