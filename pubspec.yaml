@@ -27,7 +27,7 @@ dependencies:
   google_sign_in: ^6.2.1
   permission_handler: ^12.0.1
 
-  # Push/локальные уведомления (можно оставить без пинов — подтянется совместимое)
+  # Push / локальные уведомления (версии не закрепляем, подтянутся совместимые)
   firebase_core:
   firebase_messaging:
   flutter_local_notifications:
@@ -38,6 +38,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 flutter:
   uses-material-design: true
@@ -46,12 +47,41 @@ flutter:
     - lib/assets/images/romance.png
     - lib/assets/images/fantasy.png
     - lib/assets/images/detective.png
+    # Добавляем то, что реально лежит в проекте и может использоваться внутри приложения:
+    - assets/splash/logo.jpg
+    - assets/splash/logo_full.jpg
+    - assets/splash/logo512.jpg
+    - assets/splash/booka_equalizer_loader.json
 
-# Конфиг иконки приложения
+# Иконка приложения
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/app_icon/app_icon.png   # квадратный PNG 1024×1024
+  image_path: assets/app_icon/app_icon.png    # квадратный PNG 1024×1024
   min_sdk_android: 21
-  # adaptive_icon_background: "#FFFFFF"        # или путь к картинке
+  # adaptive_icon_background: "#FFFFFF"
   # adaptive_icon_foreground: assets/app_icon/adaptive_fg.png
+
+# Нативный сплэш-скрин. Берём твоё logo.jpg как центральное изображение.
+flutter_native_splash:
+  android: true
+  ios: true
+  web: false
+  fullscreen: true
+  android_gravity: center
+  ios_content_mode: center
+
+  # Светлая тема
+  color: "#060303"
+  image: assets/splash/logo.jpg
+
+  # Тёмная тема
+  color_dark: "#060303"
+  image_dark: assets/splash/logo.jpg
+
+  # Специальные требования Android 12+
+  android_12:
+    image: assets/splash/logo.jpg
+    image_dark: assets/splash/logo.jpg
+    icon_background_color: "#060303"
+    icon_background_color_dark: "#121212"
