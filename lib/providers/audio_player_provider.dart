@@ -454,15 +454,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
+  // ✅✅✅ ИЗМЕНЕНИЕ ЗДЕСЬ ✅✅✅
   // Нормализация относительных аудио-URL в абсолютные (как для обложек)
   String? _normalizeAudioUrl(String? raw) {
     final s = raw?.trim() ?? '';
     if (s.isEmpty) return null;
-    if (s.startsWith('http')) return s;
+
+    // Если ссылка уже абсолютная, убедимся, что она HTTPS
+    if (s.startsWith('http')) {
+      return s.replaceFirst('http://', 'https://');
+    }
+
     // если пришёл относительный путь — приведём к /storage и соберём абсолютный
     final path = s.startsWith('storage/')
         ? s
         : (s.startsWith('/storage/') ? s.substring(1) : 'storage/$s');
+
+    // Важно: убедитесь, что fullResourceUrl в constants.dart тоже возвращает HTTPS
     return fullResourceUrl(path);
   }
 

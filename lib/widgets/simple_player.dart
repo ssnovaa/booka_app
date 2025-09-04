@@ -1,3 +1,4 @@
+import 'package:booka_app/screens/login_screen.dart';
 // lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -55,25 +56,29 @@ class _SimplePlayerState extends State<SimplePlayer> {
       if (userType == UserType.guest && !_showedEndDialog) {
         _showedEndDialog = true;
         Future.microtask(() {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Доступ ограничен'),
-              content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Отмена'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    Navigator.of(context).pushNamed('/login');
-                  },
-                  child: const Text('Войти'),
-                ),
-              ],
-            ),
+          showDialog(context: context, useRootNavigator: true, builder: (ctx) => AlertDialog(
+            title: const Text('Доступ ограничен'),
+            content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Отмена'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      Navigator.of(ctx, rootNavigator: true).push(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    });
+                  });
+                },
+                child: const Text('Войти'),
+              ),
+            ],
+          ),
           );
         });
       }
@@ -166,27 +171,31 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   void _showAuthDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Доступ ограничен'),
-          content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Отмена'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).pushNamed('/login');
-              },
-              child: const Text('Войти'),
-            ),
-          ],
-        );
-      },
+    showDialog(context: context, useRootNavigator: true, builder: (ctx) {
+      return AlertDialog(
+        title: const Text('Доступ ограничен'),
+        content: const Text('Авторизуйтесь, чтобы получить доступ к другим главам.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Navigator.of(ctx, rootNavigator: true).push(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                });
+              });
+            },
+            child: const Text('Войти'),
+          ),
+        ],
+      );
+    },
     );
   }
 

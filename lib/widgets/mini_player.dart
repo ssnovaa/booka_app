@@ -1,3 +1,4 @@
+import 'package:booka_app/screens/login_screen.dart';
 // lib/widgets/mini_player.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -41,25 +42,29 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
       _showedEndDialog = true;
       Future.microtask(() {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Доступ обмежено'),
-            content: const Text('Авторизуйтеся, щоб отримати доступ до інших розділів.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Скасувати'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  Navigator.of(context).pushNamed('/login');
-                },
-                child: const Text('Увійти'),
-              ),
-            ],
-          ),
+        showDialog(context: context, useRootNavigator: true, builder: (ctx) => AlertDialog(
+          title: const Text('Доступ обмежено'),
+          content: const Text('Авторизуйтеся, щоб отримати доступ до інших розділів.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Скасувати'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Navigator.of(ctx, rootNavigator: true).push(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  });
+                });
+              },
+              child: const Text('Увійти'),
+            ),
+          ],
+        ),
         );
       });
     };
@@ -128,7 +133,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(ctx);
-                      Navigator.of(context).pushNamed('/login');
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          Navigator.of(ctx, rootNavigator: true).push(
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          );
+                        });
+                      });
                     },
                     child: const Text('Увійти'),
                   ),

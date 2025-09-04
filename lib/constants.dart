@@ -50,9 +50,9 @@ String? ensureAbsoluteImageUrl(String? raw) {
   var s = raw.trim();
   if (s.isEmpty) return null;
 
-  // Уже абсолютный URL — возвращаем как есть.
+  // ✅ ИЗМЕНЕНИЕ: Уже абсолютный URL — принудительно делаем его HTTPS.
   if (s.startsWith('http://') || s.startsWith('https://')) {
-    return s;
+    return s.replaceFirst('http://', 'https://');
   }
 
   // Отделяем фрагмент и query, чтобы корректно собрать обратно.

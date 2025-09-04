@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Релиз: только HTTPS -->
-    <base-config cleartextTrafficPermitted="true">
+    <!-- Правило по умолчанию: ЗАПРЕТИТЬ весь незашифрованный (HTTP) трафик -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
-            <certificates src="system"/>
+            <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- ИСКЛЮЧЕНИЕ: Разрешить незашифрованный трафик ТОЛЬКО для localhost. -->
+    <!-- Это нужно для работы кэширования в некоторых плеерах (например, just_audio). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
 </network-security-config>
