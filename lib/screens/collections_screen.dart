@@ -1,13 +1,11 @@
 // ШЛЯХ: lib/screens/catalog_and_collections_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // для BackButtonListener
 import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
 import 'main_screen.dart';
 import 'series_books_list_screen.dart';
 import '../core/network/api_client.dart';
-import 'package:dio/dio.dart';
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -41,7 +39,6 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
     if (_tabController.index == 1) {
       _tabController.animateTo(0);
       debugPrint('[BACK][CAC] Switched Series -> Genres');
-      // Візуально покажемо, що перехопили «назад»
       _showHint('Повернення: Серії → Жанри');
       return true;
     }
@@ -79,10 +76,10 @@ class _CatalogAndCollectionsScreenState extends State<CatalogAndCollectionsScree
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
     final primary = theme.colorScheme.primary;
 
+    // BackButtonListener викликається раніше ніж Navigator.pop().
+    // Якщо повернемо true — подію «з'їдено», застосунок не закриється.
     return BackButtonListener(
       onBackButtonPressed: () {
-        // ВАЖЛИВО: цей колбек викликається ДО Navigator.pop().
-        // Якщо повернемо true — подію «зʼїдено», застосунок не закриється.
         final handled = _handleBackHere();
         return handled;
       },
@@ -133,18 +130,20 @@ class _SeriesTabState extends State<_SeriesTab> {
     try {
       final r = await ApiClient.i().get(
         '/series',
+        // Дозволяємо будь-яку статус-код <=499 для подальшої обробки (але фільтруємо нижче).
         options: Options(validateStatus: (s) => s != null && s < 500),
       );
 
-      if (r.statusCode != 200 || r.data == null) {
+      if (r == null || r.statusCode != 200 || r.data == null) {
         return <Map<String, dynamic>>[];
       }
 
-      final raw = (r.data is Map && (r.data as Map).containsKey('data'))
-          ? (r.data['data'] as List?)
-          : (r.data as List?);
+      // API може повертати { data: [...] } або просто [...] — обробляємо обидва випадки.
+      final dynamic raw = (r.data is Map && (r.data as Map).containsKey('data'))
+          ? (r.data['data'] as List<dynamic>?)
+          : (r.data as List<dynamic>?);
 
-      final list = (raw ?? const [])
+      final list = (raw ?? const <dynamic>[])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
           .toList();
@@ -179,7 +178,7 @@ class _SeriesTabState extends State<_SeriesTab> {
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final item = data[i];
-            final id = item['id'] as int?;
+            final id = item['id'] is int ? item['id'] as int : (int.tryParse('${item['id']}'));
             final title = (item['title'] as String?)?.trim();
 
             if (id == null || (title == null || title.isEmpty)) {
