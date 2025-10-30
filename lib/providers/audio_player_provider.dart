@@ -400,10 +400,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
+// НОВАЯ ВЕРСИЯ:
   void _reinitCreditsConsumer() {
     _creditsConsumer?.stop();
     _creditsConsumer = null;
-    _ensureCreditsConsumer();
+
+    // --- [ИСПРАВЛЕНИЕ] ---
+    // Если мы в режиме рекламы (_adMode), нам ВООБЩЕ не нужен CreditsConsumer.
+    // Его задача — списывать секунды, а в режиме рекламы мы этого не делаем.
+    // Его ошибочный внутренний листенер (который блокирует play)
+    // — причина бага.
+    if (_adMode) {
+      _log('Ad Mode active, consumer destroyed and not recreated.');
+      return; // НЕ создаем нового потребителя
+    }
+    // --- [КОНЕЦ ИСПРАВЛЕНИЯ] ---
+
+    _ensureCreditsConsumer(); // Создаем потребителя, только если _adMode = false
     if (player.playing) {
       _creditsConsumer?.start();
     }
