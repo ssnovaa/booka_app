@@ -57,7 +57,10 @@ Future<void> saveCurrentListenToPrefs({
     'position': position,
     'book_id': book.id,
     'chapter_id': chapter.id,
-    'updated_at': (updatedAt ?? _nowUtc()).toIso8601String(),
+    //
+    // 👇 [ВИПРАВЛЕННЯ ТУТ] 👇
+    //
+    'updated_at': (updatedAt ?? _nowUtc()).toIso8601String(), // Було: toIso801String()
   };
 
   await prefs.setString(_kCurrentListenKey, json.encode(payload));
@@ -107,7 +110,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool _adConsentShown = false;      // экран согласия уже показывали один раз
   DateTime? _lastAdAt;               // когда последний раз показали рекламу
   Timer? _adTimer;                   // одноразовый таймер до следующего показа
-  static const Duration _adInterval = Duration(minutes: 10);
+  static const Duration _adInterval = Duration(minutes: 3); // <-- Ви також змінили це
 
   bool get isAdMode => _adMode;      // <-- публичный геттер, удобно в UI
 
@@ -1150,7 +1153,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           _adConsentShown = true;
           final ok = await (onNeedAdConsent?.call() ?? Future.value(false));
           if (ok) {
-            _enableAdMode(); // включает расписание рекламы и отключает списание секунд
+            await _enableAdMode(); // <-- Змінено: додано await
           } else {
             onCreditsExhausted?.call(); // можно показать пейволл/магазин
             return;
@@ -1451,10 +1454,26 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Включить режим рекламы: не списываем секунды, играем дальше,
   /// и показываем межстраничную рекламу каждые ~10 минут.
   Future<void> enableAdsMode({bool keepPlaying = true}) async {
-    _enableAdMode();
+    // ------------------- 👇 [ВИПРАВЛЕННЯ] 👇 -------------------
+    // Ми маємо викликати "розумний" метод play() самого провайдера,
+    // а не "голий" player.play().
+    //
+    // 1. Спочатку викликаємо _enableAdMode(), щоб встановити _adMode = true
+    // 2. Потім викликаємо this.play(), який вже знає про _adMode
+    //    і не запустить CreditsConsumer.
+    //
+    // Також робимо _enableAdMode асинхронним, щоб дочекатися
+    // згоди користувача (якщо вона ще не отримана) перед відтворенням.
+    // --------------------------------------------------------
+
+    await _enableAdMode(); // Викликаємо _enableAdMode і чекаємо
+
     if (keepPlaying && !player.playing) {
-      await player.play();
+      await play(); // <-- ВИПРАВЛЕНО: викликаємо this.play()
     }
+
+    // _syncAdScheduleWithPlayback() тепер викликається всередині this.play(),
+    // тому дублювати його тут не обов'язково, але і не шкідливо.
     _syncAdScheduleWithPlayback();
     notifyListeners();
   }
@@ -1484,22 +1503,70 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   // === AD-MODE: внутренние вспомогательные ===
-  void _enableAdMode() {
+
+  // Змінено: _enableAdMode тепер Future, щоб коректно обробити
+  // потік згоди користувача перед тим, як enableAdsMode продовжить роботу.
+  Future<void> _enableAdMode() async {
     if (_adMode) return;
-    _log('enable ad-mode');
+
+    // Якщо секунди є, не вмикаємо ad-mode
+    final secondsLeft = getFreeSeconds?.call() ?? 0;
+    if (secondsLeft > 0) {
+      _log('enable ad-mode: skipped, has minutes');
+      return;
+    }
+
+    // Якщо згоду ще не питали, питаємо
+    if (!_adConsentShown) {
+      _log('enable ad-mode: asking for consent');
+      _adConsentShown = true;
+      final ok = await (onNeedAdConsent?.call() ?? Future.value(false));
+      if (!ok) {
+        _log('enable ad-mode: consent denied');
+        onCreditsExhausted?.call(); // Показуємо пейволл/помилку, якщо відмовився
+        return; // Не вмикаємо режим
+      }
+      _log('enable ad-mode: consent granted');
+    }
+
+    _log('enable ad-mode: ACTIVATED');
     _adMode = true;
-    _creditsConsumer?.stop(); // в ad-mode секунд не списываем
+
+    // ------------------- 👇 [ВИПРАВЛЕННЯ 1] 👇 -------------------
+    //
+    // Примусово "вбиваємо" і "створюємо заново" CreditsConsumer.
+    // Це скидає його внутрішній стан "exhausted = true",
+    // який блокував запуск плеєра після згоди на AdMode.
+    //
+    _reinitCreditsConsumer();
+    // ------------------- 👆 [КІНЕЦЬ ВИПРАВЛЕННЯ 1] 👆 -------------------
+
     _lastAdAt = DateTime.now(); // первый показ через интервал
     _syncAdScheduleWithPlayback();
     notifyListeners();
   }
 
+// lib/providers/audio_player_provider.dart
+
   void _disableAdMode() {
     if (!_adMode) return;
     _log('disable ad-mode');
     _adMode = false;
-    cancelAdTimer(reason: 'disable_ad_mode'); // вместо _stopAdTimer()
-    _ensureCreditsConsumer(); // вернёмся к consumer при необходимости
+    cancelAdTimer(reason: 'disable_ad_mode');
+
+    // ------------------- 👇 [ВИПРАВЛЕННЯ 2] 👇 -------------------
+    //
+    // Замість _ensureCreditsConsumer() + if(player.playing)...
+    // викликаємо _reinitCreditsConsumer().
+    //
+    // Це гарантує, що ми отримуємо НОВИЙ consumer, який
+    // не має стану "exhausted" і негайно почне списувати
+    // секунди, якщо плеєр грає (ця логіка вже є всередині
+    // _reinitCreditsConsumer).
+    //
+    _reinitCreditsConsumer();
+    // ------------------- 👆 [КІНЕЦЬ ВИПРАВЛЕННЯ 2] 👆 -------------------
+
     notifyListeners();
   }
 

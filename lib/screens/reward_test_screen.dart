@@ -109,6 +109,20 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           debugPrint('[REWARD][WARN] refreshMinutesFromServer() failed: $e');
         }
 
+        // ------------------- 👇 [ВИПРАВЛЕННЯ] 👇 -------------------
+        //
+        // Повідомляємо AudioPlayerProvider, що баланс,
+        // ймовірно, оновився. Він перевірить наявність хвилин
+        // і скасує AdMode / таймер, якщо хвилини є.
+        //
+        debugPrint('[REWARD] STEP 4: Poking AudioPlayerProvider to re-check balance');
+        try {
+          context.read<AudioPlayerProvider>().rearmFreeSecondsTickerSafely();
+        } catch (e) {
+          debugPrint('[REWARD][WARN] Failed to poke AudioPlayerProvider: $e');
+        }
+        // ------------------- 👆 [КІНЕЦЬ ВИПРАВЛЕННЯ] 👆 -------------------
+
         _mc.pulse();
         setState(() => _status = 'Нараховано +15 хв ✅');
       } else if (credited && !_isAuthorized) {
