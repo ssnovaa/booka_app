@@ -14,7 +14,11 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/screens/full_books_grid_screen.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/models/book.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного спінера
+import 'package:booka_app/widgets/loading_indicator.dart';
+// ⬇️(используем готовый бейдж минут)
+import 'package:booka_app/widgets/minutes_badge.dart';
+// ⛑ Безпечні тексти помилок (санітизація)
+import 'package:booka_app/core/security/safe_errors.dart';
 
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
@@ -34,10 +38,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     profileFuture = _fetchUserProfile();
 
-    // підвантажити server-side current_listen (LWW у провайдері)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // локал-first: тягнемо сервер лише якщо немає локальної сесії
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<AudioPlayerProvider>().hydrateFromServerIfAvailable();
+      final ap = context.read<AudioPlayerProvider>();
+      final hasLocal = await ap.hasSavedSession();
+      if (!hasLocal) {
+        await ap.hydrateFromServerIfAvailable();
+      }
     });
   }
 
@@ -55,7 +63,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _refresh() async {
     final audio = context.read<AudioPlayerProvider>();
     final futProfile = _fetchUserProfile(force: true);
-    final futHydrate = audio.hydrateFromServerIfAvailable();
+
+    // локал-first при оновленні
+    final hasLocal = await audio.hasSavedSession();
+    final futHydrate = hasLocal ? Future.value(false) : audio.hydrateFromServerIfAvailable();
+
     setState(() => profileFuture = futProfile);
     await Future.wait([futProfile, futHydrate]);
   }
@@ -71,29 +83,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _continueListening() async {
     final ap = context.read<AudioPlayerProvider>();
-    final book = ap.currentBook;
-    final chapter = ap.currentChapter;
-    if (book != null && chapter != null) {
-      try {
-        await ap.ensurePrepared();
-      } catch (_) {}
+
+    // 1) спершу пробуємо підготуватися з локалі (миттєво)
+    await ap.ensurePrepared();
+    if (ap.currentBook != null && ap.currentChapter != null) {
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => BookDetailScreen(
-            book: book,
-            initialChapter: chapter,
+            book: ap.currentBook!,
+            initialChapter: ap.currentChapter!,
             initialPosition: ap.position.inSeconds,
             autoPlay: true,
           ),
         ),
       );
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Немає поточного прослуховування')),
-      );
+      return;
     }
+
+    // 2) локалі немає → пробуємо сервер
+    final ok = await ap.hydrateFromServerIfAvailable();
+    if (ok && ap.currentBook != null && ap.currentChapter != null) {
+      await ap.ensurePrepared();
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: ap.currentBook!,
+            initialChapter: ap.currentChapter!,
+            initialPosition: ap.position.inSeconds,
+            autoPlay: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 3) нічого не знайшли
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Немає поточного прослуховування')),
+    );
   }
 
   Future<void> _openPlayer() async {
@@ -138,10 +168,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     switch (index) {
       case 0:
         _switchMainTabAndClose(0);
-        break; // Жанри
+        break;
       case 1:
         _switchMainTabAndClose(1);
-        break; // Каталог (головний)
+        break;
       case 2:
         _openPlayer();
         break;
@@ -184,7 +214,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     return map;
   }
-
   void _openBookFromMap(Map<String, dynamic> raw) {
     try {
       final book = Book.fromJson(_normalizedBookMap(raw));
@@ -214,7 +243,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (snapshot.hasError) {
             return _CenteredMessage(
               title: 'Помилка',
-              subtitle: '${snapshot.error}',
+              subtitle: safeErrorMessage(
+                snapshot.error!,
+                fallback: 'Не вдалося завантажити профіль',
+              ),
               actionText: 'Спробувати ще',
               onAction: _refresh,
             );
@@ -279,7 +311,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    // реактивна картка — слухає AudioPlayerProvider
                     child: CurrentListenCard(onContinue: _continueListening),
                   ),
                 ),
@@ -357,7 +388,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
-
 /// ===== Допоміжні міні-виджети профілю =====
 
 class _SectionTitle extends StatelessWidget {
@@ -401,7 +431,6 @@ class _PreviewSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Заголовок + "Усі"
           Row(
             children: [
               Expanded(
@@ -465,37 +494,28 @@ class _PreviewCover extends StatelessWidget {
       ),
     );
 
-    // Плейсхолдер
     final placeholder = frame(
       Center(child: Icon(Icons.book_rounded, color: iconColor, size: 30)),
     );
 
-    // Картинка (із Lottie-лоадером під час завантаження)
     final image = frame(
       Image.network(
         imageUrl ?? '',
-        fit: BoxFit.contain, // не обрізаємо мініатюру
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         filterQuality: FilterQuality.medium,
         errorBuilder: (_, __, ___) => placeholder,
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
           return const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              // 🔄 Lottie-індикатор замість стандартного бублика
-              child: LoadingIndicator(size: 20),
-            ),
+            child: SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
           );
         },
       ),
     );
 
-    final coverCore =
-    (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
+    final coverCore = (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
 
-    // Клікабельна обкладинка (якщо onTap передано)
     final cover = onTap == null
         ? coverCore
         : Material(
@@ -512,8 +532,7 @@ class _PreviewCover extends StatelessWidget {
       children: [
         cover,
         const SizedBox(height: 6),
-        Opacity(
-            opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
+        Opacity(opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
       ],
     );
   }
@@ -545,8 +564,7 @@ class _CenteredMessage extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 8),
@@ -554,17 +572,13 @@ class _CenteredMessage extends StatelessWidget {
                   subtitle!,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color:
-                    theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
                   ),
                 ),
               ],
               if (onAction != null && actionText != null) ...[
                 const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: onAction,
-                  child: Text(actionText!),
-                ),
+                ElevatedButton(onPressed: onAction, child: Text(actionText!)),
               ],
             ],
           ),
@@ -574,6 +588,7 @@ class _CenteredMessage extends StatelessWidget {
   }
 }
 
+/// ===== ИСПРАВЛЕНО: бейдж вынесен ПОД Row и тянется на всю ширину карточки
 class _ProfileHeader extends StatelessWidget {
   final String name;
   final String email;
@@ -614,89 +629,93 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, // левое выравнивание + ширина на всю карточку
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
-            child: Text(
-              initials,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.primary,
+          // ВЕСЬ прежний Row (аватар, имя/email/чип статуса, кнопка "Вийти")
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
+                child: Text(
+                  initials,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color:
-                    theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: statusColor.withOpacity(0.45)),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: statusColor.withOpacity(0.45)),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: onLogout,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Вийти'),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: onLogout,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.redAccent,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Вийти'),
-          ),
+
+          // ⬇️ Бейдж минут ПОД строкой — теперь занимает всю ширину карточки
+          const SizedBox(height: 6),
+          const MinutesBadge(), // в самом виджете стоит width: double.infinity
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
   String _initialsOf(String name) {
-    final parts =
-    name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final parts = name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     if (parts.isEmpty) return 'U';
     if (parts.length == 1) {
       return parts.first.characters.first.toUpperCase();
     }
-    return (parts.first.characters.first + parts.last.characters.first)
-        .toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
   }
 }
 
@@ -719,8 +738,7 @@ class _EmptySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(text,
-              style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(text, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
           if (hint != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -746,15 +764,14 @@ class _ProfileLoadingSkeleton extends StatelessWidget {
       theme.brightness == Brightness.dark ? 0.24 : 0.35,
     );
 
-    Widget bar({double h = 12, double w = double.infinity, double r = 8}) =>
-        Container(
-          height: h,
-          width: w,
-          decoration: BoxDecoration(
-            color: base,
-            borderRadius: BorderRadius.circular(r),
-          ),
-        );
+    Widget bar({double h = 12, double w = double.infinity, double r = 8}) => Container(
+      height: h,
+      width: w,
+      decoration: BoxDecoration(
+        color: base,
+        borderRadius: BorderRadius.circular(r),
+      ),
+    );
 
     return SafeArea(
       child: CustomScrollView(

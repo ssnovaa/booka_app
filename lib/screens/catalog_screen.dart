@@ -1,5 +1,6 @@
 // lib/screens/catalog_screen.dart
 import 'dart:convert';
+import 'dart:async'; // ←
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // compute (парсинг поза UI ізолятом)
@@ -31,6 +32,9 @@ import 'package:booka_app/repositories/profile_repository.dart';
 
 // ⬇️ наш Lottie-лоадер (замість стандартного бублика)
 import 'package:booka_app/widgets/loading_indicator.dart';
+
+// ⬇️ санітизатор повідомлень про помилки (НЕ показуємо сирі тексти/URL/коди)
+import 'package:booka_app/core/security/safe_errors.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver =
 RouteObserver<ModalRoute<void>>();
@@ -131,16 +135,34 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
   }
 
   /// «Продовжити прослуховування»
-  /// 1) Тягнемо сервер у провайдері (LWW), 2) якщо ок — готуємо і граємо,
-  /// 3) інакше — читаємо локальні prefs. (Без прямого звернення до /profile)
+  /// Локал-first: 1) миттєво готуємо з локалі і переходимо, 2) мережа — у фоні.
+  /// Якщо локалі немає: пробуємо сервер, інакше — prefs.
   void _continueListening() async {
     final audio = context.read<AudioPlayerProvider>();
 
-    // 1) Завжди підтягнути актуальний стан із сервера (LWW безпечний)
-    await audio.hydrateFromServerIfAvailable();
-
-    // 2) Якщо після гідратації у провайдері є книга/глава — готуємо і переходимо
+    // 1) Швидка локальна підготовка без мережі
+    await audio.ensurePrepared();
     if (audio.currentBook != null && audio.currentChapter != null) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: audio.currentBook!,
+            initialChapter: audio.currentChapter!,
+            initialPosition: audio.position.inSeconds,
+            autoPlay: true,
+          ),
+        ),
+      );
+      // 2) Статистика/резерв — у фоні
+      // ignore: discarded_futures
+      unawaited(audio.hydrateFromServerIfAvailable());
+      return;
+    }
+
+    // 3) Локалі немає → спробуємо сервер
+    final ok = await audio.hydrateFromServerIfAvailable();
+    if (ok && audio.currentBook != null && audio.currentChapter != null) {
       await audio.ensurePrepared();
       if (!mounted) return;
       Navigator.of(context).push(
@@ -156,7 +178,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       return;
     }
 
-    // 3) Fallback: читаємо локальні prefs (без зайвих мережевих запитів)
+    // 4) Fallback: читаємо локальні prefs
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = prefs.getString('current_listen');
@@ -191,8 +213,9 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       );
     } catch (e) {
       if (!mounted) return;
+      // ❗ Санітизуємо повідомлення
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Помилка при продовженні: $e')),
+        SnackBar(content: Text(safeErrorMessage(e))),
       );
     }
   }
@@ -353,8 +376,9 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
       await Future.wait([genreFuture, authorFuture]);
       await fetchBooks(refresh: refresh);
     } catch (e) {
+      // ❗ Санітизуємо повідомлення замість '...: $e'
       setState(() {
-        error = 'Помилка завантаження фільтрів: $e';
+        error = safeErrorMessage(e);
       });
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -383,9 +407,14 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
         genres = await compute(_parseGenresOffMain, raw);
         return genres;
       }
-      throw Exception('Помилка завантаження жанрів: ${r.statusCode}');
-    } on DioException catch (e) {
-      throw Exception('Помилка завантаження жанрів: ${e.message}');
+      // Не формуємо «говорящі» Exception з деталями — кидаємо DioException для санітайзера
+      throw DioException(
+        requestOptions: r.requestOptions,
+        response: r,
+        type: DioExceptionType.badResponse,
+      );
+    } on DioException {
+      rethrow;
     }
   }
 
@@ -411,9 +440,13 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
         authors = await compute(_parseAuthorsOffMain, raw);
         return authors;
       }
-      throw Exception('Помилка завантаження авторів: ${r.statusCode}');
-    } on DioException catch (e) {
-      throw Exception('Помилка завантаження авторів: ${e.message}');
+      throw DioException(
+        requestOptions: r.requestOptions,
+        response: r,
+        type: DioExceptionType.badResponse,
+      );
+    } on DioException {
+      rethrow;
     }
   }
 
@@ -534,12 +567,19 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
 
         books = await compute(_parseBooksOffMain, items);
       } else {
-        setState(() => error = 'Помилка завантаження: ${r.statusCode}');
+        // Кидаємо DioException і обробляємо в catch із санітизацією
+        throw DioException(
+          requestOptions: r.requestOptions,
+          response: r,
+          type: DioExceptionType.badResponse,
+        );
       }
     } on DioException catch (e) {
-      setState(() => error = 'Помилка підключення: ${e.message}');
+      if (!mounted) return;
+      setState(() => error = safeErrorMessage(e));
     } catch (e) {
-      setState(() => error = 'Помилка: $e');
+      if (!mounted) return;
+      setState(() => error = safeErrorMessage(e));
     } finally {
       if (mounted) setState(() => isLoading = false);
     }

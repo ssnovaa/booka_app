@@ -7,16 +7,12 @@ import 'package:booka_app/core/network/app_exception.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/genre.dart';
 import 'package:booka_app/models/author.dart';
+// ⛑ Безпечні тексти помилок (санітизація)
+import 'package:booka_app/core/security/safe_errors.dart';
 
 /// Сервіс каталогу — використовує ApiClient (Dio + кеш).
 class CatalogService {
   /// Отримати список книг з підтримкою per-request кешу та парсингом в isolate.
-  ///
-  /// Параметри:
-  /// - search, genre, author, page, perPage — як зазвичай
-  /// - forceCache: якщо true — спочатку намагаємось віддати дані з кешу (CachePolicy.forceCache).
-  ///               Це корисно для миттєвого відображення UI; потім можна вручну викликати fetchBooks(refresh: true)
-  /// - cacheMaxStale: час життя кешу (за замовчуванням 6 годин)
   static Future<List<Book>> fetchBooks({
     String? search,
     Genre? genre,
@@ -48,20 +44,25 @@ class CatalogService {
       );
 
       if (r.statusCode == 200) {
-        // Парсинг у isolate, щоб не блокувати головний потік при великих відповідях
         final parsed = await compute(_parseBooksPayload, r.data);
         return parsed;
       }
 
-      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
+      throw AppNetworkException(
+        'Непередбачувана відповідь',
+        statusCode: r.statusCode,
+      );
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
-    } catch (e) {
-      throw AppNetworkException('Помилка парсингу: $e');
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Мережева помилка'),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (_) {
+      throw AppNetworkException('Помилка парсингу даних');
     }
   }
 
-  /// Швидкий "refresh" — запит без використання кеша (оновлює кеш на серверну відповідь)
+  /// Швидкий "refresh" — запит без використання кеша
   static Future<List<Book>> fetchBooksRefresh({
     String? search,
     Genre? genre,
@@ -113,11 +114,17 @@ class CatalogService {
         return parsed;
       }
 
-      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
+      throw AppNetworkException(
+        'Непередбачувана відповідь',
+        statusCode: r.statusCode,
+      );
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
-    } catch (e) {
-      throw AppNetworkException('Помилка парсингу: $e');
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Мережева помилка'),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (_) {
+      throw AppNetworkException('Помилка парсингу даних');
     }
   }
 
@@ -129,20 +136,30 @@ class CatalogService {
         maxStale: cacheMaxStale ?? const Duration(hours: 24),
       );
 
-      final r = await ApiClient.i().get('/genres', options: cacheOpts.toOptions());
+      final r =
+      await ApiClient.i().get('/genres', options: cacheOpts.toOptions());
 
       if (r.statusCode == 200) {
         final data = r.data;
         final List raw = data is List
             ? data
-            : (data is Map && (data['data'] != null || data['items'] != null)
+            : (data is Map &&
+            (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        return raw.map((e) => Genre.fromJson(e as Map<String, dynamic>)).toList();
+        return raw
+            .map((e) => Genre.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
-      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
+      throw AppNetworkException(
+        'Непередбачувана відповідь',
+        statusCode: r.statusCode,
+      );
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Мережева помилка'),
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
@@ -154,20 +171,30 @@ class CatalogService {
         maxStale: cacheMaxStale ?? const Duration(hours: 24),
       );
 
-      final r = await ApiClient.i().get('/authors', options: cacheOpts.toOptions());
+      final r =
+      await ApiClient.i().get('/authors', options: cacheOpts.toOptions());
 
       if (r.statusCode == 200) {
         final data = r.data;
         final List raw = data is List
             ? data
-            : (data is Map && (data['data'] != null || data['items'] != null)
+            : (data is Map &&
+            (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        return raw.map((e) => Author.fromJson(e as Map<String, dynamic>)).toList();
+        return raw
+            .map((e) => Author.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
-      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
+      throw AppNetworkException(
+        'Непередбачувана відповідь',
+        statusCode: r.statusCode,
+      );
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Мережева помилка'),
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
@@ -175,14 +202,25 @@ class CatalogService {
   static Future<Book> fetchBook(String id, {Duration? cacheMaxStale}) async {
     try {
       final cacheOpts = ApiClient.cacheOptions(
-          policy: CachePolicy.request, maxStale: cacheMaxStale ?? const Duration(hours: 12));
-      final r = await ApiClient.i().get('/books/$id', options: cacheOpts.toOptions());
+        policy: CachePolicy.request,
+        maxStale: cacheMaxStale ?? const Duration(hours: 12),
+      );
+      final r = await ApiClient.i()
+          .get('/books/$id', options: cacheOpts.toOptions());
+
       if (r.statusCode == 200 && r.data is Map<String, dynamic>) {
         return Book.fromJson(r.data as Map<String, dynamic>);
       }
-      throw AppNetworkException('Непередбачувана відповідь', statusCode: r.statusCode);
+
+      throw AppNetworkException(
+        'Непередбачувана відповідь',
+        statusCode: r.statusCode,
+      );
     } on DioException catch (e) {
-      throw AppNetworkException(e.message ?? 'Мережева помилка', statusCode: e.response?.statusCode);
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Мережева помилка'),
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
@@ -220,5 +258,7 @@ List<Book> _parseBooksPayload(dynamic raw) {
   } else {
     items = [];
   }
-  return items.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
+  return items
+      .map((e) => Book.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

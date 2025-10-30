@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="black">#FF000000</color>
+
+    <!-- Колір акценту для іконки сповіщень FCM у статус-барі -->
+    <color name="notify_color">#1E88E5</color>
 </resources>

@@ -50,15 +50,23 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
   void initState() {
     super.initState();
     if (widget.autoHydrate) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _hydrate());
+      // ✅ Локал-first: тягнемо сервер лише якщо локальної сесії немає
+      WidgetsBinding.instance.addPostFrameCallback((_) => _hydrateLocalFirst());
     }
   }
 
-  Future<void> _hydrate() async {
+  /// ✅ Гідратація з сервера ТІЛЬКИ якщо немає локально збереженої сесії
+  Future<void> _hydrateLocalFirst() async {
     if (!mounted || _hydrating) return;
     setState(() => _hydrating = true);
     try {
-      await context.read<AudioPlayerProvider>().hydrateFromServerIfAvailable();
+      final audio = context.read<AudioPlayerProvider>();
+      final hasLocal = await audio.hasSavedSession();
+      if (!hasLocal) {
+        await audio.hydrateFromServerIfAvailable();
+      }
+      // швидка підготовка плеєра з локалі (неблокуюче для UI)
+      // залишаємо під контролем екранів — картка лише відображає стан
     } finally {
       if (mounted) setState(() => _hydrating = false);
     }

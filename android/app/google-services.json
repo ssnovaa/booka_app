@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "356466512000-61hocopcth2vsfh1sjugm272s7j7go9f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.booka_app",
+            "certificate_hash": "5895efa2042521b66f80f467ef57d3656adc6d3c"
+          }
+        },
+        {
           "client_id": "356466512000-7fvpi1687qcrep3oif71eoi6s1g4838o.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

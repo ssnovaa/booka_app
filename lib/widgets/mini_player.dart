@@ -9,11 +9,23 @@ import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
 
+/// Раскладка времени относительно слайдера.
+/// sides  — время слева/справа от слайдера (компактней по высоте)
+/// above  — время над слайдером (тоже компактно, но читаемее)
+enum MiniTimeLayout { sides, above }
+
 class MiniPlayerWidget extends StatefulWidget {
   final Chapter chapter;
   final String bookTitle;
   final String? coverUrl;
   final VoidCallback onExpand;
+
+  /// НОВОЕ: выбор раскладки времени. По умолчанию — по бокам.
+  final MiniTimeLayout timeLayout;
+
+  /// НОВОЕ: нижний минимальный отступ SafeArea. Передай 0 на экране книги,
+  /// чтобы плеер вплотную прилегал к баннеру.
+  final double bottomSafeMargin;
 
   const MiniPlayerWidget({
     super.key,
@@ -21,6 +33,8 @@ class MiniPlayerWidget extends StatefulWidget {
     required this.bookTitle,
     required this.onExpand,
     this.coverUrl,
+    this.timeLayout = MiniTimeLayout.sides,
+    this.bottomSafeMargin = 8, // было захардкожено 8
   });
 
   @override
@@ -34,7 +48,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Колбек на завершення першого розділу у гостьовому режимі
+    // 🔔 Колбек на завершення першого розділу у гостьовому режимі
     final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
     audio.onGuestFirstChapterEnd = () {
       final isGuest = Provider.of<UserNotifier>(context, listen: false).isGuest;
@@ -47,7 +61,9 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
           useRootNavigator: true,
           builder: (ctx) => AlertDialog(
             title: const Text('Доступ обмежено'),
-            content: const Text('Авторизуйтеся, щоб отримати доступ до інших розділів.'),
+            content: const Text(
+              'Авторизуйтеся, щоб отримати доступ до інших розділів.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
@@ -57,11 +73,18 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      Navigator.of(ctx, rootNavigator: true).push(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
-                    });
+                    WidgetsBinding.instance.focusManager.primaryFocus?.unfocus();
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        transitionDuration: const Duration(milliseconds: 220),
+                        reverseTransitionDuration: const Duration(milliseconds: 180),
+                        pageBuilder: (_, __, ___) => const LoginScreen(),
+                        transitionsBuilder: (_, anim, __, child) {
+                          final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+                          return FadeTransition(opacity: curved, child: child);
+                        },
+                      ),
+                    );
                   });
                 },
                 child: const Text('Увійти'),
@@ -71,91 +94,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
         );
       });
     };
-  }
-
-  /// Формат часу mm:ss
-  String _fmt(Duration d) {
-    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
-
-  /// Тап по прогрес-бару → seek
-  void _seekByTap(BuildContext context, TapDownDetails details, double width) {
-    final audio = context.read<AudioPlayerProvider>();
-    final dur = audio.duration;
-    if (dur == Duration.zero) return;
-
-    final dx = details.localPosition.dx.clamp(0, width);
-    final ratio = dx / width;
-    final target = Duration(milliseconds: (dur.inMilliseconds * ratio).round());
-    audio.seekTo(target);
-  }
-
-  /// Відкрити повний плеєр або показати гостевий екран
-  void _handleExpandTap() {
-    final isGuest = context.read<UserNotifier>().isGuest;
-    if (isGuest) {
-      _showGuestSheet();
-    } else {
-      widget.onExpand();
-    }
-  }
-
-  void _showGuestSheet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock_outline, size: 28),
-            const SizedBox(height: 8),
-            const Text(
-              'Доступ обмежено',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Увійдіть, щоб мати доступ до всіх розділів і повноцінного плеєра.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Скасувати'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          Navigator.of(ctx, rootNavigator: true).push(
-                            MaterialPageRoute(builder: (_) => const LoginScreen()),
-                          );
-                        });
-                      });
-                    },
-                    child: const Text('Увійти'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -171,183 +109,323 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       return const SizedBox.shrink();
     }
 
-    final pos = audio.position;
-    final dur = audio.duration;
-    final progress = (dur.inMilliseconds > 0)
-        ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
+    // ⚠️ Позиція з провайдера (з урахуванням drag-override)
+    final pos = audio.uiPosition;
 
-    final isGuest = context.select<UserNotifier, bool>((n) => n.isGuest);
+    // ✅ Ефективна тривалість
+    final rawDur = audio.duration;
+    final metaDur = (currentChapter.duration ?? 0) > 0
+        ? Duration(seconds: currentChapter.duration!)
+        : Duration.zero;
+    final dur = rawDur > Duration.zero ? rawDur : metaDur;
+    final hasDur = dur.inSeconds > 0;
+
+    // Тимчасовий максимум, якщо тривалість ще невідома
+    final provisionalMax = (pos.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble(); // до 24 год
+    final sliderMax = hasDur ? dur.inSeconds.toDouble() : provisionalMax;
+    final sliderValue = pos.inSeconds.toDouble().clamp(0.0, sliderMax);
 
     return SafeArea(
       top: false,
+      left: false,
+      right: false,
+      // 🔧 было const EdgeInsets.only(bottom: 8)
+      minimum: EdgeInsets.only(bottom: widget.bottomSafeMargin),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _handleExpandTap,
-          onVerticalDragUpdate: (d) {
-            if (d.delta.dy < -8) _handleExpandTap();
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              children: [
-                // Фон з блюром (glass-картка)
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: cs.surface.withOpacity(0.88),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.25),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: cs.surface.withOpacity(0.92),
+                border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Padding(
+                // чуть компактнее вертикальные отступы
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Верхній рядок
+                    Row(
+                      children: [
+                        _CoverThumb(url: widget.coverUrl),
+                        const SizedBox(width: 12),
+
+                        // Заголовки
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                currentChapter.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.bookTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurface.withOpacity(0.7),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
 
-                // Контент міні-плеєра
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Хендл-підказка (пілюля)
-                      Container(
-                        width: 28,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(
-                          color: cs.onSurface.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(2),
+                        const SizedBox(width: 8),
+
+                        // Play/Pause
+                        Semantics(
+                          label: audio.isPlaying ? 'Пауза' : 'Відтворити',
+                          button: true,
+                          child: _RoundPlayButton(
+                            size: 38,
+                            isPlaying: audio.isPlaying,
+                            onTap: audio.togglePlayback,
+                          ),
                         ),
-                      ),
 
-                      Row(
-                        children: [
-                          _CoverThumb(url: widget.coverUrl),
-                          const SizedBox(width: 12),
+                        const SizedBox(width: 6),
 
-                          // Заголовки
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        // Розгортання
+                        Semantics(
+                          label: 'Розгорнути плеєр',
+                          button: true,
+                          child: IconButton(
+                            iconSize: 28,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: _handleExpandTap,
+                            icon: Stack(
+                              clipBehavior: Clip.none,
                               children: [
-                                Text(
-                                  currentChapter.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  widget.bookTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: cs.onSurface.withOpacity(0.7),
+                                const Icon(Icons.expand_less_rounded),
+                                if (context.read<UserNotifier>().isGuest)
+                                  Positioned(
+                                    right: -6,
+                                    top: -6,
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        color: cs.errorContainer,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: cs.onErrorContainer, width: 1),
+                                      ),
+                                      child: Icon(Icons.lock_rounded, size: 12, color: cs.onErrorContainer),
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
+                        ),
+                      ],
+                    ),
 
-                          const SizedBox(width: 8),
+                    const SizedBox(height: 8),
 
-                          // Кнопка play/pause
-                          Semantics(
-                            label: audio.isPlaying ? 'Пауза' : 'Відтворити',
-                            button: true,
-                            child: _RoundPlayButton(
-                              size: 38,
-                              isPlaying: audio.isPlaying,
-                              onTap: audio.togglePlayback,
-                            ),
+                    // ===== СЛАЙДЕР + ВРЕМЯ (КОМПАКТНО) =====
+                    Builder(
+                      builder: (_) {
+                        final slider = SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 3, // тоньше
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), // меньше «пиптик»
+                            overlayShape: SliderComponentShape.noOverlay,
+                            minThumbSeparation: 0,
                           ),
+                          child: Slider(
+                            value: sliderValue,
+                            min: 0.0,
+                            max: sliderMax,
+                            onChangeStart: (_) => context.read<AudioPlayerProvider>().seekDragStart(),
+                            onChanged: (v) =>
+                                context.read<AudioPlayerProvider>().seekDragUpdate(Duration(seconds: v.floor())),
+                            onChangeEnd: (v) =>
+                                context.read<AudioPlayerProvider>().seekDragEnd(Duration(seconds: v.floor())),
+                          ),
+                        );
 
-                          const SizedBox(width: 6),
+                        final timeStyle =
+                        theme.textTheme.labelSmall?.copyWith(color: cs.onSurface.withOpacity(0.6));
 
-                          // Кнопка розгортання (із замком для гостя)
-                          Semantics(
-                            label: 'Розгорнути плеєр',
-                            button: true,
-                            child: IconButton(
-                              iconSize: 28,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: _handleExpandTap,
-                              icon: Stack(
-                                clipBehavior: Clip.none,
+                        if (widget.timeLayout == MiniTimeLayout.sides) {
+                          // Время по бокам от слайдера — самая низкая компоновка
+                          return Row(
+                            children: [
+                              Text(_fmt(pos), style: timeStyle),
+                              const SizedBox(width: 8),
+                              Expanded(child: slider),
+                              const SizedBox(width: 8),
+                              Text(hasDur ? _fmt(dur) : '--:--', style: timeStyle),
+                            ],
+                          );
+                        } else {
+                          // Время над слайдером
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
                                 children: [
-                                  const Icon(Icons.keyboard_arrow_up),
-                                  if (isGuest)
-                                    const Positioned(
-                                      right: -6,
-                                      top: -2,
-                                      child: Icon(Icons.lock, size: 14),
-                                    ),
+                                  Text(_fmt(pos), style: timeStyle),
+                                  const Spacer(),
+                                  Text(hasDur ? _fmt(dur) : '--:--', style: timeStyle),
                                 ],
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      // Прогрес (тап → seek)
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          return GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTapDown: (d) => _seekByTap(context, d, constraints.maxWidth),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(3),
-                              child: LinearProgressIndicator(
-                                minHeight: 6,
-                                value: progress,
-                                backgroundColor: cs.onSurface.withOpacity(0.08),
-                              ),
-                            ),
+                              const SizedBox(height: 6),
+                              slider,
+                            ],
                           );
-                        },
-                      ),
+                        }
+                      },
+                    ),
 
-                      const SizedBox(height: 6),
+                    const SizedBox(height: 6),
 
-                      // Таймінги
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _fmt(pos),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: cs.onSurface.withOpacity(0.6),
-                            ),
-                          ),
-                          Text(
-                            _fmt(dur),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: cs.onSurface.withOpacity(0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    // Керування
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        IconButton(
+                          tooltip: 'Попередній розділ',
+                          onPressed: _previousChapter,
+                          icon: const Icon(Icons.skip_previous_rounded, size: 22),
+                        ),
+                        IconButton(
+                          tooltip: '-15 с',
+                          onPressed: () => _skipSeconds(-15, effectiveDuration: dur),
+                          icon: const Icon(Icons.replay_10_rounded, size: 22),
+                        ),
+                        IconButton(
+                          tooltip: '+15 с',
+                          onPressed: () => _skipSeconds(15, effectiveDuration: dur),
+                          icon: const Icon(Icons.forward_10_rounded, size: 22),
+                        ),
+                        IconButton(
+                          tooltip: 'Наступний розділ',
+                          onPressed: _nextChapter,
+                          icon: const Icon(Icons.skip_next_rounded, size: 22),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  // Формат mm:ss
+  String _fmt(Duration d) {
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  /// 🧭 Тап по «розгорнути» з обробкою гостя
+  void _handleExpandTap() {
+    final user = context.read<UserNotifier>();
+    if (user.isGuest) {
+      final theme = Theme.of(context);
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (ctx) {
+          final media = MediaQuery.of(ctx);
+          final clamped = media.textScaleFactor.clamp(1.0, 1.3);
+          return MediaQuery(
+            data: media.copyWith(textScaleFactor: clamped),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 12,
+                    bottom: 20 + media.padding.bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock_outline, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Доступ обмежено',
+                        style: Theme.of(ctx).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'У гостьовому режимі доступна лише перша глава. '
+                            'Увійдіть, щоб отримати повний доступ до усіх розділів і керування прогресом.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(ctx).maybePop();
+                            Future.microtask(() {
+                              Navigator.of(context, rootNavigator: true).push(
+                                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                              );
+                            });
+                          },
+                          child: const Text('Увійти / Зареєструватися'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => Navigator.of(ctx).maybePop(),
+                          child: const Text('Закрити'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+      return;
+    }
+
+    widget.onExpand();
+  }
+
+  Future<void> _skipSeconds(int delta, {required Duration effectiveDuration}) async {
+    final audio = context.read<AudioPlayerProvider>();
+    var newPos = audio.uiPosition + Duration(seconds: delta);
+    if (newPos < Duration.zero) newPos = Duration.zero;
+    if (effectiveDuration > Duration.zero && newPos > effectiveDuration) {
+      newPos = effectiveDuration - const Duration(milliseconds: 500);
+    }
+    await audio.seek(newPos);
+  }
+
+  Future<void> _nextChapter() => context.read<AudioPlayerProvider>().nextChapter();
+  Future<void> _previousChapter() => context.read<AudioPlayerProvider>().previousChapter();
 }
 
 class _CoverThumb extends StatelessWidget {
@@ -364,34 +442,34 @@ class _CoverThumb extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: cs.primary.withOpacity(0.12),
+          color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: cs.outlineVariant),
         ),
-        child: Icon(Icons.audiotrack, color: cs.primary),
+        child: Icon(Icons.headphones_rounded, color: cs.onSurfaceVariant),
       );
     }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: CachedNetworkImage(
-        imageUrl: url!,
+      child: SizedBox(
         width: size,
         height: size,
-        fit: BoxFit.cover,
-        fadeInDuration: const Duration(milliseconds: 150),
-        errorWidget: (_, __, ___) => Container(
-          width: size,
-          height: size,
-          color: cs.primary.withOpacity(0.12),
-          child: Icon(Icons.audiotrack, color: cs.primary),
+        child: CachedNetworkImage(
+          imageUrl: url!,
+          fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 160),
+          errorWidget: (_, __, ___) => Container(
+            color: cs.surfaceContainerHighest,
+            alignment: Alignment.center,
+            child: Icon(Icons.image_not_supported_outlined, color: cs.onSurfaceVariant),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Кругла кнопка для відтворення/паузи у міні-плеєрі.
-/// Зовнішнє кільце — градієнт, всередині — біле коло з іконкою.
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
@@ -423,17 +501,16 @@ class _RoundPlayButton extends StatelessWidget {
                   colors: [
                     Color(0xFFF48FB1),
                     Color(0xFF7C4DFF),
-                    Color(0xFF448AFF),
-                    Color(0xFF00BCD4),
+                    Color(0xFF64B5F6),
+                    Color(0xFF26A69A),
                     Color(0xFFF48FB1),
                   ],
-                  stops: [0.0, 0.33, 0.66, 0.85, 1.0],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.18),
-                    blurRadius: 8,
+                    color: Colors.black.withOpacity(0.10),
                     offset: const Offset(0, 2),
+                    blurRadius: 10,
                   ),
                 ],
               ),
@@ -445,7 +522,7 @@ class _RoundPlayButton extends StatelessWidget {
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
+                  child: Icon(icon, size: iconSize, color: Color(0xFF7C4DFF)),
                 ),
               ),
             ),

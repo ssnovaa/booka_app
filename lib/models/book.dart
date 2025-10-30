@@ -1,5 +1,8 @@
 // ШЛЯХ: lib/models/book.dart
 
+/// Модель аудіокниги без скорочень.
+/// Важливо: підтримує як текстову назву серії (`series`), так і числовий ідентифікатор (`seriesId`),
+/// що приходить як `series_id` або у вкладеному обʼєкті `series.id`.
 class Book {
   final int id;
   final String title;
@@ -13,13 +16,17 @@ class Book {
   /// Мініатюра (може бути відсутня). Якщо є — використовуємо її в картках.
   final String? thumbUrl;
 
-  /// ВАЖЛИВО: duration завжди приходить як String (залишаємо так).
+  /// Тривалість завжди зберігаємо як рядок.
   final String duration;
 
-  /// Жанри приводимо до List<String>.
+  /// Жанри як список рядків.
   final List<String> genres;
 
+  /// Назва серії (може бути відсутня або бути вкладеним полем у відповіді).
   final String? series;
+
+  /// Числовий ідентифікатор серії (якщо бекенд повернув `series_id` або `series.id`).
+  final int? seriesId;
 
   /// Швидка ознака: чи використовується мініатюра.
   bool get isThumbUsed => (thumbUrl ?? '').trim().isNotEmpty;
@@ -36,7 +43,11 @@ class Book {
     return '';
   }
 
-  Book({
+  /// Чи є будь-яка інформація про серію.
+  bool get hasSeries =>
+      (seriesId != null) || ((series ?? '').trim().isNotEmpty);
+
+  const Book({
     required this.id,
     required this.title,
     required this.author,
@@ -45,57 +56,109 @@ class Book {
     this.coverUrl,
     this.thumbUrl,
     required this.duration,
-    this.genres = const [],
+    this.genres = const <String>[],
     this.series,
+    this.seriesId,
   });
 
-  factory Book.fromJson(Map<String, dynamic> json) {
-    // --- Універсальний парсинг genres ---
-    List<String> parsedGenres = [];
-    final genresJson = json['genres'];
-    if (genresJson is List) {
-      parsedGenres = genresJson.map<String>((g) {
-        if (g is Map && g['name'] != null) {
-          return g['name'].toString();
-        }
-        return g.toString();
-      }).toList();
-    }
+  /// Універсальний парсер int.
+  static int? _toInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    final s = v.toString().trim();
+    if (s.isEmpty) return null;
+    return int.tryParse(s);
+  }
 
-    // --- Універсальний парсинг series (рядок або обʼєкт) ---
-    String? parsedSeries;
-    if (json['series'] is Map && json['series']?['name'] != null) {
-      parsedSeries = json['series']?['name'].toString();
-    } else if (json['series'] != null) {
-      parsedSeries = json['series'].toString();
+  /// Акуратне діставання текстової назви серії з різних форматів.
+  static String? _parseSeriesText(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final s = raw.trim();
+      return s.isEmpty ? null : s;
     }
+    if (raw is Map) {
+      final t = raw['title'] ?? raw['name'];
+      if (t is String) {
+        final s = t.trim();
+        return s.isEmpty ? null : s;
+      }
+    }
+    final s = raw.toString().trim();
+    if (s.isEmpty || s == '{}' || s == '[]') return null;
+    return s;
+  }
+
+  /// Універсальний парсинг жанрів у список рядків.
+  static List<String> _parseGenres(dynamic raw) {
+    final out = <String>[];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is String) {
+          final s = e.trim();
+          if (s.isNotEmpty) out.add(s);
+        } else if (e is Map) {
+          final n = e['name'];
+          if (n is String && n.trim().isNotEmpty) {
+            out.add(n.trim());
+          } else {
+            final s = e.toString().trim();
+            if (s.isNotEmpty && s != '{}' && s != '[]') out.add(s);
+          }
+        } else {
+          final s = e.toString().trim();
+          if (s.isNotEmpty) out.add(s);
+        }
+      }
+    }
+    return out;
+  }
+
+  factory Book.fromJson(Map<String, dynamic> json) {
+    // Ідентифікатор серії може прийти в різних полях:
+    // - series_id
+    // - seriesId (на всяк випадок)
+    // - series.id (вкладений обʼєкт)
+    final dynamic rawSeriesId =
+        json['series_id'] ??
+            json['seriesId'] ??
+            (json['series'] is Map ? (json['series']['id']) : null);
 
     return Book(
-      id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      title: json['title']?.toString() ?? '',
-      author: json['author']?.toString() ?? '',
-      reader: json['reader']?.toString(),
-      description: json['description']?.toString(),
-      coverUrl: json['cover_url']?.toString(),
-      thumbUrl: json['thumb_url']?.toString(), // ← мініатюра
-      duration: json['duration']?.toString() ?? '',
-      genres: parsedGenres,
-      series: parsedSeries,
+      id: _toInt(json['id']) ?? 0,
+      title: (json['title']?.toString() ?? '').trim(),
+      author: (json['author']?.toString() ?? '').trim(),
+      reader: (json['reader']?.toString()).let((s) => s?.trim().isEmpty == true ? null : s?.trim()),
+      description: (json['description']?.toString()).let((s) => s?.trim().isEmpty == true ? null : s?.trim()),
+      coverUrl: (json['cover_url']?.toString()).let((s) => s?.trim().isEmpty == true ? null : s?.trim()),
+      thumbUrl: (json['thumb_url']?.toString()).let((s) => s?.trim().isEmpty == true ? null : s?.trim()),
+      duration: (json['duration']?.toString() ?? '').trim(),
+      genres: _parseGenres(json['genres']),
+      series: _parseSeriesText(json['series']),
+      seriesId: _toInt(rawSeriesId),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    return <String, dynamic>{
       'id': id,
       'title': title,
       'author': author,
-      if (reader != null) 'reader': reader,
-      if (description != null) 'description': description,
-      if (coverUrl != null) 'cover_url': coverUrl,
-      if (thumbUrl != null) 'thumb_url': thumbUrl,
+      if ((reader ?? '').toString().trim().isNotEmpty) 'reader': reader,
+      if ((description ?? '').toString().trim().isNotEmpty) 'description': description,
+      if ((coverUrl ?? '').toString().trim().isNotEmpty) 'cover_url': coverUrl,
+      if ((thumbUrl ?? '').toString().trim().isNotEmpty) 'thumb_url': thumbUrl,
       'duration': duration,
       'genres': genres,
-      if (series != null) 'series': series,
+      if ((series ?? '').toString().trim().isNotEmpty) 'series': series,
+      if (seriesId != null) 'series_id': seriesId,
     };
   }
+}
+
+/// Маленький зручний розширювач, щоб лаконічно чистити рядки під час ініціалізації.
+/// Приклад: (json['reader']?.toString()).let((s) => ...).
+extension _Let<T> on T {
+  R let<R>(R Function(T it) block) => block(this);
 }

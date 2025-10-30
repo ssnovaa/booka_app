@@ -13,6 +13,27 @@ class CustomBottomNavBar extends StatelessWidget {
   final VoidCallback? onPlayerTap;
   final VoidCallback? onContinue;
 
+  /// Полный цвет иконок в круглых кнопках (НЕ FAB) — общий дефолт
+  final Color? navIconColor;
+
+  /// Отдельные цвета иконок
+  final Color? genresIconColor;   // Жанры
+  final Color? homeIconColor;     // Главная (Каталог)
+  final Color? profileIconColor;  // Профиль
+
+  /// Увеличение размера внутреннего круга и иконки у мини-кнопок
+  final double navInnerBoost;
+  final double navIconBoost;
+
+  /// Базовые зазоры (используются, если детальные не заданы)
+  final double navGap;     // дефолт для Жанры ↔︎ Главная
+  final double fabSideGap; // дефолт для обеих сторон FAB
+
+  /// Детальные зазоры (если не null — имеют приоритет)
+  final double? gapGenresHome; // Жанры ↔︎ Главная
+  final double? gapHomeFab;    // Главная ↔︎ FAB
+  final double? gapFabProfile; // FAB ↔︎ Профиль
+
   const CustomBottomNavBar({
     Key? key,
     required this.currentIndex,
@@ -20,8 +41,24 @@ class CustomBottomNavBar extends StatelessWidget {
     this.onOpenPlayer,
     this.onPlayerTap,
     this.onContinue,
+    this.navIconColor,
+
+    // индивидуальные цвета иконок по умолчанию (как в примере)
+    this.genresIconColor = const Color(0xFFfffc00),
+    this.homeIconColor = const Color(0xFFfffc00),
+    this.profileIconColor = const Color(0xFFfffc00),
+
+    this.navInnerBoost = 1.6,
+    this.navIconBoost = 1.12,
+    this.navGap = 6.0,
+    this.fabSideGap = 8.0,
+
+    // просил 30: ставлю дефолтом 30
+    this.gapGenresHome = 30.0,
+    this.gapHomeFab = 10.0,
+    this.gapFabProfile = 30.0,
   })  : assert(onOpenPlayer != null || onPlayerTap != null,
-  'Передай onOpenPlayer або onPlayerTap'),
+  'Передай onOpenPlayer или onPlayerTap'),
         super(key: key);
 
   static const double _kBarHeight = 64.0;
@@ -32,62 +69,124 @@ class CustomBottomNavBar extends StatelessWidget {
   static const double _kOuterScale = 4 / 3;
   static const double _kInnerExtra = 1.10;
 
-  static const Color _kIconLightYellow = Color(0xFFFFF59D);
-  static const Color _kRingBlue = Color(0xFF2196F3);
+  static const Color _kIconLightYellow = Color(0xFFfffc00);
+  static const Color _kRingBlue = Color(0xFF2196F3); // оболочка FAB
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selected = theme.colorScheme.primary;
-    final unselected = theme.colorScheme.onSurface.withOpacity(0.6);
 
+    // Габариты FAB
     final double ring = _kBaseRing * _kOuterScale;
     final double inner = _kBaseInner * _kOuterScale * _kInnerExtra;
     final double icon = _kBaseIcon * _kOuterScale * _kInnerExtra;
     final double pad = _kBasePad * _kOuterScale;
 
-    const double extraHit = 10.0; // розширення радіусу хит-зони
+    // Мини-кнопки (2/3 от FAB)
+    const double scaleDown = 2 / 3;
+    final double smallRing = ring * scaleDown;
+    final double smallInnerBase = inner * scaleDown;
+    final double smallIconBase = icon * scaleDown;
+    final double smallPad = pad * scaleDown;
 
+    // Увеличиваем только внутренний круг и иконку
+    final double smallInner = smallInnerBase * navInnerBoost;
+    final double smallIcon = smallIconBase * navIconBoost;
+
+    const double extraHit = 10.0;
     final VoidCallback openPlayer = (onOpenPlayer ?? onPlayerTap)!;
 
+    // Цвета
+    final Color barColor = theme.bottomAppBarTheme.color ?? theme.colorScheme.surface;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    // В темной теме «кольцо» мини-кнопок сливается с фоном бара
+    final Color miniRingColor = isDark ? barColor : theme.colorScheme.primary;
+
+    // Фон экрана
+    final Color screenBg = theme.scaffoldBackgroundColor;
+
+    // Внутренний фон мини-кнопок:
+    // - темная тема: фон экрана
+    // - светлая тема: primary с прозрачностью 0.8
+    final Color miniInnerColor = isDark
+        ? screenBg
+        : theme.colorScheme.primary.withOpacity(0.8);
+
+    // Индивидуальные цвета иконок (цепочка подстановок)
+    final Color iconGenres  = genresIconColor  ?? navIconColor ?? _kIconLightYellow;
+    final Color iconHome    = homeIconColor    ?? navIconColor ?? _kIconLightYellow;
+    final Color iconProfile = profileIconColor ?? navIconColor ?? _kIconLightYellow;
+
+    // Детальные отступы (если не заданы — берем дефолтные)
+    final double gh = gapGenresHome ?? navGap;     // Жанры ↔︎ Главная
+    final double hf = gapHomeFab ?? fabSideGap;    // Главная ↔︎ FAB
+    final double fp = gapFabProfile ?? fabSideGap; // FAB ↔︎ Профиль
+
+    // Внутренний фон FAB:
+    // - темная тема: фон экрана
+    // - светлая тема: primary с прозрачностью 0.8
+    final Color fabInnerColor = isDark
+        ? screenBg
+        : theme.colorScheme.primary.withOpacity(0.8);
+
     return Material(
-      color: theme.bottomAppBarTheme.color ?? theme.colorScheme.surface,
+      color: barColor,
       elevation: 6,
       child: SafeArea(
         top: false,
         child: SizedBox(
           height: _kBarHeight,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                tooltip: 'Підбірки',
-                icon: Icon(
-                  Icons.collections_bookmark,
-                  color: currentIndex == 0 ? selected : unselected,
-                ),
-                onPressed: () => onTap(0),
-              ),
-              IconButton(
-                tooltip: 'Каталог',
-                icon: Icon(
-                  Icons.library_books,
-                  color: currentIndex == 1 ? selected : unselected,
-                ),
-                onPressed: () => onTap(1),
+              // ◀️ Жанры
+              _MiniRingButton(
+                tooltip: 'Жанри',
+                icon: Icons.grid_view_rounded,
+                isActive: currentIndex == 0,
+                onTap: () => onTap(0),
+                ringVisualSize: smallRing,
+                innerSize: smallInner,
+                iconSize: smallIcon,
+                logoPadding: smallPad,
+                ringColor: miniRingColor,
+                innerColor: miniInnerColor,
+                iconColor: iconGenres,
               ),
 
-              Consumer2<AudioPlayerProvider, UserNotifier>(
-                builder: (context, p, userN, _) {
-                  final bool isPlaying = p.isPlaying;
+              // Жанры ↔︎ Главная
+              SizedBox(width: gh),
 
-                  final double childVisualSize = ring;
-                  final double childHitSize = ring + 2 * extraHit;
+              // ⌂ Главная (Каталог)
+              _MiniRingButton(
+                tooltip: 'Головна — Каталог',
+                icon: Icons.home_rounded,
+                isActive: currentIndex == 1,
+                onTap: () => onTap(1),
+                ringVisualSize: smallRing,
+                innerSize: smallInner,
+                iconSize: smallIcon,
+                logoPadding: smallPad,
+                ringColor: miniRingColor,
+                innerColor: miniInnerColor,
+                iconColor: iconHome,
+              ),
 
-                  return SizedBox(
-                    width: ring,
-                    height: _kBarHeight,
-                    child: OverflowBox(
+              // Главная ↔︎ FAB
+              SizedBox(width: hf),
+
+              // ⭕ FAB
+              SizedBox(
+                width: ring,
+                height: _kBarHeight,
+                child: Consumer2<AudioPlayerProvider, UserNotifier>(
+                  builder: (context, p, userN, _) {
+                    final bool isPlaying = p.isPlaying;
+                    final double childVisualSize = ring;
+                    final double childHitSize = ring + 2 * extraHit;
+
+                    return OverflowBox(
                       alignment: Alignment.bottomCenter,
                       minWidth: childHitSize,
                       maxWidth: childHitSize,
@@ -95,15 +194,34 @@ class CustomBottomNavBar extends StatelessWidget {
                       maxHeight: childHitSize,
                       child: _PlayerFab(
                         onTap: () async {
-                          // важливий момент: перед натисканням синхронізуємо тип користувача
+                          // 1) Актуализируем тип пользователя (guest/free/paid)
                           p.userType = getUserType(userN.user);
-                          // якщо сесія не підготовлена — поверне false, тоді викличемо onContinue()
-                          final ok = await p.handleBottomPlayTap();
-                          if (!ok) onContinue?.call();
+
+                          // 2) Привязываем consumer и локальный секундный тикер (идемпотентно)
+                          await p.ensureCreditsTickerBound();
+
+                          // 3) Пытаемся продолжить сессию / play-pause
+                          final bool started = await p.handleBottomPlayTap();
+
+                          if (!started) {
+                            // Нет активной сессии — зовем ваш «Продовжити»
+                            onContinue?.call();
+                            return;
+                          }
+
+                          // 4) Сразу «дожмём» реарм тикера (лечит кейс FAB на профиле)
+                          p.rearmFreeSecondsTickerSafely();
+
+                          // 5) Ещё раз страховочный «биндинг» после перехода состояний плеера
+                          Future.microtask(() => p.ensureCreditsTickerBound());
+                          Future.delayed(const Duration(milliseconds: 250), () {
+                            p.ensureCreditsTickerBound();
+                            p.rearmFreeSecondsTickerSafely();
+                          });
                         },
-                        onLongPress: openPlayer, // довге натискання — відкрити повний плеєр
+                        onLongPress: openPlayer,
                         isPlaying: isPlaying,
-                        bgColor: theme.colorScheme.primary,
+                        bgColor: fabInnerColor,          // светлая тема: .withOpacity(0.8), темная: screenBg
                         ringColor: _kRingBlue,
                         iconColor: _kIconLightYellow,
                         ringVisualSize: childVisualSize,
@@ -111,20 +229,136 @@ class CustomBottomNavBar extends StatelessWidget {
                         iconSize: icon,
                         logoPadding: pad,
                         extraHitRadius: extraHit,
-                        debugShowHitArea: false, // увімкни true для наочності
+                        debugShowHitArea: false,
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
 
-              IconButton(
+              // FAB ↔︎ Профиль
+              SizedBox(width: fp),
+
+              // ▶️ Профиль
+              _MiniRingButton(
                 tooltip: 'Профіль',
-                icon: Icon(
-                  Icons.account_circle,
-                  color: currentIndex == 3 ? selected : unselected,
+                icon: Icons.person_rounded,
+                isActive: currentIndex == 3,
+                onTap: () => onTap(3),
+                ringVisualSize: smallRing,
+                innerSize: smallInner,
+                iconSize: smallIcon,
+                logoPadding: smallPad,
+                ringColor: miniRingColor,
+                innerColor: miniInnerColor,
+                iconColor: iconProfile,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Круглая кнопка (НЕ FAB): увеличиваем только внутренний круг и иконку.
+class _MiniRingButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  final double ringVisualSize; // внешний диаметр (НЕ изменяем)
+  final double innerSize;      // увеличенный внутренний круг
+  final double iconSize;       // увеличенная иконка
+  final double logoPadding;
+  final Color ringColor;
+  final Color innerColor;
+  final Color iconColor;
+
+  const _MiniRingButton({
+    required this.tooltip,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+    required this.ringVisualSize,
+    required this.innerSize,
+    required this.iconSize,
+    required this.logoPadding,
+    required this.ringColor,
+    required this.innerColor,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final double thinRing = ringVisualSize * 0.04;
+    final Color ringTint = isActive ? ringColor : ringColor.withOpacity(0.55);
+    final Color hi = cs.onSurface.withOpacity(0.14);
+    final Color lo = cs.onSurface.withOpacity(0.08);
+
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 350),
+      child: InkResponse(
+        onTap: onTap,
+        radius: ringVisualSize / 2 + 10,
+        containedInkWell: false,
+        child: SizedBox(
+          width: ringVisualSize,
+          height: ringVisualSize,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // внешнее «кольцо» с логотипом
+              Container(
+                width: ringVisualSize,
+                height: ringVisualSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ringTint,
                 ),
-                onPressed: () => onTap(3),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.all(logoPadding),
+                      child: Image.asset(
+                        'lib/assets/images/logo.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.all(thinRing),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: hi, width: 1),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.all(thinRing * 2),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: lo, width: 1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // внутренний круг + иконка (увеличенные)
+              Container(
+                width: innerSize,
+                height: innerSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: innerColor,
+                ),
+                child: Icon(icon, size: iconSize, color: iconColor),
               ),
             ],
           ),
@@ -142,8 +376,8 @@ class _PlayerFab extends StatelessWidget {
   final Color ringColor;
   final Color iconColor;
 
-  final double ringVisualSize; // діаметр видимого кільця
-  final double extraHitRadius; // розширення радіусу хит-області
+  final double ringVisualSize;
+  final double extraHitRadius;
   final double innerSize;
   final double iconSize;
   final double logoPadding;
@@ -176,14 +410,12 @@ class _PlayerFab extends StatelessWidget {
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
-          // ВІЗУАЛИ
           Align(
             alignment: Alignment.bottomCenter,
             child: Stack(
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // Фіолетове коло (кільце)
                 Container(
                   width: ringVisualSize,
                   height: ringVisualSize,
@@ -199,7 +431,6 @@ class _PlayerFab extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Внутрішня кнопка (без власного InkWell)
                 Container(
                   width: innerSize,
                   height: innerSize,
@@ -216,8 +447,6 @@ class _PlayerFab extends StatelessWidget {
               ],
             ),
           ),
-
-          // Єдина клікабельна область — центр внизу, покриває всю ділянку
           Align(
             alignment: Alignment.bottomCenter,
             child: SizedBox(
@@ -234,7 +463,6 @@ class _PlayerFab extends StatelessWidget {
               ),
             ),
           ),
-
           if (debugShowHitArea)
             Align(
               alignment: Alignment.bottomCenter,
