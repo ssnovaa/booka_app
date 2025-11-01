@@ -63,6 +63,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     if (_svc == null || _loading) return;
 
     final app = context.read<AudioPlayerProvider>();
+    final bool wasPlayingBeforeAd = app.isPlaying;
 
     setState(() {
       _loading = true;
@@ -75,14 +76,21 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     // чтобы интервальная реклама не «прострелила» параллельно.
     app.suspendAdSchedule('rewarded');
 
-    try {
-      // По возможности фиксируем текущий прогресс перед показом фуллскрина
+    if (wasPlayingBeforeAd) {
+      try {
+        await app.pause();
+      } catch (e) {
+        debugPrint('[REWARD][WARN] pause() before rewarded failed: $e');
+      }
+    } else {
       try {
         await app.flushProgress();
       } catch (e) {
-        debugPrint('[REWARD][WARN] flushProgress() failed: $e');
+        debugPrint('[REWARD][WARN] flushProgress() before rewarded failed: $e');
       }
+    }
 
+    try {
       // 1) Завантаження
       debugPrint('[REWARD] STEP 1: load()');
       final loaded = await _svc!.load();
@@ -129,7 +137,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           // Берём секунды из UserNotifier
           int secondsLeft;
           try {
-            secondsLeft = context.read<UserNotifier>().freeSeconds; // если есть поле секунд
+            secondsLeft = context.read<UserNotifier>().freeSeconds; // если еть поле секунд
           } catch (_) {
             final mins = context.read<UserNotifier>().minutes;      // fallback из минут
             secondsLeft = (mins * 60).clamp(0, 1 << 31);
@@ -147,12 +155,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
             debugPrint('[REWARD] balance>0 → disable ad-mode');
           }
 
-          // Опционально: мягко возобновим воспроизведение
-          try {
-            if (!app.isPlaying) {
-              await app.play();
-            }
-          } catch (_) {}
         } catch (e) {
           debugPrint('[REWARD][WARN] sync freeSeconds to player failed: $e');
         }
@@ -178,6 +180,14 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     } finally {
       // Всегда возобновляем расписание межстраничной рекламы после Rewarded
       app.resumeAdSchedule('rewarded');
+
+      if (wasPlayingBeforeAd && !app.isPlaying) {
+        try {
+          await app.play();
+        } catch (e) {
+          debugPrint('[REWARD][WARN] auto-resume playback failed: $e');
+        }
+      }
 
       if (!mounted) return;
       setState(() => _loading = false);
