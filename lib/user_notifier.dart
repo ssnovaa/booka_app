@@ -126,12 +126,12 @@ class UserNotifier extends ChangeNotifier {
             : null;
 
         final String? refresh =
-        (data is Map) ? (data['refresh_token'] as String?) : null;
+            (data is Map) ? (data['refresh_token'] as String?) : null;
 
         final String? accessExpStr =
-        (data is Map) ? (data['access_expires_at'] as String?) : null;
+            (data is Map) ? (data['access_expires_at'] as String?) : null;
         final DateTime? accessExp =
-        (accessExpStr != null) ? DateTime.tryParse(accessExpStr) : null;
+            (accessExpStr != null) ? DateTime.tryParse(accessExpStr) : null;
 
         final Map<String, dynamic>? userJson = (data is Map)
             ? (data['user'] ?? data['profile']) as Map<String, dynamic>?
@@ -147,27 +147,29 @@ class UserNotifier extends ChangeNotifier {
           // Если бэкенд вернул профиль прямо в ответе логина — применим его.
           if (userJson != null) {
             _user = User.fromJson(userJson);
+            _isAuth = true;
 
-            // ✅ Подхватываем баланс:
-            // приоритет — free_seconds; затем free_minutes; затем legacy minutes
-            final dynFs = userJson['free_seconds'];
-            final dynFm = userJson['free_minutes'] ?? userJson['minutes'];
-
-            if (dynFs is int) {
-              _freeSeconds = dynFs < 0 ? 0 : dynFs;
-            } else if (dynFm is int) {
-              _freeSeconds = dynFm <= 0 ? 0 : dynFm * 60;
+            final secondsFromPayload = _extractSecondsFromPayload(userJson);
+            if (secondsFromPayload != null) {
+              _freeSeconds = _clampSeconds(secondsFromPayload);
             } else {
-              _freeSeconds = 0;
+              await _refreshBalanceSoft(force: true);
             }
           } else {
             // Иначе тянем профиль отдельно
             _user = await ProfileRepository.I.load();
-            // Мягко подтянем точный баланс (не валим UI при ошибках)
-            await _refreshBalanceSoft();
+            _isAuth = true;
+
+            final cachedProfile = ProfileRepository.I.getCachedMap();
+            final secondsFromCache = _extractSecondsFromPayload(cachedProfile);
+            if (secondsFromCache != null) {
+              _freeSeconds = _clampSeconds(secondsFromCache);
+            } else {
+              // Мягко подтянем точный баланс (не валим UI при ошибках)
+              await _refreshBalanceSoft();
+            }
           }
 
-          _isAuth = true;
           notifyListeners();
           return;
         }
@@ -204,6 +206,12 @@ class UserNotifier extends ChangeNotifier {
       _user = u;
       _isAuth = true;
 
+      final cachedProfile = ProfileRepository.I.getCachedMap();
+      final secondsFromCache = _extractSecondsFromPayload(cachedProfile);
+      if (secondsFromCache != null) {
+        _freeSeconds = _clampSeconds(secondsFromCache);
+      }
+
       // Если в модели/репозитории появится прямое поле секунд — подхватите тут.
       // Параллельно мягко подтягиваем точный баланс из /profile.
       await _refreshBalanceSoft();
@@ -228,7 +236,7 @@ class UserNotifier extends ChangeNotifier {
   /// Вызывай после rewarded/consume, чтобы не «угадывать» локально.
   Future<void> refreshMinutesFromServer() async {
     if (!isAuth) return;
-    final seconds = await _fetchSecondsOrNull();
+    final seconds = await _fetchSecondsOrNull(force: true);
     if (seconds != null) {
       setFreeSeconds(seconds);
     }
@@ -268,9 +276,9 @@ class UserNotifier extends ChangeNotifier {
   }
 
   /// Мягкий рефреш баланса (не кидает исключения наружу).
-  Future<void> _refreshBalanceSoft() async {
+  Future<void> _refreshBalanceSoft({bool force = false}) async {
     try {
-      final s = await _fetchSecondsOrNull();
+      final s = await _fetchSecondsOrNull(force: force);
       if (s != null) setFreeSeconds(s);
     } catch (_) {
       // молча игнорируем
@@ -279,49 +287,84 @@ class UserNotifier extends ChangeNotifier {
 
   /// Тянет /profile и пытается извлечь ТЕКУЩИЙ баланс в секундах.
   /// Поддерживает несколько форматов ответа (free_seconds / free_minutes / minutes).
-  Future<int?> _fetchSecondsOrNull() async {
+  Future<int?> _fetchSecondsOrNull({bool force = false}) async {
     try {
-      final r = await ApiClient.i().get('/profile'); // если у вас другой роут — подставьте
-      final data = r.data;
+      final map = await ProfileRepository.I.loadMap(
+        force: force,
+        debugTag: force ? 'UserNotifier.balance(force)' : 'UserNotifier.balance',
+      );
 
-      // Плоско: { ..., free_seconds: N }
-      if (data is Map && data['free_seconds'] is int) {
-        final fs = data['free_seconds'] as int;
-        return fs < 0 ? 0 : fs;
-      }
-
-      // Плоско: { ..., free_minutes: N } → конвертируем
-      if (data is Map && data['free_minutes'] is int) {
-        final fm = data['free_minutes'] as int;
-        return fm <= 0 ? 0 : fm * 60;
-      }
-
-      // Легаси: { ..., minutes: N } → конвертируем
-      if (data is Map && data['minutes'] is int) {
-        final m = data['minutes'] as int;
-        return m <= 0 ? 0 : m * 60;
-      }
-
-      // Обёртка: { profile: { ... } }
-      if (data is Map && data['profile'] is Map) {
-        final p = data['profile'] as Map;
-
-        if (p['free_seconds'] is int) {
-          final fs = p['free_seconds'] as int;
-          return fs < 0 ? 0 : fs;
-        }
-        if (p['free_minutes'] is int) {
-          final fm = p['free_minutes'] as int;
-          return fm <= 0 ? 0 : fm * 60;
-        }
-        if (p['minutes'] is int) {
-          final m = p['minutes'] as int;
-          return m <= 0 ? 0 : m * 60;
-        }
-      }
+      return _extractSecondsFromPayload(map);
     } catch (_) {
       // ignore
     }
     return null;
+  }
+
+  /// Унифицированное извлечение баланса секунд из произвольного JSON.
+  int? _extractFreeSeconds(Map<dynamic, dynamic> data) {
+    for (final key in const [
+      'free_seconds',
+      'freeSeconds',
+      'free_seconds_left',
+      'freeSecondsLeft',
+    ]) {
+      final seconds = _parseSeconds(data[key]);
+      if (seconds != null) return seconds;
+    }
+
+    for (final key in const [
+      'free_minutes',
+      'freeMinutes',
+      'minutes',
+    ]) {
+      final minutes = _parseSeconds(data[key]);
+      if (minutes != null) return _clampSeconds(minutes * 60);
+    }
+
+    return null;
+  }
+
+  int? _extractSecondsFromPayload(dynamic raw) {
+    if (raw is Map) {
+      final seconds = _extractFreeSeconds(raw);
+      if (seconds != null) return seconds;
+
+      for (final key in const ['data', 'user', 'profile']) {
+        final nested = raw[key];
+        if (nested is Map) {
+          final nestedSeconds = _extractSecondsFromPayload(nested);
+          if (nestedSeconds != null) return nestedSeconds;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Парсит значения секунд/минут, поддерживая строки, числа и null.
+  int? _parseSeconds(dynamic value) {
+    if (value == null) return null;
+
+    if (value is int) return _clampSeconds(value);
+    if (value is num) return _clampSeconds(value.floor());
+
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+
+      final parsedInt = int.tryParse(trimmed);
+      if (parsedInt != null) return _clampSeconds(parsedInt);
+
+      final parsedDouble = double.tryParse(trimmed);
+      if (parsedDouble != null) return _clampSeconds(parsedDouble.floor());
+    }
+
+    return null;
+  }
+
+  int _clampSeconds(int value) {
+    if (value.isNegative) return 0;
+    if (value > 0x7fffffff) return 0x7fffffff;
+    return value;
   }
 }
