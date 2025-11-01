@@ -1,6 +1,7 @@
 // lib/widgets/books_grid.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/screens/book_detail_screen.dart';
 import 'package:booka_app/constants.dart';
@@ -121,18 +122,15 @@ class BooksGrid extends StatelessWidget {
                           borderRadius: BorderRadius.circular(10),
                           child: (coverUrl == null || coverUrl.isEmpty)
                               ? Container(
-                            color:
-                            isDark ? Colors.white10 : Colors.black12,
+                            color: isDark ? Colors.white10 : Colors.black12,
                             child: const Center(
-                              child:
-                              Icon(Icons.book_rounded, size: 32),
+                              child: Icon(Icons.book_rounded, size: 32),
                             ),
                           )
                               : CachedNetworkImage(
                             imageUrl: coverUrl,
                             fit: BoxFit.cover,
-                            fadeInDuration:
-                            const Duration(milliseconds: 120),
+                            fadeInDuration: const Duration(milliseconds: 120),
                             // 🔄 Lottie-лоадер під час завантаження обкладинки
                             placeholder: (_, __) => const Center(
                               child: SizedBox(
@@ -142,13 +140,12 @@ class BooksGrid extends StatelessWidget {
                               ),
                             ),
                             errorWidget: (_, __, ___) => Container(
-                              color: isDark
-                                  ? Colors.white10
-                                  : Colors.black12,
+                              color: isDark ? Colors.white10 : Colors.black12,
                               child: const Center(
                                 child: Icon(
-                                    Icons.broken_image_rounded,
-                                    size: 28),
+                                  Icons.broken_image_rounded,
+                                  size: 28,
+                                ),
                               ),
                             ),
                           ),
@@ -185,16 +182,26 @@ class BooksGrid extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 6),
-                          _MetaRow(
+
+                          // 🔻 Рядок мета: [тривалість] [серія]
+                          Row(
                             children: [
-                              if (duration.isNotEmpty)
-                                _MetaChipSmall(
-                                    icon: Icons.schedule, text: duration),
-                              if (series.isNotEmpty)
-                                _MetaChipSmall(
-                                  icon: Icons.auto_stories_outlined,
-                                  text: series,
+                              Expanded(
+                                child: Row(
+                                  children: _withSpacing([
+                                    if (duration.isNotEmpty)
+                                      _MetaChipSmall(
+                                        icon: Icons.schedule,
+                                        text: duration,
+                                      ),
+                                    if (series.isNotEmpty)
+                                      _MetaChipSmall(
+                                        icon: Icons.auto_stories_outlined,
+                                        text: series,
+                                      ),
+                                  ]),
                                 ),
+                              ),
                             ],
                           ),
                         ],
@@ -209,26 +216,13 @@ class BooksGrid extends StatelessWidget {
       },
     );
   }
-}
 
-class _MetaRow extends StatelessWidget {
-  final List<Widget> children;
-  const _MetaRow({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: Row(children: _withSpacing(children))),
-      ],
-    );
-  }
-
+  // Локальний хелпер для відступів між елементами в рядку
   List<Widget> _withSpacing(List<Widget> children) {
     final out = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       if (i > 0) out.add(const SizedBox(width: 6));
-      out.add(Flexible(fit: FlexFit.loose, child: children[i]));
+      out.add(children[i]);
     }
     return out;
   }
@@ -249,7 +243,8 @@ class _MetaChipSmall extends StatelessWidget {
         color: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-            color: t.dividerColor.withOpacity(isDark ? 0.18 : 0.12)),
+          color: t.dividerColor.withOpacity(isDark ? 0.18 : 0.12),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

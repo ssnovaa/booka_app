@@ -5,7 +5,8 @@ import 'package:dio/dio.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/auth/google_oauth.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
+import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер
+import 'package:booka_app/core/security/safe_errors.dart'; // ← санітизатор повідомлень
 
 typedef OnGoogleSignedIn = Future<void> Function(
     String token,
@@ -54,7 +55,8 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
       final auth = await acc.authentication;
       final idToken = auth.idToken;
       if (idToken == null || idToken.isEmpty) {
-        throw 'Не вдалося отримати id_token від Google';
+        // Не розкриваємо деталей помилки користувачу
+        throw Exception('GOOGLE_ID_TOKEN_MISSING');
       }
 
       final r = await ApiClient.i().post(
@@ -64,30 +66,26 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
       );
 
       if (r.statusCode != 200 || r.data == null) {
-        // Показуємо зрозумілу помилку, якщо сервер її повернув.
-        String msg = 'Помилка входу (код ${r.statusCode})';
-        final d = r.data;
-        if (d is Map && (d['message'] != null || d['error'] != null)) {
-          msg = (d['message'] ?? d['error']).toString();
-        } else if (d is String && d.isNotEmpty) {
-          msg = d;
-        }
-        throw msg;
+        // Не показуємо сирі повідомлення/тіло відповіді користувачу
+        throw Exception('GOOGLE_LOGIN_FAILED');
       }
 
-      final data = (r.data is Map) ? Map<String, dynamic>.from(r.data as Map) : <String, dynamic>{};
+      final data =
+      (r.data is Map) ? Map<String, dynamic>.from(r.data as Map) : <String, dynamic>{};
       final token = (data['token'] ?? data['access_token'] ?? '').toString();
-      final user = (data['user'] is Map) ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+      final user = (data['user'] is Map)
+          ? Map<String, dynamic>.from(data['user'] as Map)
+          : <String, dynamic>{};
 
-      if (token.isEmpty) throw 'Сервер не повернув токен';
+      if (token.isEmpty) {
+        throw Exception('GOOGLE_TOKEN_MISSING');
+      }
 
       await widget.onSignedIn(token, user);
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      final msg = safeErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

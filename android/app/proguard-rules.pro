@@ -24,10 +24,23 @@
 -dontwarn androidx.work.**
 
 #############################
-# just_audio / ExoPlayer
+# just_audio / Media3 / ExoPlayer
 #############################
+# Новый стек AndroidX Media3
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# Старый пакет ExoPlayer (если где-то тянется)
 -keep class com.google.android.exoplayer2.** { *; }
 -dontwarn com.google.android.exoplayer2.**
+
+# Совместимость media-compat (иногда нужны уведомления/сессии)
+-keep class androidx.media.** { *; }
+-dontwarn androidx.media.**
+
+# Плагины Райана (just_audio*, audio_service, just_audio_background)
+-keep class com.ryanheise.** { *; }
+-dontwarn com.ryanheise.**
 
 #############################
 # Gson (если используешь аннотации @SerializedName)
@@ -58,3 +71,8 @@
 # AndroidX (общие предупреждения)
 #############################
 -dontwarn androidx.**
+
+# Иногда Media3 тянет аннотации из Checker Framework / Error Prone — заглушим варнинги:
+-dontwarn org.checkerframework.**
+-dontwarn com.google.errorprone.**
+-dontwarn com.google.j2objc.annotations.**

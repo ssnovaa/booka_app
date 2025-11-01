@@ -3,13 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
+import 'package:cached_network_image/cached_network_image.dart'; // ← добавлено
 
 import 'package:booka_app/core/network/api_client.dart';
 import '../models/genre.dart';
 import '../models/book.dart';
 import '../services/catalog_service.dart';
 import '../widgets/book_card.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
+import 'package:booka_app/widgets/loading_indicator.dart';
+
+// ⛑ Безопасные тексты ошибок
+import 'package:booka_app/core/security/safe_errors.dart';
 
 class GenresScreen extends StatefulWidget {
   final VoidCallback? onReturnToMain;
@@ -28,10 +32,42 @@ class _GenresScreenState extends State<GenresScreen> {
   bool isLoadingBooks = false;
   String? error;
 
+  final ScrollController _tilesScrollCtrl = ScrollController();
+  final ScrollController _booksScrollCtrl = ScrollController();
+
   @override
   void initState() {
     super.initState();
     fetchGenres();
+  }
+
+  @override
+  void dispose() {
+    _tilesScrollCtrl.dispose();
+    _booksScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Синхронный хэндлер для контейнера: если жанр выбран — сбрасываем и возвращаем true.
+  bool handleBackSync({bool scrollToTop = true}) {
+    if (selectedGenre != null) {
+      setState(() {
+        selectedGenre = null;
+        books = [];
+        error = null;
+        isLoadingBooks = false;
+      });
+      if (scrollToTop && _tilesScrollCtrl.hasClients) {
+        // не await — пусть анимация идет сама
+        _tilesScrollCtrl.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      }
+      return true;
+    }
+    return false;
   }
 
   /// Завантажуємо список жанрів (сервіс сам керує кешем)
@@ -49,7 +85,7 @@ class _GenresScreenState extends State<GenresScreen> {
       });
     } catch (e) {
       setState(() {
-        error = 'Помилка завантаження жанрів: $e';
+        error = safeErrorMessage(e, fallback: 'Не вдалося завантажити жанри');
       });
     } finally {
       if (mounted) setState(() => isLoadingGenres = false);
@@ -89,54 +125,51 @@ class _GenresScreenState extends State<GenresScreen> {
             ? (data['data'] ?? data['items'] ?? data['books'] ?? [])
             : []);
         setState(() {
-          books = items
-              .map((e) => Book.fromJson(e as Map<String, dynamic>))
-              .toList();
+          books =
+              items.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
         });
       } else {
         setState(() {
-          error = 'Unexpected response: ${r.statusCode}';
+          error = safeHttpStatus('Не вдалося завантажити книги', r.statusCode);
         });
       }
     } on DioException catch (e) {
       setState(() {
-        error = e.message ?? 'Network error';
+        error = safeErrorMessage(e, fallback: 'Проблема мережі');
       });
     } catch (e) {
       setState(() {
-        error = 'Parsing error: $e';
+        error = safeErrorMessage(e, fallback: 'Помилка обробки даних');
       });
     } finally {
       if (mounted) setState(() => isLoadingBooks = false);
     }
   }
 
-  // Back: якщо вибрано жанр — скидаємо вибір, інакше викликаємо onReturnToMain
+  // Back внутри самого экрана (если открыт отдельно, без MainScreen)
   Future<bool> _onWillPop() async {
-    if (selectedGenre != null) {
-      setState(() {
-        selectedGenre = null;
-        books = [];
-      });
-      return false;
-    }
+    if (handleBackSync()) return false;
     if (widget.onReturnToMain != null) {
       widget.onReturnToMain!();
+      return false;
     }
-    return false;
+    return true;
   }
 
   Future<void> _onPullToRefresh() async {
     if (selectedGenre == null) {
       await fetchGenres();
     } else {
-      await fetchBooksForGenre(selectedGenre!, refresh: true); // жорсткий refresh
+      await fetchBooksForGenre(selectedGenre!, refresh: true);
+      if (_booksScrollCtrl.hasClients) {
+        _booksScrollCtrl.jumpTo(0.0);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    // final cs = Theme.of(context).colorScheme; // не используется — можно оставить закомментированным
 
     return WillPopScope(
       onWillPop: _onWillPop,
@@ -144,8 +177,7 @@ class _GenresScreenState extends State<GenresScreen> {
         body: Builder(
           builder: (context) {
             if (isLoadingGenres && genres.isEmpty) {
-              // 🔄 Поки жанри ще не завантажились — показуємо Lottie-індикатор
-              return Center(child: LoadingIndicator());
+              return const Center(child: LoadingIndicator());
             }
 
             if (error != null && genres.isEmpty) {
@@ -169,19 +201,22 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Екран жанрів (без вибраного жанру) — строгі плитки
+            // --- плитка жанров с картинками (исходный экран выбора)
             if (selectedGenre == null) {
               return RefreshIndicator(
                 onRefresh: _onPullToRefresh,
                 child: SingleChildScrollView(
+                  controller: _tilesScrollCtrl,
                   physics: const AlwaysScrollableScrollPhysics(),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                     child: GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: genres.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
                         childAspectRatio: 1.05,
                         mainAxisSpacing: 12,
@@ -206,92 +241,51 @@ class _GenresScreenState extends State<GenresScreen> {
               );
             }
 
-            // --- Екран вибраного жанру: «пілюлі» + список
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: genres.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 3.0,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                    ),
-                    itemBuilder: (context, index) {
-                      final genre = genres[index];
-                      final isSelected = selectedGenre?.id == genre.id;
-                      return _GenrePill(
-                        label: genre.name,
-                        selected: isSelected,
-                        onTap: () async {
-                          setState(() {
-                            selectedGenre = genre;
-                            books = [];
-                          });
-                          await fetchBooksForGenre(genre, refresh: true);
-                        },
-                      );
-                    },
+            // --- выбранный жанр: ТОЛЬКО список книг (без «складывания жанров», без закреплённой плитки)
+            return RefreshIndicator(
+              onRefresh: _onPullToRefresh,
+              child: isLoadingBooks
+                  ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 120),
+                  Center(child: LoadingIndicator()),
+                ],
+              )
+                  : (error != null && books.isEmpty)
+                  ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _ErrorPanel(
+                    message: error ?? 'Помилка завантаження книг',
+                    onRetry: () => fetchBooksForGenre(
+                        selectedGenre!, refresh: true),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _onPullToRefresh,
-                    child: isLoadingBooks
-                        ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        const SizedBox(height: 120),
-                        // 🔄 Під час завантаження книг — також Lottie
-                        Center(child: LoadingIndicator()),
-                      ],
-                    )
-                        : (error != null && books.isEmpty)
-                        ? ListView(
-                      physics:
-                      const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        _ErrorPanel(
-                          message:
-                          error ?? 'Помилка завантаження книг',
-                          onRetry: () => fetchBooksForGenre(
-                              selectedGenre!,
-                              refresh: true),
-                        ),
-                      ],
-                    )
-                        : (books.isEmpty)
-                        ? ListView(
-                      physics:
-                      const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 80),
-                        Center(
-                            child: Text(
-                                'Книги не знайдено для цього жанру')),
-                      ],
-                    )
-                        : ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8),
-                      itemCount: books.length,
-                      itemBuilder: (context, index) {
-                        final book = books[index];
-                        return Padding(
-                          padding:
-                          const EdgeInsets.only(bottom: 8),
-                          child: BookCardWidget(book: book),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              )
+                  : (books.isEmpty)
+                  ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 80),
+                  Center(
+                      child:
+                      Text('Книги не знайдено для цього жанру')),
+                ],
+              )
+                  : ListView.builder(
+                controller: _booksScrollCtrl,
+                padding:
+                const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: books.length,
+                itemBuilder: (context, index) {
+                  final book = books[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: BookCardWidget(book: book),
+                  );
+                },
+              ),
             );
           },
         ),
@@ -311,7 +305,9 @@ class _GenreTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final borderColor = cs.outline;
+
     final asset = _genreAsset(genre.id);
+    final url = genre.imageUrl; // ← URL с сервера, если задан
 
     return Material(
       color: cs.surface,
@@ -330,11 +326,7 @@ class _GenreTile extends StatelessWidget {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.asset(
-                    asset,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                  ),
+                  child: _buildImage(url, asset),
                 ),
               ),
               const SizedBox(height: 8),
@@ -354,6 +346,23 @@ class _GenreTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildImage(String? url, String asset) {
+    if (url == null || url.isEmpty) {
+      return Image.asset(asset, fit: BoxFit.cover, width: double.infinity);
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      fadeInDuration: const Duration(milliseconds: 200),
+      placeholder: (ctx, _) => const Center(
+        child: SizedBox(width: 22, height: 22, child: LoadingIndicator(size: 22)),
+      ),
+      errorWidget: (ctx, _, __) =>
+          Image.asset(asset, fit: BoxFit.cover, width: double.infinity),
     );
   }
 
@@ -386,9 +395,9 @@ class _GenrePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final border = selected ? cs.primary : cs.outline; // контрастніше в темній темі
+    final border = selected ? cs.primary : cs.outline;
     final bg = selected ? cs.primaryContainer : cs.surface;
-    final fg = selected ? cs.onPrimaryContainer : cs.onSurface; // фікс читаємості
+    final fg = selected ? cs.onPrimaryContainer : cs.onSurface;
 
     return Material(
       color: Colors.transparent,

@@ -1,5 +1,4 @@
-import 'package:booka_app/screens/login_screen.dart';
-// lib/widgets/simple_player.dart
+// ПУТЬ: lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,9 +6,12 @@ import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/models/user.dart';
+import 'package:booka_app/screens/login_screen.dart';
 
 /// Простий плеєр — список розділів + базове керування відтворенням.
-/// Тексти інтерфейсу та коментарі українською.
+/// Виправлено «сірий повзунок на максимумі»:
+///  - використовуємо uiPosition з провайдера (з урахуванням drag-override)
+///  - поки тривалість ще невідома, тимчасовий max = pos+1
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
   final String author;
@@ -38,8 +40,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
   bool _didSeek = false;
 
-  double? _dragValueSecs; // тимчасове значення слайдера під час перетягування
-
   @override
   void initState() {
     super.initState();
@@ -50,42 +50,14 @@ class _SimplePlayerState extends State<SimplePlayer> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Колбек на завершення першого розділу для гостя
+    // 🔔 Колбек на завершення першого розділу для гостя
     final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
     audioProvider.onGuestFirstChapterEnd = () {
       final user = Provider.of<UserNotifier>(context, listen: false).user;
       final userType = getUserType(user);
       if (userType == UserType.guest && !_showedEndDialog) {
         _showedEndDialog = true;
-        Future.microtask(() {
-          showDialog(
-            context: context,
-            useRootNavigator: true,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Доступ обмежено'),
-              content: const Text('Увійдіть, щоб отримати доступ до інших розділів.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Скасувати'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        Navigator.of(ctx, rootNavigator: true).push(
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        );
-                      });
-                    });
-                  },
-                  child: const Text('Увійти'),
-                ),
-              ],
-            ),
-          );
-        });
+        Future.microtask(() => _showAuthDialog(context));
       }
     };
   }
@@ -108,7 +80,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   void _resetDialogStateIfReplayed() {
-    // Скидаємо флаг діалогу при повторному запуску першої глави
+    // Скидаємо прапорець діалогу при повторному запуску першої глави
     final audioProvider = context.read<AudioPlayerProvider>();
     final user = Provider.of<UserNotifier>(context, listen: false).user;
     final userType = getUserType(user);
@@ -129,82 +101,148 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
   Future<void> _skipSeconds(BuildContext context, int seconds) async {
     final provider = context.read<AudioPlayerProvider>();
-    final dur = provider.duration;
+    final effDur = _effectiveDuration(provider, provider.currentChapter);
 
-    var target = provider.position + Duration(seconds: seconds);
+    var target = provider.uiPosition + Duration(seconds: seconds);
     if (target < Duration.zero) target = Duration.zero;
-    if (dur > Duration.zero && target > dur) target = dur;
-
+    if (effDur > Duration.zero && target > effDur) {
+      target = effDur - const Duration(milliseconds: 500);
+    }
     await provider.seek(target); // через провайдер — зберігаємо/синхронізуємо
   }
 
-  void _nextChapter(BuildContext context, UserType userType) {
-    final provider = context.read<AudioPlayerProvider>();
-    final idx = provider.player.currentIndex ?? 0;
-    if (idx < widget.chapters.length - 1) {
-      bool canPlayNext = true;
-      if (userType == UserType.guest && idx + 1 > 0) {
-        canPlayNext = false;
-      }
-      if (canPlayNext) {
-        provider.seekChapter(idx + 1);
-        widget.onChapterSelected(widget.chapters[idx + 1]);
-      } else {
-        _showAuthDialog(context);
-      }
-    }
+  // Поточний індекс у вихідному списку widget.chapters (за id з провайдера)
+  int _currentIndexInWidgetList(AudioPlayerProvider provider) {
+    final currentId = provider.currentChapter?.id ?? widget.chapters.first.id;
+    return widget.chapters.indexWhere((c) => c.id == currentId);
   }
 
-  void _previousChapter(BuildContext context, UserType userType) {
+  Future<void> _nextChapter(BuildContext context, UserType userType) async {
     final provider = context.read<AudioPlayerProvider>();
-    final idx = provider.player.currentIndex ?? 0;
-    if (idx > 0) {
-      bool canPlayPrev = true;
-      if (userType == UserType.guest && idx - 1 > 0) {
-        canPlayPrev = false;
-      }
-      if (canPlayPrev) {
-        provider.seekChapter(idx - 1);
-        widget.onChapterSelected(widget.chapters[idx - 1]);
-      } else {
-        _showAuthDialog(context);
-      }
-    } else {
+    final idx = _currentIndexInWidgetList(provider);
+    if (idx == -1) return;
+
+    final nextIdx = idx + 1;
+    if (nextIdx >= widget.chapters.length) return;
+
+    // Гість — тільки перша глава
+    if (userType == UserType.guest && nextIdx > 0) {
+      _showAuthDialog(context);
+      return;
+    }
+
+    await provider.seekChapter(nextIdx);
+    widget.onChapterSelected(widget.chapters[nextIdx]);
+  }
+
+  Future<void> _previousChapter(BuildContext context, UserType userType) async {
+    final provider = context.read<AudioPlayerProvider>();
+    final idx = _currentIndexInWidgetList(provider);
+    if (idx == -1) return;
+
+    if (idx == 0) {
       // Якщо вже перша — переміститись на початок
-      provider.seek(const Duration(seconds: 0));
+      await provider.seek(const Duration(seconds: 0));
+      return;
     }
+
+    final prevIdx = idx - 1;
+
+    // Гість — дозволяємо перейти лише на нульовий індекс
+    if (userType == UserType.guest && prevIdx > 0) {
+      _showAuthDialog(context);
+      return;
+    }
+
+    await provider.seekChapter(prevIdx);
+    widget.onChapterSelected(widget.chapters[prevIdx]);
   }
 
+  /// 🔐 Адаптивне попередження про доступ (bottom-sheet)
   void _showAuthDialog(BuildContext context) {
-    showDialog(
+    final theme = Theme.of(context);
+    showModalBottomSheet(
       context: context,
-      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Доступ обмежено'),
-          content: const Text('Увійдіть, щоб отримати доступ до інших розділів.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Скасувати'),
+        // Адаптивність шрифтів + обмеження ширини для планшетів/великих екранів
+        final media = MediaQuery.of(ctx);
+        final clamped = media.textScaleFactor.clamp(1.0, 1.3);
+        return MediaQuery(
+          data: media.copyWith(textScaleFactor: clamped),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 12,
+                  bottom: 20 + media.padding.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_outline, size: 32),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Доступ обмежено',
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'У гостьовому режимі доступна лише перша глава. '
+                          'Увійдіть, щоб отримати повний доступ до інших розділів і синхронізації прогресу.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).maybePop();
+                          // Переходимо на екран логіну через rootNavigator
+                          Future.microtask(() {
+                            Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const LoginScreen()),
+                            );
+                          });
+                        },
+                        child: const Text('Увійти / Зареєструватися'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(ctx).maybePop(),
+                        child: const Text('Закрити'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Navigator.of(ctx, rootNavigator: true).push(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    );
-                  });
-                });
-              },
-              child: const Text('Увійти'),
-            ),
-          ],
+          ),
         );
       },
     );
+  }
+
+  // Ефективна тривалість: плеєрна або з метаданих глави (щоб не було "сірої" шкали)
+  Duration _effectiveDuration(AudioPlayerProvider provider, Chapter? current) {
+    final d = provider.duration;
+    if (d > Duration.zero) return d;
+    final meta = (current?.duration ?? 0);
+    return meta > 0 ? Duration(seconds: meta) : Duration.zero;
   }
 
   @override
@@ -219,18 +257,20 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final currentChapter =
         provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
 
-    final position = provider.position;
-    final duration = provider.duration;
+    // Позиція з урахуванням drag-override, щоб UI був стабільним під час перетягування
+    final position = provider.uiPosition;
 
-    // Значення слайдера: показуємо тимчасове під час перетягування
-    final double sliderMax =
-    duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0;
-    final double rawValue = (_dragValueSecs ?? position.inSeconds.toDouble());
-    final double sliderValue = rawValue.clamp(0.0, sliderMax).toDouble();
+    // Ефективна тривалість
+    final effDuration = _effectiveDuration(provider, currentChapter);
+    final hasDur = effDuration.inSeconds > 0;
 
-    final displayedPos = Duration(
-      seconds: (_dragValueSecs ?? position.inSeconds.toDouble()).toInt(),
-    );
+    // Значення слайдера
+    // Поки немає тривалості — ставимо тимчасовий max, щоб повзунок не був «сірим на максимумі»
+    final double sliderMax = hasDur
+        ? effDuration.inSeconds.toDouble()
+        : (position.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
+    final double sliderValue =
+    position.inSeconds.toDouble().clamp(0.0, sliderMax);
 
     return Material(
       color: Colors.transparent,
@@ -281,14 +321,14 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
-                  onChangeStart: (v) => setState(() => _dragValueSecs = v),
-                  onChanged: (v) => setState(() => _dragValueSecs = v),
-                  onChangeEnd: (v) async {
-                    setState(() => _dragValueSecs = null);
-                    await context
-                        .read<AudioPlayerProvider>()
-                        .seek(Duration(seconds: v.toInt()));
-                  },
+                  onChangeStart: (_) =>
+                      context.read<AudioPlayerProvider>().seekDragStart(),
+                  onChanged: (v) => context
+                      .read<AudioPlayerProvider>()
+                      .seekDragUpdate(Duration(seconds: v.floor())),
+                  onChangeEnd: (v) => context
+                      .read<AudioPlayerProvider>()
+                      .seekDragEnd(Duration(seconds: v.floor())),
                 ),
               ),
 
@@ -298,8 +338,9 @@ class _SimplePlayerState extends State<SimplePlayer> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(_formatDuration(displayedPos), style: theme.textTheme.labelSmall),
-                    Text(_formatDuration(duration), style: theme.textTheme.labelSmall),
+                    Text(_formatDuration(position), style: theme.textTheme.labelSmall),
+                    Text(hasDur ? _formatDuration(effDuration) : '--:--',
+                        style: theme.textTheme.labelSmall),
                   ],
                 ),
               ),
@@ -404,14 +445,16 @@ class _SimplePlayerState extends State<SimplePlayer> {
                         style: TextStyle(
                           color: isSelected
                               ? cs.primary
-                              : (isAvailable ? cs.onSurface : cs.onSurface.withOpacity(0.35)),
+                              : (isAvailable
+                              ? cs.onSurface
+                              : cs.onSurface.withOpacity(0.35)),
                           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                         ),
                       ),
                       enabled: isAvailable,
                       onTap: isAvailable
-                          ? () {
-                        context.read<AudioPlayerProvider>().seekChapter(index);
+                          ? () async {
+                        await context.read<AudioPlayerProvider>().seekChapter(index);
                         widget.onChapterSelected(ch);
                       }
                           : () => _showAuthDialog(context),
@@ -443,33 +486,25 @@ class _SpeedButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final audio = context.read<AudioPlayerProvider>();
+    final speed = context.watch<AudioPlayerProvider>().speed;
+    final label =
+    (speed % 1 == 0) ? '${speed.toStringAsFixed(0)}×' : '${speed.toStringAsFixed(2)}×';
 
-    return StreamBuilder<double>(
-      // just_audio: speedStream є у player
-      stream: audio.player.speedStream,
-      initialData: audio.player.speed,
-      builder: (context, snap) {
-        final sp = (snap.data ?? 1.0);
-        final label = (sp % 1 == 0) ? '${sp.toStringAsFixed(0)}×' : '${sp.toStringAsFixed(2)}×';
-
-        return InkWell(
-          onTap: () => context.read<AudioPlayerProvider>().changeSpeed(),
+    return InkWell(
+      onTap: () => context.read<AudioPlayerProvider>().changeSpeed(),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: cs.primary.withOpacity(0.10),
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: cs.primary.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: cs.primary.withOpacity(0.25)),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(fontWeight: FontWeight.w600, color: cs.primary),
-            ),
-          ),
-        );
-      },
+          border: Border.all(color: cs.primary.withOpacity(0.25)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(fontWeight: FontWeight.w600, color: cs.primary),
+        ),
+      ),
     );
   }
 }

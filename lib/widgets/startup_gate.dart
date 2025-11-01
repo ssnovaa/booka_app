@@ -9,8 +9,8 @@ import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 
-/// Віджет-ворота старту: виконує початковий бутстрап (токени, профіль, плеєр)
-/// і переходить до [child], коли все готово.
+/// Віджет-ворота старту: виконує початковий бутстрап
+/// і переходить до [child], коли локаль готова (мережу не чекаємо).
 class StartupGate extends StatefulWidget {
   const StartupGate({super.key, required this.child});
 
@@ -38,19 +38,40 @@ class _StartupGateState extends State<StartupGate> {
       // 1) Відновлення токенів / авторизації
       await AuthStore.I.restore();
 
-      // 2) Підвантаження профілю / поточної сесії
-      await ProfileRepository.I.loadMap(force: true);
+      // 2) Локал-first підготовка плеєра
+      final audio = context.read<AudioPlayerProvider>();
 
-      // 3) Гідратація плеєра (якщо провайдер змонтований у дереві)
-      final app = context.read<AudioPlayerProvider>();
-      await app.hydrateFromServerIfAvailable();
-      await app.ensurePrepared();
+      // підняти локальний прогрес
+      await audio.restoreProgress();
+
+      // якщо локальна сесія є — одразу готуємо плеєр і відпускаємо UI
+      final hasLocal = await audio.hasSavedSession();
+      if (hasLocal) {
+        await audio.ensurePrepared();
+
+        // сервер — у фоні (статистика/резерв)
+        unawaited(ProfileRepository.I.loadMap(force: false));
+        unawaited(audio.hydrateFromServerIfAvailable());
+      } else {
+        // локалі немає: UI не блокуємо, мережеву гідратацію запускаємо у фоні
+        unawaited(() async {
+          try {
+            await ProfileRepository.I.loadMap(force: true);
+          } catch (_) {}
+          final ok = await audio.hydrateFromServerIfAvailable();
+          if (ok) {
+            try {
+              await audio.ensurePrepared();
+            } catch (_) {}
+          }
+        }());
+      }
     } catch (_) {
       // М'яко ігноруємо помилки бутстрапу — все одно пропускаємо в додаток
+    } finally {
+      if (!mounted) return;
+      setState(() => _ready = true);
     }
-
-    if (!mounted) return;
-    setState(() => _ready = true);
   }
 
   @override

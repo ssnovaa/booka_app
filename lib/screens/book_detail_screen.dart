@@ -1,11 +1,15 @@
+// lib/screens/book_detail_screen.dart
+// ПОЛНЫЙ ФАЙЛ БЕЗ СОКРАЩЕНИЙ
+
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
-import 'package:booka_app/widgets/loading_indicator.dart'; // <--- 1. ДОДАНО ІМПОРТ
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import 'package:booka_app/widgets/loading_indicator.dart';
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/chapter.dart';
@@ -17,6 +21,16 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
+import 'package:booka_app/screens/login_screen.dart'; // ⬅️ для переходу на екран логіну
+
+// ⬇️ форматування тривалості (години і хвилини)
+import 'package:booka_app/core/utils/duration_format.dart';
+
+// ❗ Санітизація повідомлень про помилки
+import 'package:booka_app/core/security/safe_errors.dart';
+
+// 🔽 Висота банерної реклами (AdSize.banner.height)
+const double _kAdH = 50.0;
 
 class BookDetailScreen extends StatefulWidget {
   final Book book;
@@ -55,19 +69,102 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   bool _bookLoading = false;
   String? _bookError;
 
+  // 📏 Резерв під MiniPlayer: оновлюється динамічно за фактичною висотою
+  double _miniPlayerReserved = 0.0;
+
+  // ❤️ Стан «Вибране» з можливістю додати/прибрати (toggle)
+  bool _favBusy = false;   // йде запит
+  bool _isFav = false;     // поточний стан на клієнті
+
   @override
   void initState() {
     super.initState();
     _book = widget.book;
+    _inferInitialFavoriteFromModel(); // спроба з моделі (якщо бекенд віддає прапор)
     _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
+    _syncFavoriteFromServer(); // синхронізація з профілем (GET /favorites)
     fetchChapters(); // паралельно підтягнути розділи
   }
 
-  // Перевірка, чи «урізаний» об’єкт книги
+  // Спроба визначити стартовий стан «вибране» з моделі Book (якщо є відповідне поле)
+  void _inferInitialFavoriteFromModel() {
+    try {
+      final dyn = _book as dynamic;
+      final v = dyn.isFavorite ?? dyn.is_favorite ?? dyn.favorite ?? dyn.inFavorites ?? dyn.in_favorites;
+      final b = _coerceBool(v);
+      if (b != null) _isFav = b;
+    } catch (_) {
+      // якщо в моделі немає таких полів — ігноруємо
+    }
+  }
+
+  bool? _coerceBool(dynamic v) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    if (v is String) {
+      final s = v.trim().toLowerCase();
+      if (s == '1' || s == 'true' || s == 'yes') return true;
+      if (s == '0' || s == 'false' || s == 'no') return false;
+    }
+    return null;
+  }
+
+  // Синхронізуємо локальний стан «вибране» з сервером, щоб детальна картка знала поточний статус
+  Future<void> _syncFavoriteFromServer() async {
+    try {
+      final r = await ApiClient.i().get('/favorites');
+      if (r.statusCode != 200 || r.data == null) return;
+
+      Iterable items;
+      final data = r.data;
+      if (data is List) {
+        items = data;
+      } else if (data is Map<String, dynamic>) {
+        items = (data['data'] ?? data['items'] ?? data['favorites'] ?? data['list'] ?? []) as Iterable;
+      } else {
+        return;
+      }
+
+      final ids = <int>{};
+      for (final it in items) {
+        if (it is int) {
+          ids.add(it);
+        } else if (it is Map) {
+          final raw = (it as Map)['book_id'] ?? (it as Map)['id'] ?? (it as Map)['bookId'];
+          if (raw != null) {
+            final id = int.tryParse(raw.toString());
+            if (id != null) ids.add(id);
+          }
+        }
+      }
+      final nowFav = ids.contains(_book.id);
+      if (mounted) setState(() => _isFav = nowFav);
+    } catch (_) {
+      // м’яко ігноруємо помилку — кнопка все одно працює як toggle
+    }
+  }
+
+  // ✅ Перевірка, чи «урізаний» об’єкт книги. Обов’язково враховуємо поле "series".
   bool _isSparse(Book b) {
     return (b.description == null || b.description!.trim().isEmpty) ||
         b.genres.isEmpty ||
-        (b.reader == null || b.reader!.trim().isEmpty);
+        (b.reader == null || b.reader!.trim().isEmpty) ||
+        (b.series == null || b.series!.trim().isEmpty);
+  }
+
+  /// 🔎 Нормалізація назви серії з різних форматів відповіді бекенда
+  String? _coerceSeries(Map<String, dynamic> raw) {
+    final s = raw['series'];
+    if (s is String && s.trim().isNotEmpty) return s.trim();
+    if (s is Map) {
+      final n = (s['name'] ?? s['title']);
+      if (n is String && n.trim().isNotEmpty) return n.trim();
+    }
+    final s1 = raw['series_name'];
+    if (s1 is String && s1.trim().isNotEmpty) return s1.trim();
+    final s2 = raw['seriesTitle'];
+    if (s2 is String && s2.trim().isNotEmpty) return s2.trim();
+    return null;
   }
 
   Future<void> _maybeLoadFullBook({bool refresh = false}) async {
@@ -94,31 +191,41 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         if (data is Map && data['data'] is Map) {
           raw = Map<String, dynamic>.from(data['data']);
         } else if (data is Map<String, dynamic>) {
-          raw = data;
+          raw = Map<String, dynamic>.from(data);
         } else {
-          throw Exception('Несподівана відповідь');
+          throw Exception('Несподівана відповідь від сервера');
         }
 
-        final full = Book.fromJson(raw);
+        // ✅ Примусово приводимо назву серії до ключа "series"
+        final normalized = Map<String, dynamic>.from(raw);
+        final coercedSeries = _coerceSeries(raw);
+        if (coercedSeries != null && coercedSeries.isNotEmpty) {
+          normalized['series'] = coercedSeries;
+        }
+
+        final full = Book.fromJson(normalized);
         setState(() {
           _book = full;
           _bookLoading = false;
         });
+
+        // Після отримання повної моделі ще раз спробуємо зчитати прапор «вибране»
+        _inferInitialFavoriteFromModel();
       } else {
         setState(() {
           _bookLoading = false;
-          _bookError = 'Помилка завантаження книги: ${resp.statusCode}';
+          _bookError = safeHttpStatus('Не вдалося завантажити книгу', resp.statusCode);
         });
       }
     } on DioException catch (e) {
       setState(() {
         _bookLoading = false;
-        _bookError = 'Мережева помилка: ${e.message}';
+        _bookError = safeErrorMessage(e);
       });
     } catch (e) {
       setState(() {
         _bookLoading = false;
-        _bookError = 'Помилка з’єднання: $e';
+        _bookError = safeErrorMessage(e);
       });
     }
   }
@@ -156,8 +263,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
         int startIndex = 0;
         if (widget.initialChapter != null) {
-          final ix =
-          loadedChapters.indexWhere((c) => c.id == widget.initialChapter!.id);
+          final ix = loadedChapters.indexWhere((c) => c.id == widget.initialChapter!.id);
           if (ix != -1) startIndex = ix;
         }
 
@@ -170,20 +276,20 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         });
       } else {
         setState(() {
-          error = 'Помилка завантаження розділів: ${resp.statusCode}';
+          error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
           isLoading = false;
         });
         await audioProvider.pause();
       }
     } on DioException catch (e) {
       setState(() {
-        error = 'Мережева помилка: ${e.message}';
+        error = safeErrorMessage(e);
         isLoading = false;
       });
       await audioProvider.pause();
     } catch (e) {
       setState(() {
-        error = 'Помилка з’єднання: $e';
+        error = safeErrorMessage(e);
         isLoading = false;
       });
       await audioProvider.pause();
@@ -206,6 +312,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _playerInitialized = false;
       _autoStartPending = true;
       _maybeLoadFullBook(refresh: true);
+      _syncFavoriteFromServer();
       fetchChapters();
     }
   }
@@ -215,15 +322,18 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (mounted) super.setState(fn);
   }
 
-  // Привести відносний шлях до абсолютного
+  // Привести відносний шлях до абсолютного + форсувати https
   String _absUrl(String? path) {
     if (path == null || path.trim().isEmpty) return '';
     final s = path.trim();
-    return s.startsWith('http') ? s : fullResourceUrl(s);
+    if (s.startsWith('http')) {
+      return s.replaceFirst('http://', 'https://');
+    }
+    return fullResourceUrl(s);
   }
 
   void _initAudioPlayer() {
-    if (_playerInitialized || chapters.isEmpty) return;
+    if (_playerInitialized || chapters.isNotEmpty == false) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -236,25 +346,26 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final sameChapters = audio.currentChapter != null &&
           audio.chapters.length == chapters.length &&
           List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-              List.generate(audio.chapters.length, (i) => audio.chapters[i].id)
-                  .join(',');
+              List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
       if (!sameChapters) {
+        // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
           chapters,
           book: _book,
           startIndex: startIndex,
+          bookTitle: _book.title,                // ← назва книги
+          artist: _book.author.trim(),           // ← ТІЛЬКИ автор (без чтеця)
+          coverUrl: _resolveBgUrl(_book),        // ← абсолютна обкладинка
         );
       }
 
+      // Початкова позиція/автовідтворення — користуємось API провайдера
       if (widget.initialPosition != null) {
-        await audio.player.seek(
-          Duration(seconds: widget.initialPosition!),
-          index: startIndex,
-        );
+        await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
         if (widget.autoPlay) await audio.play();
       } else if (widget.initialChapter != null && widget.autoPlay) {
-        await audio.player.seek(Duration.zero, index: startIndex);
+        await audio.seekChapter(startIndex, position: Duration.zero, persist: false);
         await audio.play();
       }
 
@@ -272,7 +383,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
-      await audio.player.seek(Duration.zero, index: index);
+      await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
   }
@@ -310,6 +421,56 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     );
   }
 
+  /// ❤️ Перемикач «Вибране» (toggle). Не відключаємо кнопку, щоб тап не «провалювався» в InkWell.
+  Future<void> _toggleFavorite() async {
+    if (_favBusy) return;
+
+    final userN = context.read<UserNotifier>();
+    if (!userN.isAuth) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Увійдіть, щоб керувати «Вибраним»'),
+          action: SnackBarAction(
+            label: 'Увійти',
+            onPressed: () {
+              Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    final wantFav = !_isFav;
+    setState(() => _favBusy = true);
+    try {
+      if (wantFav) {
+        await ApiClient.i().post('/favorites/${_book.id}');
+      } else {
+        await ApiClient.i().delete('/favorites/${_book.id}');
+      }
+      if (!mounted) return;
+      setState(() => _isFav = wantFav);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(wantFav ? 'Додано у «Вибране»' : 'Прибрано з «Вибраного»')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(safeErrorMessage(e))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(safeErrorMessage(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _favBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -318,10 +479,17 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final user = context.watch<UserNotifier>().user;
     final userType = getUserType(user);
 
-    final size = MediaQuery.of(context).size;
-    final coverHeight = size.height * 0.5;
+    // Реклама: guest/free — показываем, paid — нет
+    final bool showAds = userType != UserType.paid;
 
-    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final media = MediaQuery.of(context);
+    final size = media.size;
+
+    // 📐 Адаптивна висота обкладинки з клампом
+    double coverHeight = size.height * 0.38;
+    coverHeight = coverHeight.clamp(210.0, 510.0);
+
+    final dpr = media.devicePixelRatio;
     int memCacheHeight = (coverHeight * dpr).round();
     if (memCacheHeight > 2200) memCacheHeight = 2200;
 
@@ -330,271 +498,368 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
 
-    if (!_playerInitialized &&
-        _autoStartPending &&
-        !isLoading &&
-        chapters.isNotEmpty) {
+    if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
       _autoStartPending = false;
       _initAudioPlayer();
     }
 
     final coverUrlAbs = _absUrl(_book.coverUrl);
 
+    // 🔤 Обмежуємо textScaleFactor, щоб верстка не «ламалася» при дуже великих шрифтах
+    final clampedScale = media.textScaleFactor.clamp(1.0, 1.35);
+
+    // 📏 Динамічний низ: фактична висота MiniPlayer + SafeArea.
+    // РЕЗЕРВ ПІД БАНЕР НЕ ДОДАЄМО — його вже робить GlobalBannerInjector.
+    final double reservedBottom =
+        (currentChapter != null ? _miniPlayerReserved : 0.0) + media.padding.bottom;
+
     return Scaffold(
       appBar: bookaAppBar(actions: const []),
-      body: isLoading
-          ? const LoadingIndicator() // <--- 2. ЗАМІНЕНО
-          : (error != null)
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                error!,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => fetchChapters(refresh: true),
-                child: const Text('Повторити'),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Назад'),
-              ),
-            ],
+      body: MediaQuery(
+        data: media.copyWith(textScaleFactor: clampedScale),
+        child: isLoading
+            ? const LoadingIndicator()
+            : (error != null)
+            ? Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => fetchChapters(refresh: true),
+                  child: const Text('Повторити'),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Назад'),
+                ),
+              ],
+            ),
           ),
-        ),
-      )
-          : Stack(
-        children: [
-          IgnorePointer(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                height: topGradientHeight,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      cs.primary.withOpacity(0.18),
-                      cs.primaryContainer.withOpacity(0.10),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.6, 1.0],
+        )
+            : Stack(
+          children: [
+            // Фоновий вертикальний градієнт
+            IgnorePointer(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  height: topGradientHeight,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        cs.primary.withOpacity(0.18),
+                        cs.primaryContainer.withOpacity(0.10),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.6, 1.0],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          RefreshIndicator(
-            onRefresh: () async {
-              await _maybeLoadFullBook(refresh: true);
-              await fetchChapters(refresh: true);
-            },
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (coverUrlAbs.isNotEmpty)
-                    Center(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: cs.primary.withOpacity(0.25),
-                              blurRadius: 40,
-                              spreadRadius: 0,
-                              offset: const Offset(0, 18),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: CachedNetworkImage(
-                            imageUrl: coverUrlAbs,
-                            cacheManager:
-                            BookaImageCacheManager.instance,
-                            height: coverHeight,
-                            fit: BoxFit.contain,
-                            placeholder: (_, __) => SizedBox(
-                              height: coverHeight,
-                              // 3. ЗАМІНЕНО
-                              child: const LoadingIndicator(size: 80),
-                            ),
-                            errorWidget: (_, __, ___) => SizedBox(
-                              height: coverHeight,
-                              child: const Icon(Icons.broken_image,
-                                  size: 48),
-                            ),
-                            memCacheHeight: memCacheHeight,
-                          ),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _book.title.isNotEmpty ? _book.title : 'Без назви',
-                    textAlign: TextAlign.start,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      if (_book.author.trim().isNotEmpty)
-                        Flexible(
-                          child: Text(
-                            _book.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                            theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: theme.textTheme.bodyMedium?.color
-                                  ?.withOpacity(0.85),
-                            ),
-                          ),
-                        ),
-                      if (_book.reader != null &&
-                          _book.reader!.trim().isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        const Text('•'),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            _book.reader!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(
-                              color: theme.textTheme.bodyMedium?.color
-                                  ?.withOpacity(0.78),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter:
-                      ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cs.surface.withOpacity(0.65),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color:
-                            cs.outlineVariant.withOpacity(0.2),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
-                              blurRadius: 18,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                          children: [
-                            if (_book.genres.isNotEmpty)
-                              Text(
-                                'Жанри: ${_book.genres.join(', ')}',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            if (_book.duration.isNotEmpty)
-                              Text(
-                                'Тривалість: ${_book.duration}',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            if (_book.series != null &&
-                                _book.series!.isNotEmpty)
-                              Text(
-                                'Серія: ${_book.series}',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            if (_bookLoading) ...[
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  // 4. ЗАМІНЕНО
-                                  LoadingIndicator(size: 16),
-                                  SizedBox(width: 8),
-                                  Text('Оновлення даних книги…'),
+
+            // Контент з pull-to-refresh та ДИНАМІЧНИМ нижнім відступом
+            RefreshIndicator(
+              onRefresh: () async {
+                await _maybeLoadFullBook(refresh: true);
+                await _syncFavoriteFromServer();
+                await fetchChapters(refresh: true);
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + reservedBottom),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints:
+                    const BoxConstraints(maxWidth: 720), // 📱 читабельна ширина на планшетах
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (coverUrlAbs.isNotEmpty)
+                          Center(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: cs.primary.withOpacity(0.25),
+                                    blurRadius: 40,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 18),
+                                  ),
                                 ],
                               ),
-                            ],
-                            if (_bookError != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                _bookError!,
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(
-                                    color: Colors.redAccent),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: CachedNetworkImage(
+                                  imageUrl: coverUrlAbs,
+                                  cacheManager: BookaImageCacheManager.instance,
+                                  height: coverHeight,
+                                  fit: BoxFit.contain,
+                                  placeholder: (_, __) => SizedBox(
+                                    height: coverHeight,
+                                    child: const LoadingIndicator(size: 80),
+                                  ),
+                                  errorWidget: (_, __, ___) => SizedBox(
+                                    height: coverHeight,
+                                    child: const Icon(Icons.broken_image, size: 48),
+                                  ),
+                                  memCacheHeight: memCacheHeight,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _book.title.isNotEmpty ? _book.title : 'Без назви',
+                          textAlign: TextAlign.start,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            if (_book.author.trim().isNotEmpty)
+                              Flexible(
+                                child: Text(
+                                  _book.author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withOpacity(0.85),
+                                  ),
+                                ),
+                              ),
+                            if (_book.reader != null &&
+                                _book.reader!.trim().isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              const Text('•'),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _book.reader!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withOpacity(0.78),
+                                  ),
+                                ),
                               ),
                             ],
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 12),
+
+                        // ✅ Картка метаданих + ❤️ праворуч (toggle)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: cs.surface.withOpacity(0.65),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: cs.outlineVariant.withOpacity(0.2),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.08),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Ліва частина — текстові метадані
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (_book.series != null &&
+                                            _book.series!.trim().isNotEmpty)
+                                          Text('Серія: ${_book.series}',
+                                              style: theme.textTheme.bodySmall),
+                                        if (_book.genres.isNotEmpty)
+                                          Text(
+                                            'Жанри: ${_book.genres.join(', ')}',
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        if (_book.duration.isNotEmpty)
+                                          Text(
+                                            'Тривалість: ${formatBookDuration(_book.duration, locale: "uk")}',
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        if (_bookLoading) ...[
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              LoadingIndicator(size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Оновлення даних книги'),
+                                            ],
+                                          ),
+                                        ],
+                                        if (_bookError != null) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _bookError!,
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: Colors.redAccent,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  // Права частина — велика кнопка «серце» (toggle)
+                                  SizedBox(
+                                    height: 36,
+                                    width: 36,
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      tooltip: _isFav
+                                          ? 'Прибрати з «Вибраного»'
+                                          : 'Додати у «Вибране»',
+                                      onPressed: () {
+                                        if (_favBusy) return; // не вимикаємо кнопку, щоб не «провалюватися»
+                                        _toggleFavorite();
+                                      },
+                                      icon: _favBusy
+                                          ? const LoadingIndicator(size: 24)
+                                          : Icon(
+                                        _isFav ? Icons.favorite : Icons.favorite_border,
+                                        size: 26,
+                                      ),
+                                      color: _isFav ? Colors.redAccent : cs.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        if ((_book.description ?? '').trim().isNotEmpty)
+                          Text(
+                            _book.description!.trim(),
+                            style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                          ),
+
+                        const SizedBox(height: 16),
+
+                        // 🔗 Клікабельний рядок для гостя: веде на екран логіну
+                        if (userType == UserType.guest)
+                          InkWell(
+                            onTap: () {
+                              Navigator.of(context, rootNavigator: true).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const LoginScreen()),
+                              );
+                            },
+                            child: Text(
+                              'Увійдіть, щоб отримати повний доступ до всіх розділів.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.primary,
+                                decoration: TextDecoration.underline,
+                                decorationThickness: 1.5,
+                              ),
+                            ),
+                          ),
+
+                        if (userType == UserType.free)
+                          Text(
+                            'Безкоштовний тариф відтворює з рекламою. Оформіть підписку, щоб слухати без реклами.',
+                            style: theme.textTheme.bodySmall?.copyWith(color: cs.tertiary),
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  if ((_book.description ?? '').trim().isNotEmpty)
-                    Text(
-                      _book.description!.trim(),
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(height: 1.5),
-                    ),
-                  const SizedBox(height: 16),
-                  if (userType == UserType.guest)
-                    Text(
-                      'Увійдіть або зареєструйтесь, щоб отримати доступ до інших розділів.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: cs.primary),
-                    ),
-                  if (userType == UserType.free)
-                    Text(
-                      'Безкоштовний тариф відтворює з рекламою. Оформіть підписку, щоб слухати без реклами.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: cs.tertiary),
-                    ),
-                ],
+                ),
               ),
             ),
-          ),
-          if (currentChapter != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: MiniPlayerWidget(
-                chapter: currentChapter,
-                bookTitle: _book.title,
-                coverUrl: _resolveBgUrl(_book),
-                onExpand: _openFullPlayer,
+
+            // MiniPlayer поверх усього
+            if (currentChapter != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _SizeReporter(
+                  onSize: (sz) {
+                    final newH = (sz.height).clamp(0.0, 320.0);
+                    if ((newH - _miniPlayerReserved).abs() > 0.5) {
+                      setState(() => _miniPlayerReserved = newH);
+                    }
+                  },
+                  child: MiniPlayerWidget(
+                    chapter: currentChapter,
+                    bookTitle: _book.title,
+                    coverUrl: _resolveBgUrl(_book),
+                    onExpand: _openFullPlayer,
+                    // 👇 если показываем рекламу — прижимаем к баннеру
+                    bottomSafeMargin: showAds ? 0 : 8,
+                  ),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+}
+
+class _SizeReporter extends StatefulWidget {
+  final Widget child;
+  final ValueChanged<Size> onSize;
+
+  const _SizeReporter({required this.child, required this.onSize});
+
+  @override
+  State<_SizeReporter> createState() => _SizeReporterState();
+}
+
+class _SizeReporterState extends State<_SizeReporter> {
+  Size _last = Size.zero;
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box == null || !mounted) return;
+      final sz = box.size;
+      if (sz != _last) {
+        _last = sz;
+        widget.onSize(sz);
+      }
+    });
+    return widget.child;
   }
 }

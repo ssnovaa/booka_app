@@ -2,7 +2,7 @@
 /// FCM bootstrap для Flutter (Android/iOS).
 /// - init() викликає Firebase.initializeApp(), потім ліниво ініціалізує FirebaseMessaging
 /// - запитує дозволи (iOS + Android 13+)
-/// - обробляє bg/fg повідомлення
+/// - обробляє фонові й форграундні повідомлення
 /// - реєструє токен на бекенді (Laravel)
 ///
 /// У main.dart:  await PushService.instance.init(navigatorKey: _navKey);
@@ -26,14 +26,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
   } catch (_) {}
-  // логування bg-повідомлень за потреби
+  // 🇺🇦 Логування фонових повідомлень за потреби
 }
 
 class PushService {
   PushService._();
   static final PushService instance = PushService._();
 
-  // ❗ Ліниво ініціалізуємо після Firebase.initializeApp()
+  // 🇺🇦 Ліниво ініціалізуємо після Firebase.initializeApp()
   late final FirebaseMessaging _fcm;
 
   final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
@@ -58,11 +58,12 @@ class PushService {
     // 1.1) Тепер можна брати instance
     _fcm = FirebaseMessaging.instance;
 
-    // 2) BG handler
+    // 2) Обробник фонових повідомлень
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     // 3) Локальні нотифікації (foreground)
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // ❗ Використовуємо монохромну білу іконку в статус-барі
+    const androidInit = AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -86,15 +87,18 @@ class PushService {
       }
     }
 
-    // 5) Heads-up у fg (і на iOS презентація)
+    // 5) Показ heads-up у форграунді (і презентація на iOS)
     await _fcm.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
 
-    // 6) Android канал
+    // 6) Android канал (ID має збігатися з AndroidManifest.xml)
     const androidChannel = AndroidNotificationChannel(
       'booka_default',
       'Booka · Push',
       description: 'Канал за замовчуванням для push-сповіщень Booka',
       importance: Importance.high,
+      showBadge: true,
+      playSound: true,
+      enableVibration: true,
     );
     await _local
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
@@ -109,15 +113,15 @@ class PushService {
       }
     }
 
-    // 7) Обробники
+    // 7) Обробники життєвого циклу повідомлень
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpenedApp);
 
-    // 8) App відкрито з пушу
+    // 8) Якщо застосунок відкрито з пушу
     final initialMessage = await _fcm.getInitialMessage();
     if (initialMessage != null) _handleDeepLink(initialMessage.data);
 
-    // 9) Реєстрація токена
+    // 9) Реєстрація токена на бекенді
     await _registerToken();
 
     // 10) Оновлення токена
@@ -126,6 +130,7 @@ class PushService {
 
   Future<void> _onForegroundMessage(RemoteMessage msg) async {
     final notif = msg.notification;
+
     await _local.show(
       msg.hashCode,
       notif?.title ?? 'Booka',
@@ -134,8 +139,10 @@ class PushService {
         android: AndroidNotificationDetails(
           'booka_default',
           'Booka · Push',
+          channelDescription: 'Канал за замовчуванням для push-сповіщень Booka',
           priority: Priority.high,
           importance: Importance.high,
+          icon: '@drawable/ic_stat_notify', // 🇺🇦 Монохромна біла іконка
         ),
         iOS: DarwinNotificationDetails(),
       ),
@@ -148,7 +155,7 @@ class PushService {
   }
 
   static void _onLocalTap(NotificationResponse resp) {
-    // розбір payload за потреби
+    // 🇺🇦 Розбір payload за потреби
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
@@ -183,7 +190,7 @@ class PushService {
           'platform': Platform.isAndroid ? 'android' : (Platform.isIOS ? 'ios' : 'other'),
           'app_version': appVersion,
         },
-        // сервер стабільно приймає form-urlencoded
+        // 🇺🇦 Сервер стабільно приймає form-urlencoded
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 

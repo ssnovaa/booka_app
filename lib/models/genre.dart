@@ -1,14 +1,22 @@
 class Genre {
   final int id;
   final String name;
+  final String? imageUrl; // полная URL картинки жанра или null
 
-  Genre({required this.id, required this.name});
+  const Genre({
+    required this.id,
+    required this.name,
+    this.imageUrl,
+  });
 
   /// Створює об'єкт [Genre] з JSON.
   factory Genre.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'];
     return Genre(
-      id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
-      name: json['name'] as String,
+      id: rawId is int ? rawId : int.tryParse(rawId.toString()) ?? 0,
+      name: (json['name'] ?? '').toString(),
+      // бек віддає image_url; на всякий случай поддержим imageUrl
+      imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
     );
   }
 
@@ -16,6 +24,7 @@ class Genre {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    if (imageUrl != null) 'image_url': imageUrl,
   };
 
   @override
