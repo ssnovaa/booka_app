@@ -90,6 +90,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       }
     }
 
+    bool shouldCloseScreen = false;
+
     try {
       // 1) Завантаження
       debugPrint('[REWARD] STEP 1: load()');
@@ -163,12 +165,18 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
         }
 
         _mc.pulse();
-        setState(() => _status = 'Нараховано +15 хв ✅');
+        setState(() {
+          _status = 'Нараховано +15 хв ✅';
+          _loading = false;
+        });
+        shouldCloseScreen = true;
       } else if (credited && !_isAuthorized) {
         setState(() {
           _status =
-          'Гість: нагорода не нараховується. Увійдіть, щоб отримувати хвилини.';
+              'Гість: нагорода не нараховується. Увійдіть, щоб отримувати хвилини.';
+          _loading = false;
         });
+        shouldCloseScreen = true;
       } else {
         final err = _svc?.lastError ??
             'Не вдалося отримати нагороду (credited=false). Перевірте prepare/status у логах.';
@@ -190,6 +198,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
         } catch (e) {
           debugPrint('[REWARD][WARN] auto-resume playback failed: $e');
         }
+      }
+
+      if (shouldCloseScreen) {
+        if (mounted) {
+          Navigator.of(context).pop(true);
+        }
+        return;
       }
 
       if (!mounted) return;
