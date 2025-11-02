@@ -140,7 +140,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
             secondsLeft = context.read<UserNotifier>().freeSeconds; // если есть поле секунд
           } catch (_) {
             final mins = context.read<UserNotifier>().minutes;      // fallback из минут
-            secondsLeft = (mins * 60).clamp(0, 1 << 31);
+            secondsLeft = ((mins * 60).clamp(0, 1 << 31)).toInt();
           }
 
           // Жёстко прокидываем в провайдер (снимает флаг exhausted у consumer)
