@@ -435,6 +435,26 @@ class AudioPlayerProvider extends ChangeNotifier {
     _creditsConsumer?.resetExhaustion();
   }
 
+  /// Сообщает провайдеру о внешнем обновлении баланса секунд.
+  /// Используется, когда UserNotifier получает свежие данные с сервера.
+  void onExternalFreeSecondsUpdated(int seconds) {
+    final consumer = _creditsConsumer;
+    if (consumer == null) return;
+
+    if (seconds > 0 && consumer.isExhausted) {
+      if (kDebugMode) {
+        _log('external free seconds → reset exhaustion');
+      }
+      consumer.resetExhaustion();
+
+      if (player.playing) {
+        consumer.start();
+      }
+
+      _rearmFreeSecondsTicker();
+    }
+  }
+
   // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
   Future<Map<String, dynamic>> _readProgressMap() async {
     if (_progressMapCache != null) return _progressMapCache!;
