@@ -70,7 +70,10 @@ Future<void> main() async {
 
     // Связка секунд с UserNotifier
     audioProvider.getFreeSeconds = () => userNotifier.freeSeconds;
-    audioProvider.setFreeSeconds = (int v) => userNotifier.setFreeSeconds(v);
+    audioProvider.setFreeSeconds = (int v) {
+      userNotifier.setFreeSeconds(v);
+      audioProvider.onExternalFreeSecondsUpdated(v);
+    };
 
     // Инициализация сети
     try {

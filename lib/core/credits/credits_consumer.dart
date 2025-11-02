@@ -91,6 +91,8 @@ class CreditsConsumer {
     }
   }
 
+  bool get isExhausted => _exhausted;
+
   // --- внутреннее ---
 
   void _ensureStarted() {
