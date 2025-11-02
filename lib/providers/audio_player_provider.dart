@@ -432,7 +432,12 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// `CreditsConsumer` снова позволял запускать воспроизведение.
   void resetCreditsExhaustion() {
     if (kDebugMode) _log('resetCreditsExhaustion()');
-    _creditsConsumer?.resetExhaustion();
+    final consumer = _creditsConsumer;
+    consumer?.resetExhaustion();
+    if (player.playing) {
+      consumer?.start();
+    }
+    _rearmFreeSecondsTicker();
   }
 
   /// Сообщает провайдеру о внешнем обновлении баланса секунд.
@@ -441,17 +446,21 @@ class AudioPlayerProvider extends ChangeNotifier {
     final consumer = _creditsConsumer;
     if (consumer == null) return;
 
-    if (seconds > 0 && consumer.isExhausted) {
+    if (seconds > 0) {
       if (kDebugMode) {
-        _log('external free seconds → reset exhaustion');
+        _log('external free seconds → reset exhaustion ($seconds)');
       }
       consumer.resetExhaustion();
-
       if (player.playing) {
         consumer.start();
       }
-
       _rearmFreeSecondsTicker();
+    } else {
+      if (kDebugMode) {
+        _log('external free seconds → exhausted ($seconds)');
+      }
+      consumer.stop();
+      _stopFreeSecondsTicker();
     }
   }
 

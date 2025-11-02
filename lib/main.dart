@@ -75,6 +75,13 @@ Future<void> main() async {
       audioProvider.onExternalFreeSecondsUpdated(v);
     };
 
+    // Любое обновление профиля (например, после /profile) должно синхронизировать
+    // состояние CreditsConsumer: если секунды появились, снимаем блокировку,
+    // если исчезли — выключаем тикер.
+    userNotifier.addListener(() {
+      audioProvider.onExternalFreeSecondsUpdated(userNotifier.freeSeconds);
+    });
+
     // Инициализация сети
     try {
       await ApiClient.init();
