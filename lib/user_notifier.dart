@@ -126,12 +126,12 @@ class UserNotifier extends ChangeNotifier {
             : null;
 
         final String? refresh =
-        (data is Map) ? (data['refresh_token'] as String?) : null;
+            (data is Map) ? (data['refresh_token'] as String?) : null;
 
         final String? accessExpStr =
-        (data is Map) ? (data['access_expires_at'] as String?) : null;
+            (data is Map) ? (data['access_expires_at'] as String?) : null;
         final DateTime? accessExp =
-        (accessExpStr != null) ? DateTime.tryParse(accessExpStr) : null;
+            (accessExpStr != null) ? DateTime.tryParse(accessExpStr) : null;
 
         final Map<String, dynamic>? userJson = (data is Map)
             ? (data['user'] ?? data['profile']) as Map<String, dynamic>?
