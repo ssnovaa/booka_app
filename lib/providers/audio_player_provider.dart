@@ -431,6 +431,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Сбрасывает внутренний флаг «исчерпано», чтобы после пополнения секунд
   /// `CreditsConsumer` снова позволял запускать воспроизведение.
   void resetCreditsExhaustion() {
+    if (kDebugMode) _log('resetCreditsExhaustion()');
     _creditsConsumer?.resetExhaustion();
   }
 
@@ -1162,6 +1163,9 @@ class AudioPlayerProvider extends ChangeNotifier {
           onCreditsExhausted?.call();
           return;
         }
+      } else if (secondsLeft > 0) {
+        // На всякий случай снимаем флаг «исчерпано», если секунды вернулись.
+        _creditsConsumer?.resetExhaustion();
       }
     }
 
