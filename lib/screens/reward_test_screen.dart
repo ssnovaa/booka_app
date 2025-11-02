@@ -146,6 +146,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           // Жёстко прокидываем в провайдер (снимает флаг exhausted у consumer)
           app.setFreeSeconds?.call(secondsLeft);
 
+          // Сбрасываем «исчерпано», чтобы CreditsConsumer больше не блокировал play().
+          app.resetCreditsExhaustion();
+
           // На всякий — переинициализируем консьюмер/тикеры
           await app.ensureCreditsTickerBound();
 

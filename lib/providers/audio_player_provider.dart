@@ -428,6 +428,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
+  /// Сбрасывает внутренний флаг «исчерпано», чтобы после пополнения секунд
+  /// `CreditsConsumer` снова позволял запускать воспроизведение.
+  void resetCreditsExhaustion() {
+    _creditsConsumer?.resetExhaustion();
+  }
+
   // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
   Future<Map<String, dynamic>> _readProgressMap() async {
     if (_progressMapCache != null) return _progressMapCache!;
