@@ -444,24 +444,33 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Используется, когда UserNotifier получает свежие данные с сервера.
   void onExternalFreeSecondsUpdated(int seconds) {
     final consumer = _creditsConsumer;
-    if (consumer == null) return;
 
-    if (seconds > 0) {
+    if (consumer == null) {
+      if (seconds <= 0) {
+        _stopFreeSecondsTicker();
+      }
+      return;
+    }
+
+    if (seconds <= 0) {
+      if (kDebugMode) _log('external free seconds → exhausted ($seconds)');
+      consumer.stop();
+      _stopFreeSecondsTicker();
+      return;
+    }
+
+    if (consumer.isExhausted) {
       if (kDebugMode) {
         _log('external free seconds → reset exhaustion ($seconds)');
       }
       consumer.resetExhaustion();
-      if (player.playing) {
-        consumer.start();
-      }
-      _rearmFreeSecondsTicker();
-    } else {
-      if (kDebugMode) {
-        _log('external free seconds → exhausted ($seconds)');
-      }
-      consumer.stop();
-      _stopFreeSecondsTicker();
     }
+
+    if (player.playing) {
+      consumer.start();
+    }
+
+    _rearmFreeSecondsTicker();
   }
 
   // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
