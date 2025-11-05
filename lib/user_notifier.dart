@@ -36,11 +36,11 @@ class UserNotifier extends ChangeNotifier {
   /// Секунды для точного указания/логики.
   int get freeSeconds => _freeSeconds;
 
-  /// Удобный флаг платности, если в модели есть такие признаки.
+  /// Удобный флаг платности (прямая совместимость со старой логикой).
   bool get isPaid {
     final u = _user;
     if (u == null) return false;
-    // Пытаемся аккуратно вытащить признак платности:
+    // старый способ (оставляем для обратной совместимости):
     try {
       final dyn = u as dynamic;
       final v = (dyn.isPaid ?? dyn.is_paid ?? dyn['is_paid']) == true;
@@ -49,8 +49,11 @@ class UserNotifier extends ChangeNotifier {
     return false;
   }
 
-  /// Удобный флаг «свободный» пользователь для интеграции с тикером/списанием.
-  bool get isFreeUser => isAuth && !isPaid;
+  /// Новый эталонный флаг платности «на сейчас» (учитывает paid_until).
+  bool get isPaidNow => _user?.isPaidNow ?? false;
+
+  /// «Свободный» режим: авторизован и НЕ платный (с учётом paid_until).
+  bool get isFreeUser => isAuth && !isPaidNow;
 
   // === Секундный/минутный API для UI и rewarded/consume-потока ===
 
@@ -146,7 +149,7 @@ class UserNotifier extends ChangeNotifier {
 
           // Если бэкенд вернул профиль прямо в ответе логина — применим его.
           if (userJson != null) {
-            _user = User.fromJson(userJson);
+            _applyUserMap(userJson);
             _isAuth = true;
 
             final secondsFromPayload = _extractSecondsFromPayload(userJson);
@@ -155,6 +158,9 @@ class UserNotifier extends ChangeNotifier {
             } else {
               await _refreshBalanceSoft(force: true);
             }
+
+            // 🔁 Мягко дотянем /auth/me для свежего is_paid/paid_until:
+            await _refreshPaidStatusSoft();
           } else {
             // Иначе тянем профиль отдельно
             _user = await ProfileRepository.I.load();
@@ -168,6 +174,9 @@ class UserNotifier extends ChangeNotifier {
               // Мягко подтянем точный баланс (не валим UI при ошибках)
               await _refreshBalanceSoft();
             }
+
+            // 🔁 И обновим платность с приватного /auth/me
+            await _refreshPaidStatusSoft();
           }
 
           notifyListeners();
@@ -212,9 +221,11 @@ class UserNotifier extends ChangeNotifier {
         _freeSeconds = _clampSeconds(secondsFromCache);
       }
 
-      // Если в модели/репозитории появится прямое поле секунд — подхватите тут.
       // Параллельно мягко подтягиваем точный баланс из /profile.
       await _refreshBalanceSoft();
+
+      // 🔁 И дотягиваем приватный статус подписки из /auth/me
+      await _refreshPaidStatusSoft();
     } on DioException catch (e) {
       final sc = e.response?.statusCode ?? 0;
       if (sc == 401 || sc == 403) {
@@ -242,6 +253,20 @@ class UserNotifier extends ChangeNotifier {
     }
   }
 
+  /// Публичный метод: гарантированно обновить платность из /auth/me.
+  Future<void> refreshUserFromMe() async {
+    if (!isAuth) return;
+    try {
+      final resp = await ApiClient.i().get('/auth/me');
+      if (resp is Map<String, dynamic>) {
+        _applyUserMap(resp);
+        notifyListeners();
+      }
+    } catch (_) {
+      // молча игнорируем; UI не рушим
+    }
+  }
+
   Future<void> continueAsGuest() async {
     await _clearAuth();
     notifyListeners();
@@ -265,6 +290,14 @@ class UserNotifier extends ChangeNotifier {
 
   // === Internal ===
 
+  void _applyUserMap(Map<String, dynamic> json) {
+    try {
+      _user = User.fromJson(json);
+    } catch (_) {
+      // Если что-то сломалось в парсинге — не роняем приложение
+    }
+  }
+
   Future<void> _clearAuth() async {
     await AuthStore.I.clear();
     _user = null;
@@ -282,6 +315,19 @@ class UserNotifier extends ChangeNotifier {
       if (s != null) setFreeSeconds(s);
     } catch (_) {
       // молча игнорируем
+    }
+  }
+
+  /// Мягко обновляем платность из приватного /auth/me (не бросает исключения).
+  Future<void> _refreshPaidStatusSoft() async {
+    if (!isAuth) return;
+    try {
+      final resp = await ApiClient.i().get('/auth/me');
+      if (resp is Map<String, dynamic>) {
+        _applyUserMap(resp);
+      }
+    } catch (_) {
+      // ignore
     }
   }
 
