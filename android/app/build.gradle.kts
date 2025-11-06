@@ -126,6 +126,9 @@ flutter {
 dependencies {
     // ✅ требуется для современных API (java.time и т.п.)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // ✅ Google Play Billing — обязательная зависимость, чтобы консоль увидела поддержку подписок
+    implementation("com.android.billingclient:billing-ktx:6.1.0")
 }
 
 // ⬇️ Подключаем Google Services через apply
