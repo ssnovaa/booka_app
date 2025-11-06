@@ -1,8 +1,12 @@
 // lib/screens/profile_screen.dart
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:characters/characters.dart';
 
+// app
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/widgets/current_listen_card.dart';
 import 'package:booka_app/user_notifier.dart';
@@ -19,9 +23,12 @@ import 'package:booka_app/widgets/loading_indicator.dart';
 import 'package:booka_app/widgets/minutes_badge.dart';
 // ⛑ Безпечні тексти помилок (санітизація)
 import 'package:booka_app/core/security/safe_errors.dart';
-
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
+// 🔗 для verify после покупки
+import 'package:booka_app/core/network/api_client.dart';
+// Billing (встроенный флоу Google Play)
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -214,6 +221,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     return map;
   }
+
   void _openBookFromMap(Map<String, dynamic> raw) {
     try {
       final book = Book.fromJson(_normalizedBookMap(raw));
@@ -302,6 +310,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
+
+                // ⬇️ СЕКЦИЯ ПОДПИСКИ (кнопка покупки / статус Premium)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: SubscriptionSection(),
+                  ),
+                ),
+
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -388,6 +405,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
+
 /// ===== Допоміжні міні-виджети профілю =====
 
 class _SectionTitle extends StatelessWidget {
@@ -630,9 +648,8 @@ class _ProfileHeader extends StatelessWidget {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, // левое выравнивание + ширина на всю карточку
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ВЕСЬ прежний Row (аватар, имя/email/чип статуса, кнопка "Вийти")
           Row(
             children: [
               CircleAvatar(
@@ -699,10 +716,8 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-
-          // ⬇️ Бейдж минут ПОД строкой — теперь занимает всю ширину карточки
           const SizedBox(height: 6),
-          const MinutesBadge(), // в самом виджете стоит width: double.infinity
+          const MinutesBadge(),
           const SizedBox(height: 8),
         ],
       ),
@@ -828,6 +843,237 @@ class _ProfileLoadingSkeleton extends StatelessWidget {
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        ],
+      ),
+    );
+  }
+}
+
+// ================== SUBSCRIPTION SECTION ==================
+// Комментарии на русском, сам код/строки — українські.
+// Этот виджет показывает кнопку покупки Premium, делает покупку
+// через Google Play, шлёт verify на бэк и обновляет профиль.
+
+class SubscriptionSection extends StatefulWidget {
+  const SubscriptionSection({super.key});
+
+  @override
+  State<SubscriptionSection> createState() => _SubscriptionSectionState();
+}
+
+class _SubscriptionSectionState extends State<SubscriptionSection> {
+  static const String kProductId = 'booka_premium_month'; // ← ID в Play Console
+  final InAppPurchase _iap = InAppPurchase.instance;
+
+  StreamSubscription<List<PurchaseDetails>>? _sub;
+  ProductDetails? _product;
+  bool _isQuerying = false;
+  bool _isBuying = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e) {
+      setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
+    });
+    _queryProduct();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  // Запросить товар в Play
+  Future<void> _queryProduct() async {
+    setState(() {
+      _isQuerying = true;
+      _error = null;
+    });
+    try {
+      final available = await _iap.isAvailable();
+      if (!available) {
+        setState(() {
+          _error = 'Оплата недоступна на пристрої';
+          _isQuerying = false;
+        });
+        return;
+      }
+      final resp = await _iap.queryProductDetails({kProductId});
+      if (resp.notFoundIDs.isNotEmpty || resp.productDetails.isEmpty) {
+        setState(() {
+          _error = 'Товар не знайдено ($kProductId)';
+          _isQuerying = false;
+        });
+        return;
+      }
+      setState(() {
+        _product = resp.productDetails.first;
+        _isQuerying = false;
+      });
+    } catch (_) {
+      setState(() {
+        _error = 'Не вдалося завантажити товар';
+        _isQuerying = false;
+      });
+    }
+  }
+
+  // Обработка результатов покупки
+  Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
+    for (final p in purchases) {
+      if (p.status == PurchaseStatus.pending) {
+        setState(() => _isBuying = true);
+      } else if (p.status == PurchaseStatus.error) {
+        setState(() {
+          _isBuying = false;
+          _error = 'Помилка оплати';
+        });
+      } else if (p.status == PurchaseStatus.purchased ||
+          p.status == PurchaseStatus.restored) {
+        // Для Android берём purchaseToken
+        final token = p.verificationData.serverVerificationData;
+        try {
+          // Отправляем на бэк verify
+          await ApiClient.i().post('/subscriptions/play/verify', data: {
+            'purchase_token': token,
+            'product_id': kProductId,
+          });
+
+          // Завершаем покупку в Play (acknowledge), после успешной верификации
+          if (p.pendingCompletePurchase) {
+            await _iap.completePurchase(p);
+          }
+
+          // Обновляем профиль и статус платности
+          if (mounted) {
+            await context.read<UserNotifier>().refreshUserFromMe();
+          }
+
+          setState(() {
+            _isBuying = false;
+            _error = null;
+          });
+        } catch (_) {
+          // Если бэк не принял — не завершаем purchase, чтобы пользователь не потерял покупку
+          setState(() {
+            _isBuying = false;
+            _error = 'Не вдалося підтвердити покупку на сервері';
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _buy() async {
+    final product = _product;
+    if (product == null) return;
+    setState(() {
+      _isBuying = true;
+      _error = null;
+    });
+    final param = PurchaseParam(productDetails: product);
+    try {
+      // Для підписок у in_app_purchase використовується buyNonConsumable
+      await _iap.buyNonConsumable(purchaseParam: param);
+    } catch (_) {
+      setState(() {
+        _isBuying = false;
+        _error = 'Не вдалося ініціювати покупку';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userN = context.watch<UserNotifier>();
+    final isPaidNow = userN.isPaidNow;
+
+    // Якщо користувач вже Premium — показуємо статус замість кнопки
+    if (isPaidNow) {
+      final until = userN.user?.paidUntil;
+      final subtitle =
+      until != null ? 'Активно до: ${until.toLocal()}' : 'Преміум активний';
+      return _CardWrap(
+        title: 'Booka Premium',
+        child: Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
+
+    // Гость або free — показуємо кнопку покупки
+    Widget body;
+    if (_isQuerying) {
+      body = const Text('Завантаження…');
+    } else if (_error != null) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: _queryProduct,
+            child: const Text('Спробувати ще раз'),
+          ),
+        ],
+      );
+    } else if (_product == null) {
+      body = OutlinedButton(
+        onPressed: _queryProduct,
+        child: const Text('Оновити'),
+      );
+    } else {
+      final price = _product!.price; // локалізована ціна
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Місячна підписка: $price',
+              style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: _isBuying ? null : _buy,
+            child: Text(_isBuying ? 'Обробка…' : 'Підключити Premium'),
+          ),
+        ],
+      );
+    }
+
+    return _CardWrap(title: 'Booka Premium', child: body);
+  }
+}
+
+// Невелика карточка-обгортка для секції
+class _CardWrap extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _CardWrap({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          child,
         ],
       ),
     );
