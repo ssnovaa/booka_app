@@ -257,9 +257,10 @@ class UserNotifier extends ChangeNotifier {
   Future<void> refreshUserFromMe() async {
     if (!isAuth) return;
     try {
-      final resp = await ApiClient.i().get('/auth/me');
-      if (resp is Map<String, dynamic>) {
-        _applyUserMap(resp);
+      final r = await ApiClient.i().get('/auth/me'); // Dio Response
+      final data = (r is Response) ? r.data : r;
+      if (data is Map) {
+        _applyUserMap(Map<String, dynamic>.from(data));
         notifyListeners();
       }
     } catch (_) {
@@ -322,9 +323,10 @@ class UserNotifier extends ChangeNotifier {
   Future<void> _refreshPaidStatusSoft() async {
     if (!isAuth) return;
     try {
-      final resp = await ApiClient.i().get('/auth/me');
-      if (resp is Map<String, dynamic>) {
-        _applyUserMap(resp);
+      final r = await ApiClient.i().get('/auth/me'); // Dio Response
+      final data = (r is Response) ? r.data : r;
+      if (data is Map) {
+        _applyUserMap(Map<String, dynamic>.from(data));
       }
     } catch (_) {
       // ignore

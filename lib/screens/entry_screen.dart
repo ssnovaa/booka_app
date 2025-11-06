@@ -39,20 +39,31 @@ class _EntryScreenState extends State<EntryScreen> {
 
     // 🔁 На повернення у фокус — тримаємо просту локал-first стратегію
     _life = AppLifecycleListener(
-      onResume: () {
+      onResume: () async {
         final audio = context.read<AudioPlayerProvider>();
         final userN = context.read<UserNotifier>();
 
-        // Оновлюємо тип користувача для поведінки плеєра
+        // 1) Обновляем тип пользователя для поведения плеера из локального состояния
         audio.userType = getUserType(userN.user);
 
-        // Локал-first: якщо локальна сесія є — мережу не чіпаємо
-        audio.hasSavedSession().then((hasLocal) {
+        // 2) 🔁 Дотягиваем приватный статус подписки (is_paid/paid_until) и обновляем тип
+        try {
+          await userN.refreshUserFromMe();
+          audio.userType = getUserType(userN.user);
+        } catch (_) {
+          // не критично: если сеть недоступна, остаёмся на локальном статусе
+        }
+
+        // 3) Локал-first для плеера
+        try {
+          final hasLocal = await audio.hasSavedSession();
           if (!hasLocal) {
-            audio.hydrateFromServerIfAvailable();
+            await audio.hydrateFromServerIfAvailable();
           }
-          audio.ensurePrepared();
-        });
+          await audio.ensurePrepared();
+        } catch (_) {
+          // ок, не критично
+        }
       },
     );
 
@@ -89,6 +100,13 @@ class _EntryScreenState extends State<EntryScreen> {
 
       // 4) Авто-логін за збереженими токенами
       await userNotifier.tryAutoLogin();
+
+      // 4.1) 🔁 Приватный статус подписки (is_paid/paid_until) из /auth/me
+      try {
+        await userNotifier.refreshUserFromMe();
+      } catch (_) {
+        // мягко игнорируем сетевые ошибки на старте
+      }
 
       // 5) Тип користувача для поведінки плеєра
       audio.userType = getUserType(userNotifier.user);
