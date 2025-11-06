@@ -202,6 +202,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return null;
   }
 
+  DateTime? _parseSubscriptionUntil(dynamic raw) {
+    final map = _asMap(raw);
+    if (map == null) return null;
+
+    DateTime? tryKeys(Map<String, dynamic> source) {
+      for (final key in const [
+        'subscription_until',
+        'subscriptionUntil',
+        'subscription_expires_at',
+        'subscriptionExpiresAt',
+        'subscription_end_at',
+        'subscriptionEndAt',
+        'subscription_end',
+        'subscriptionEnd',
+        'active_until',
+        'activeUntil',
+        'expires_at',
+        'expiresAt',
+      ]) {
+        final dt = _parseSubscriptionDate(source[key]);
+        if (dt != null) return dt;
+      }
+      return null;
+    }
+
+    DateTime? result = tryKeys(map);
+    if (result != null) return result;
+
+    for (final nestedKey in const ['subscription', 'plan', 'user', 'profile']) {
+      final nested = map[nestedKey];
+      final nestedMap = _asMap(nested);
+      if (nestedMap == null) continue;
+      result = tryKeys(nestedMap);
+      if (result != null) return result;
+    }
+
+    return null;
+  }
+
+  Map<String, dynamic>? _asMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      final out = <String, dynamic>{};
+      raw.forEach((key, value) => out['$key'] = value);
+      return out;
+    }
+    return null;
+  }
+
+  DateTime? _parseSubscriptionDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) {
+      if (value <= 0) return null;
+      if (value > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true);
+    }
+    if (value is num) {
+      if (value <= 0) return null;
+      final int seconds = value.floor();
+      if (seconds > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds, isUtc: true);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return DateTime.tryParse(trimmed);
+    }
+    return null;
+  }
+
   /// Нормалізуємо карту книги, щоб Book.fromJson отримав абсолютні поля обкладинки
   Map<String, dynamic> _normalizedBookMap(Map<String, dynamic> m) {
     final map = Map<String, dynamic>.from(m);
@@ -286,6 +361,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final bool isPaid =
               (data['is_paid'] == true) || (data['isPaid'] == true);
 
+          final DateTime? subscriptionUntil =
+              userNotifier.subscriptionUntil ?? _parseSubscriptionUntil(data);
+
           return RefreshIndicator.adaptive(
             onRefresh: _refresh,
             child: CustomScrollView(
@@ -298,6 +376,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       name: name.isNotEmpty ? name : 'Користувач',
                       email: email.isNotEmpty ? email : '—',
                       isPaid: isPaid,
+                      subscriptionUntil: subscriptionUntil,
                       onLogout: () => logout(context),
                     ),
                   ),
@@ -593,12 +672,14 @@ class _ProfileHeader extends StatelessWidget {
   final String name;
   final String email;
   final bool isPaid;
+  final DateTime? subscriptionUntil;
   final VoidCallback onLogout;
 
   const _ProfileHeader({
     required this.name,
     required this.email,
     required this.isPaid,
+    required this.subscriptionUntil,
     required this.onLogout,
   });
 
@@ -608,6 +689,8 @@ class _ProfileHeader extends StatelessWidget {
     final initials = _initialsOf(name);
     final statusColor = isPaid ? Colors.green : Colors.orange;
     final statusText = isPaid ? 'Платний' : 'Безкоштовний';
+    final subscriptionText =
+        isPaid && subscriptionUntil != null ? _formatSubscriptionDate(subscriptionUntil!) : null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -683,6 +766,15 @@ class _ProfileHeader extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (subscriptionText != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subscriptionText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.textTheme.bodySmall?.color?.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -716,6 +808,14 @@ class _ProfileHeader extends StatelessWidget {
       return parts.first.characters.first.toUpperCase();
     }
     return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+  }
+
+  String _formatSubscriptionDate(DateTime dateUtc) {
+    final local = dateUtc.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final year = local.year.toString();
+    return 'Підписка до $day.$month.$year';
   }
 }
 

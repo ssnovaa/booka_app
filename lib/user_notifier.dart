@@ -24,6 +24,9 @@ class UserNotifier extends ChangeNotifier {
   /// Точный остаток в секундах (источник правды — бэкенд; тут держим текущее значение для UI).
   int _freeSeconds = 0;
 
+  /// Дата закінчення активної підписки (якщо повертає бек, UTC).
+  DateTime? _subscriptionUntil;
+
   // === Getters ===
   User? get user => _user;
   bool get isAuth => _isAuth;
@@ -35,6 +38,9 @@ class UserNotifier extends ChangeNotifier {
 
   /// Секунды для точного указания/логики.
   int get freeSeconds => _freeSeconds;
+
+  /// Коли діє активна підписка (UTC). null — якщо не активна / не відомо.
+  DateTime? get subscriptionUntil => _subscriptionUntil;
 
   /// Удобный флаг платности, если в модели есть такие признаки.
   bool get isPaid {
@@ -155,6 +161,11 @@ class UserNotifier extends ChangeNotifier {
             } else {
               await _refreshBalanceSoft(force: true);
             }
+
+            _applySubscriptionUntil(
+              _extractSubscriptionUntil(userJson),
+              notify: false,
+            );
           } else {
             // Иначе тянем профиль отдельно
             _user = await ProfileRepository.I.load();
@@ -168,6 +179,11 @@ class UserNotifier extends ChangeNotifier {
               // Мягко подтянем точный баланс (не валим UI при ошибках)
               await _refreshBalanceSoft();
             }
+
+            _applySubscriptionUntil(
+              _extractSubscriptionUntil(cachedProfile),
+              notify: false,
+            );
           }
 
           notifyListeners();
@@ -212,6 +228,11 @@ class UserNotifier extends ChangeNotifier {
         _freeSeconds = _clampSeconds(secondsFromCache);
       }
 
+      _applySubscriptionUntil(
+        _extractSubscriptionUntil(cachedProfile),
+        notify: false,
+      );
+
       // Если в модели/репозитории появится прямое поле секунд — подхватите тут.
       // Параллельно мягко подтягиваем точный баланс из /profile.
       await _refreshBalanceSoft();
@@ -236,9 +257,20 @@ class UserNotifier extends ChangeNotifier {
   /// Вызывай после rewarded/consume, чтобы не «угадывать» локально.
   Future<void> refreshMinutesFromServer() async {
     if (!isAuth) return;
-    final seconds = await _fetchSecondsOrNull(force: true);
-    if (seconds != null) {
-      setFreeSeconds(seconds);
+    final snapshot = await _fetchBalanceSnapshot(force: true);
+    if (snapshot == null) return;
+
+    final bool subscriptionChanged =
+        _applySubscriptionUntil(snapshot.subscriptionUntil, notify: false);
+
+    if (snapshot.seconds != null) {
+      final prev = _freeSeconds;
+      setFreeSeconds(snapshot.seconds!);
+      if (subscriptionChanged && prev == _freeSeconds) {
+        notifyListeners();
+      }
+    } else if (subscriptionChanged) {
+      notifyListeners();
     }
   }
 
@@ -270,6 +302,7 @@ class UserNotifier extends ChangeNotifier {
     _user = null;
     _isAuth = false;
     _freeSeconds = 0; // сбрасываем локальный баланс
+    _subscriptionUntil = null;
     try {
       ProfileRepository.I.invalidate();
     } catch (_) {}
@@ -278,23 +311,40 @@ class UserNotifier extends ChangeNotifier {
   /// Мягкий рефреш баланса (не кидает исключения наружу).
   Future<void> _refreshBalanceSoft({bool force = false}) async {
     try {
-      final s = await _fetchSecondsOrNull(force: force);
-      if (s != null) setFreeSeconds(s);
+      final snapshot = await _fetchBalanceSnapshot(force: force);
+      if (snapshot == null) return;
+
+      final bool subscriptionChanged =
+          _applySubscriptionUntil(snapshot.subscriptionUntil, notify: false);
+
+      if (snapshot.seconds != null) {
+        final prev = _freeSeconds;
+        setFreeSeconds(snapshot.seconds!);
+        if (subscriptionChanged && prev == _freeSeconds) {
+          notifyListeners();
+        }
+      } else if (subscriptionChanged) {
+        notifyListeners();
+      }
     } catch (_) {
       // молча игнорируем
     }
   }
 
-  /// Тянет /profile и пытается извлечь ТЕКУЩИЙ баланс в секундах.
-  /// Поддерживает несколько форматов ответа (free_seconds / free_minutes / minutes).
-  Future<int?> _fetchSecondsOrNull({bool force = false}) async {
+  /// Дані про баланс секунд та термін дії підписки, якщо бек повернув.
+  Future<({int? seconds, DateTime? subscriptionUntil})?> _fetchBalanceSnapshot({
+    bool force = false,
+  }) async {
     try {
       final map = await ProfileRepository.I.loadMap(
         force: force,
         debugTag: force ? 'UserNotifier.balance(force)' : 'UserNotifier.balance',
       );
 
-      return _extractSecondsFromPayload(map);
+      return (
+        seconds: _extractSecondsFromPayload(map),
+        subscriptionUntil: _extractSubscriptionUntil(map),
+      );
     } catch (_) {
       // ignore
     }
@@ -337,6 +387,100 @@ class UserNotifier extends ChangeNotifier {
           if (nestedSeconds != null) return nestedSeconds;
         }
       }
+    }
+    return null;
+  }
+
+  DateTime? _extractSubscriptionUntil(dynamic raw) {
+    final map = _asMap(raw);
+    if (map == null) return null;
+
+    DateTime? tryKeys(Map<String, dynamic> source) {
+      for (final key in const [
+        'subscription_until',
+        'subscriptionUntil',
+        'subscription_expires_at',
+        'subscriptionExpiresAt',
+        'subscription_end_at',
+        'subscriptionEndAt',
+        'subscription_end',
+        'subscriptionEnd',
+        'active_until',
+        'activeUntil',
+        'expires_at',
+        'expiresAt',
+      ]) {
+        final dt = _parseSubscriptionDate(source[key]);
+        if (dt != null) return dt;
+      }
+      return null;
+    }
+
+    DateTime? result = tryKeys(map);
+    if (result != null) return result;
+
+    for (final nestedKey in const ['subscription', 'plan', 'data', 'user', 'profile']) {
+      final nested = map[nestedKey];
+      final nestedMap = _asMap(nested);
+      if (nestedMap == null) continue;
+      result = tryKeys(nestedMap);
+      if (result != null) return result;
+    }
+
+    return null;
+  }
+
+  bool _applySubscriptionUntil(DateTime? value, {bool notify = true}) {
+    final normalized = value?.toUtc();
+
+    final bool changed = !_sameInstant(_subscriptionUntil, normalized);
+    if (changed) {
+      _subscriptionUntil = normalized;
+      if (notify) notifyListeners();
+    }
+    return changed;
+  }
+
+  bool _sameInstant(DateTime? a, DateTime? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    return a.toUtc().isAtSameMomentAs(b.toUtc());
+  }
+
+  Map<String, dynamic>? _asMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      final out = <String, dynamic>{};
+      raw.forEach((key, value) => out['$key'] = value);
+      return out;
+    }
+    return null;
+  }
+
+  DateTime? _parseSubscriptionDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) {
+      if (value <= 0) return null;
+      // евросекунди: визначимо чи це секунди чи мілісекунди
+      if (value > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true);
+    }
+    if (value is num) {
+      if (value <= 0) return null;
+      final int seconds = value.floor();
+      if (seconds > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds, isUtc: true);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) return parsed;
     }
     return null;
   }
