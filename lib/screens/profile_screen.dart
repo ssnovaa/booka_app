@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:provider/provider.dart';
 import 'package:characters/characters.dart';
 
@@ -25,7 +26,7 @@ import 'package:booka_app/widgets/minutes_badge.dart';
 import 'package:booka_app/core/security/safe_errors.dart';
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
-// 🔗 для verify после покупки
+// 🔗 для verify після покупки
 import 'package:booka_app/core/network/api_client.dart';
 // Billing (встроенный флоу Google Play)
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -43,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('Profile: initState');
     profileFuture = _fetchUserProfile();
 
     // локал-first: тягнемо сервер лише якщо немає локальної сесії
@@ -50,6 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       final ap = context.read<AudioPlayerProvider>();
       final hasLocal = await ap.hasSavedSession();
+      debugPrint('Profile: postFrame hasLocalSession=$hasLocal');
       if (!hasLocal) {
         await ap.hydrateFromServerIfAvailable();
       }
@@ -58,16 +61,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<Map<String, dynamic>?> _fetchUserProfile({bool force = false}) async {
     try {
+      debugPrint('Profile: load profile (force=$force)');
       return await ProfileRepository.I.loadMap(
         force: force,
         debugTag: 'ProfileScreen.load',
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Profile: load profile error: $e');
       return null;
     }
   }
 
   Future<void> _refresh() async {
+    debugPrint('Profile: pull-to-refresh');
     final audio = context.read<AudioPlayerProvider>();
     final futProfile = _fetchUserProfile(force: true);
 
@@ -80,6 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> logout(BuildContext context) async {
+    debugPrint('Profile: logout');
     await Provider.of<UserNotifier>(context, listen: false).logout();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -240,6 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userNotifier = Provider.of<UserNotifier>(context);
     if (!userNotifier.isAuth) return const LoginScreen();
 
+    debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
     return Scaffold(
       appBar: bookaAppBar(actions: const []),
       body: FutureBuilder<Map<String, dynamic>?>(
@@ -852,7 +860,7 @@ class _ProfileLoadingSkeleton extends StatelessWidget {
 // ================== SUBSCRIPTION SECTION ==================
 // Комментарии на русском, сам код/строки — українські.
 // Этот виджет показывает кнопку покупки Premium, делает покупку
-// через Google Play, шлёт verify на бэк и обновляет профиль.
+// через Google Play, шлёт verify на бэк и обновляет профіль.
 
 class SubscriptionSection extends StatefulWidget {
   const SubscriptionSection({super.key});
@@ -874,7 +882,9 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   @override
   void initState() {
     super.initState();
-    _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e) {
+    debugPrint('Billing: SubscriptionSection init, product=$kProductId, platform=${Platform.isAndroid ? "android" : "other"}');
+    _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e, st) {
+      debugPrint('Billing: stream error: $e');
       setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
     });
     _queryProduct();
@@ -893,7 +903,10 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       _error = null;
     });
     try {
+      debugPrint('Billing: start query for $kProductId');
       final available = await _iap.isAvailable();
+      debugPrint('Billing: isAvailable = $available');
+
       if (!available) {
         setState(() {
           _error = 'Оплата недоступна на пристрої';
@@ -902,6 +915,9 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         return;
       }
       final resp = await _iap.queryProductDetails({kProductId});
+      debugPrint('Billing: notFoundIDs = ${resp.notFoundIDs}');
+      debugPrint('Billing: found = ${resp.productDetails.map((p) => "${p.id} | ${p.title} | ${p.price}").toList()}');
+
       if (resp.notFoundIDs.isNotEmpty || resp.productDetails.isEmpty) {
         setState(() {
           _error = 'Товар не знайдено ($kProductId)';
@@ -913,7 +929,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         _product = resp.productDetails.first;
         _isQuerying = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('Billing: _queryProduct error: $e\n$st');
       setState(() {
         _error = 'Не вдалося завантажити товар';
         _isQuerying = false;
@@ -924,9 +941,11 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   // Обработка результатов покупки
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
     for (final p in purchases) {
+      debugPrint('Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
       if (p.status == PurchaseStatus.pending) {
         setState(() => _isBuying = true);
       } else if (p.status == PurchaseStatus.error) {
+        debugPrint('Billing: purchase error -> ${p.error}');
         setState(() {
           _isBuying = false;
           _error = 'Помилка оплати';
@@ -935,6 +954,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           p.status == PurchaseStatus.restored) {
         // Для Android берём purchaseToken
         final token = p.verificationData.serverVerificationData;
+        debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, token.length.clamp(0, 12))}...');
         try {
           // Отправляем на бэк verify
           await ApiClient.i().post('/subscriptions/play/verify', data: {
@@ -944,11 +964,13 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
           // Завершаем покупку в Play (acknowledge), после успешной верификации
           if (p.pendingCompletePurchase) {
+            debugPrint('Billing: completing purchase (acknowledge)');
             await _iap.completePurchase(p);
           }
 
           // Обновляем профиль и статус платности
           if (mounted) {
+            debugPrint('Billing: refresh user from /auth/me');
             await context.read<UserNotifier>().refreshUserFromMe();
           }
 
@@ -956,8 +978,9 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             _isBuying = false;
             _error = null;
           });
-        } catch (_) {
-          // Если бэк не принял — не завершаем purchase, чтобы пользователь не потерял покупку
+        } catch (e, st) {
+          debugPrint('Billing: verify failed -> $e\n$st');
+          // Если бэк не принял — не завершаем purchase
           setState(() {
             _isBuying = false;
             _error = 'Не вдалося підтвердити покупку на сервері';
@@ -969,16 +992,21 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
   Future<void> _buy() async {
     final product = _product;
-    if (product == null) return;
+    if (product == null) {
+      debugPrint('Billing: _buy() called but _product is null');
+      return;
+    }
     setState(() {
       _isBuying = true;
       _error = null;
     });
     final param = PurchaseParam(productDetails: product);
     try {
+      debugPrint('Billing: buyNonConsumable for ${product.id}');
       // Для підписок у in_app_purchase використовується buyNonConsumable
       await _iap.buyNonConsumable(purchaseParam: param);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('Billing: buy error -> $e\n$st');
       setState(() {
         _isBuying = false;
         _error = 'Не вдалося ініціювати покупку';
@@ -990,6 +1018,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   Widget build(BuildContext context) {
     final userN = context.watch<UserNotifier>();
     final isPaidNow = userN.isPaidNow;
+    debugPrint('Billing: build section, isPaidNow=$isPaidNow, productLoaded=${_product != null}, querying=$_isQuerying, error=$_error');
 
     // Якщо користувач вже Premium — показуємо статус замість кнопки
     if (isPaidNow) {
