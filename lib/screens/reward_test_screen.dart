@@ -64,6 +64,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     final app = context.read<AudioPlayerProvider>();
     final bool wasPlayingBeforeAd = app.isPlaying;
+    bool shouldCloseScreen = false;
+    bool? popResult;
+    bool loadingClearedInFlow = false;
 
     setState(() {
       _loading = true;
@@ -90,8 +93,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       }
     }
 
-    bool shouldCloseScreen = false;
-
     try {
       // 1) Завантаження
       debugPrint('[REWARD] STEP 1: load()');
@@ -104,6 +105,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           _loading = false;
           _status = err;
         });
+        shouldCloseScreen = true;
+        popResult = false;
+        loadingClearedInFlow = true;
         return;
       }
 
@@ -170,6 +174,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           _loading = false;
         });
         shouldCloseScreen = true;
+        popResult = true;
+        loadingClearedInFlow = true;
       } else if (credited && !_isAuthorized) {
         setState(() {
           _status =
@@ -177,17 +183,29 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           _loading = false;
         });
         shouldCloseScreen = true;
+        popResult = true;
+        loadingClearedInFlow = true;
       } else {
         final err = _svc?.lastError ??
             'Не вдалося отримати нагороду (credited=false). Перевірте prepare/status у логах.';
         setState(() {
           _status = err;
+          _loading = false;
         });
+        shouldCloseScreen = true;
+        popResult = false;
+        loadingClearedInFlow = true;
       }
     } catch (e) {
       if (!mounted) return;
       debugPrint('[REWARD][ERROR] $e');
-      setState(() => _status = 'Помилка показу реклами: $e');
+      setState(() {
+        _status = 'Помилка показу реклами: $e';
+        _loading = false;
+      });
+      shouldCloseScreen = true;
+      popResult = false;
+      loadingClearedInFlow = true;
     } finally {
       // Всегда возобновляем расписание межстраничной рекламы после Rewarded
       app.resumeAdSchedule('rewarded');
@@ -200,15 +218,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
         }
       }
 
-      if (shouldCloseScreen) {
-        if (mounted) {
-          Navigator.of(context).pop(true);
-        }
-        return;
+      if (mounted && !loadingClearedInFlow) {
+        setState(() => _loading = false);
       }
 
-      if (!mounted) return;
-      setState(() => _loading = false);
+      if (shouldCloseScreen && mounted) {
+        Navigator.of(context).pop(popResult);
+      }
       // (опционально) префетч: _svc!.load();
     }
   }
