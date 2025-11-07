@@ -1077,7 +1077,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   }
 }
 
-// Невелика карточка-обгортка для секції
+// Невелика каорточка-обгортка для секції
 class _CardWrap extends StatelessWidget {
   final String title;
   final Widget child;
