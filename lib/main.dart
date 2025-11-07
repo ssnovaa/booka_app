@@ -1,9 +1,12 @@
 // lib/main.dart
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/theme_notifier.dart';
@@ -50,6 +53,14 @@ Future<void> main() async {
         details.stack ?? StackTrace.current,
       );
     };
+
+    if (Platform.isAndroid) {
+      try {
+        final androidAddition = InAppPurchase.instance
+            .getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
+        await androidAddition.enablePendingPurchases();
+      } catch (_) {}
+    }
 
     try {
       await JustAudioBackground.init(
