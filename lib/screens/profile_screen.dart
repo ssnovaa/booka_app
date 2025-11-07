@@ -939,38 +939,54 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     }
   }
 
+  // ===================================================================
+  // =================== ⬇️ ИСПРАВЛЕННЫЙ МЕТОД ⬇️ ===================
+  // ===================================================================
+
   // Обработка результатов покупки
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
     for (final p in purchases) {
       debugPrint('Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
+
       if (p.status == PurchaseStatus.pending) {
         setState(() => _isBuying = true);
+
       } else if (p.status == PurchaseStatus.error) {
         debugPrint('Billing: purchase error -> ${p.error}');
         setState(() {
           _isBuying = false;
           _error = 'Помилка оплати';
         });
+        // ⚠️ ВАЖНО: Закрываем транзакцию, даже если она с ошибкой
+        if (p.pendingCompletePurchase) {
+          await _iap.completePurchase(p);
+        }
+
       } else if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
-        // Для Android берём purchaseToken
+
+        // ⚠️ ИСПРАВЛЕНИЕ 1:
+        // СНАЧАЛА подтверждаем покупку в Google Play.
+        // Это аналог "acknowledgePurchase()".
+        if (p.pendingCompletePurchase) {
+          debugPrint('Billing: completing purchase (acknowledge) BEFORE backend verify...');
+          await _iap.completePurchase(p);
+          debugPrint('Billing: purchase completed/acknowledged.');
+        }
+
+        // Теперь, когда Google "успокоился", верифицируем на бэкенде.
         final token = p.verificationData.serverVerificationData;
         debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, token.length.clamp(0, 12))}...');
+
         try {
-          // ⚠️ ВАЖНО: backend ждёт camelCase!
+          // ⚠️ ИСПРАВЛЕНИЕ 2: Блок try-catch теперь только вокруг верификации
           final resp = await ApiClient.i().post('/subscriptions/play/verify', data: {
-            'purchaseToken': token,      // ← исправлено
-            'productId': kProductId,     // ← исправлено
+            'purchaseToken': token,
+            'productId': kProductId,
           });
           debugPrint('Billing: verify OK -> $resp');
 
-          // Завершаем покупку в Play (acknowledge), после успешной верификации
-          if (p.pendingCompletePurchase) {
-            debugPrint('Billing: completing purchase (acknowledge)');
-            await _iap.completePurchase(p);
-          }
-
-          // Обновляем профиль и статус платності
+          // Обновляем профиль и статус платности
           if (mounted) {
             debugPrint('Billing: refresh user from /auth/me');
             await context.read<UserNotifier>().refreshUserFromMe();
@@ -981,16 +997,38 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             _error = null;
           });
         } catch (e, st) {
-          debugPrint('Billing: verify failed -> $e\n$st');
-          // Если бэк не принял — не завершаем purchase
+          debugPrint('Billing: backend verify failed -> $e\n$st');
+          // ⚠️ ИСПРАВЛЕНИЕ 3:
+          // Покупка уже подтверждена! Ошибка бэкенда - это проблема,
+          // но она не сломает цикл покупки в Google.
+          // Просто сообщаем пользователю, что что-то пошло не так
+          // при синхронизации.
           setState(() {
             _isBuying = false;
-            _error = 'Не вдалося підтвердити покупку на сервері';
+            _error = 'Покупку підтверджено, але сталася помилка синхронізації з сервером.';
           });
         }
       }
+
+      // ⚠️ ИСПРАВЛЕНИЕ 4: (На всякий случай)
+      // Если пользователь сам отменил покупку, ее тоже надо "закрыть".
+      else if (p.status == PurchaseStatus.canceled) {
+        if (p.pendingCompletePurchase) {
+          debugPrint('Billing: completing CANCELED purchase');
+          await _iap.completePurchase(p);
+        }
+        setState(() {
+          _isBuying = false;
+          _error = 'Покупку скасовано';
+        });
+      }
     }
   }
+
+  // ===================================================================
+  // =================== ⬆️ ИСПРАВЛЕННЫЙ МЕТОД ⬆️ ===================
+  // ===================================================================
+
 
   Future<void> _buy() async {
     final product = _product;
