@@ -375,7 +375,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'Прослухані',
                     total: listened.length,
                     emptyText: 'Немає прослуханих книг',
-                    hintText: 'Після завершення книги вона зʼявиться тут',
+                    hintText:
+                    'Після завершення книги вона зʼявиться тут',
                     covers: listened.take(12).map((m) {
                       return _PreviewCover(
                         imageUrl: _resolveThumbOrCoverUrl(m),
@@ -956,11 +957,12 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         final token = p.verificationData.serverVerificationData;
         debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, token.length.clamp(0, 12))}...');
         try {
-          // Отправляем на бэк verify
-          await ApiClient.i().post('/subscriptions/play/verify', data: {
-            'purchase_token': token,
-            'product_id': kProductId,
+          // ⚠️ ВАЖНО: backend ждёт camelCase!
+          final resp = await ApiClient.i().post('/subscriptions/play/verify', data: {
+            'purchaseToken': token,      // ← исправлено
+            'productId': kProductId,     // ← исправлено
           });
+          debugPrint('Billing: verify OK -> $resp');
 
           // Завершаем покупку в Play (acknowledge), после успешной верификации
           if (p.pendingCompletePurchase) {
@@ -968,7 +970,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             await _iap.completePurchase(p);
           }
 
-          // Обновляем профиль и статус платности
+          // Обновляем профиль и статус платності
           if (mounted) {
             debugPrint('Billing: refresh user from /auth/me');
             await context.read<UserNotifier>().refreshUserFromMe();
