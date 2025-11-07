@@ -1,6 +1,7 @@
 // lib/screens/profile_screen.dart
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
@@ -889,12 +890,42 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
     });
     _queryProduct();
+    unawaited(_restorePendingTransactions());
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _restorePendingTransactions() async {
+    try {
+      if (Platform.isIOS) {
+        debugPrint('Billing: restorePurchases (iOS)');
+        await _iap.restorePurchases();
+        return;
+      }
+
+      debugPrint('Billing: queryPastPurchases()');
+      final resp = await _iap.queryPastPurchases();
+      if (resp.error != null) {
+        debugPrint('Billing: past purchase error -> ${resp.error}');
+      }
+      for (final purchase in resp.pastPurchases) {
+        debugPrint('Billing: past purchase -> id=${purchase.productID} status=${purchase.status} pending=${purchase.pendingCompletePurchase}');
+        if (purchase.productID != kProductId) {
+          continue;
+        }
+        if (purchase.status == PurchaseStatus.purchased ||
+            purchase.status == PurchaseStatus.restored ||
+            purchase.pendingCompletePurchase) {
+          await _onPurchases([purchase]);
+        }
+      }
+    } catch (e, st) {
+      debugPrint('Billing: restore/query error -> $e\n$st');
+    }
   }
 
   // Запросить товар в Play
@@ -941,8 +972,16 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
   // Обработка результатов покупки
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
+    if (!mounted) {
+      debugPrint('Billing: _onPurchases called after dispose — ignore');
+      return;
+    }
     for (final p in purchases) {
       debugPrint('Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
+      if (p.productID != kProductId) {
+        debugPrint('Billing: skip foreign product ${p.productID}');
+        continue;
+      }
       if (p.status == PurchaseStatus.pending) {
         setState(() => _isBuying = true);
       } else if (p.status == PurchaseStatus.error) {
@@ -955,12 +994,14 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           p.status == PurchaseStatus.restored) {
         // Для Android берём purchaseToken
         final token = p.verificationData.serverVerificationData;
-        debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, token.length.clamp(0, 12))}...');
+        final previewLen = math.min(token.length, 12);
+        debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, previewLen)}...');
+        final productId = p.productID;
         try {
           // ⚠️ ВАЖНО: backend ждёт camelCase!
           final resp = await ApiClient.i().post('/subscriptions/play/verify', data: {
             'purchaseToken': token,      // ← исправлено
-            'productId': kProductId,     // ← исправлено
+            'productId': productId,
           });
           debugPrint('Billing: verify OK -> $resp');
 
@@ -988,6 +1029,11 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             _error = 'Не вдалося підтвердити покупку на сервері';
           });
         }
+      } else if (p.status == PurchaseStatus.canceled) {
+        debugPrint('Billing: purchase canceled by user');
+        setState(() {
+          _isBuying = false;
+        });
       }
     }
   }
