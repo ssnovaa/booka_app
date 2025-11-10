@@ -30,392 +30,10 @@ import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/network/api_client.dart';
 // Billing (встроенный флоу Google Play)
 import 'package:in_app_purchase/in_app_purchase.dart';
+// ❌ НЕ НУЖНО для текущей схемы: offerToken/GooglePlayPurchaseParam
+// import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
-
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  late Future<Map<String, dynamic>?> profileFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    debugPrint('Profile: initState');
-    profileFuture = _fetchUserProfile();
-
-    // локал-first: тягнемо сервер лише якщо немає локальної сесії
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final ap = context.read<AudioPlayerProvider>();
-      final hasLocal = await ap.hasSavedSession();
-      debugPrint('Profile: postFrame hasLocalSession=$hasLocal');
-      if (!hasLocal) {
-        await ap.hydrateFromServerIfAvailable();
-      }
-    });
-  }
-
-  Future<Map<String, dynamic>?> _fetchUserProfile({bool force = false}) async {
-    try {
-      debugPrint('Profile: load profile (force=$force)');
-      return await ProfileRepository.I.loadMap(
-        force: force,
-        debugTag: 'ProfileScreen.load',
-      );
-    } catch (e) {
-      debugPrint('Profile: load profile error: $e');
-      return null;
-    }
-  }
-
-  Future<void> _refresh() async {
-    debugPrint('Profile: pull-to-refresh');
-    final audio = context.read<AudioPlayerProvider>();
-    final futProfile = _fetchUserProfile(force: true);
-
-    // локал-first при оновленні
-    final hasLocal = await audio.hasSavedSession();
-    final futHydrate = hasLocal ? Future.value(false) : audio.hydrateFromServerIfAvailable();
-
-    setState(() => profileFuture = futProfile);
-    await Future.wait([futProfile, futHydrate]);
-  }
-
-  Future<void> logout(BuildContext context) async {
-    debugPrint('Profile: logout');
-    await Provider.of<UserNotifier>(context, listen: false).logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-    );
-  }
-
-  Future<void> _continueListening() async {
-    final ap = context.read<AudioPlayerProvider>();
-
-    // 1) спершу пробуємо підготуватися з локалі (миттєво)
-    await ap.ensurePrepared();
-    if (ap.currentBook != null && ap.currentChapter != null) {
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => BookDetailScreen(
-            book: ap.currentBook!,
-            initialChapter: ap.currentChapter!,
-            initialPosition: ap.position.inSeconds,
-            autoPlay: true,
-          ),
-        ),
-      );
-      return;
-    }
-
-    // 2) локалі немає → пробуємо сервер
-    final ok = await ap.hydrateFromServerIfAvailable();
-    if (ok && ap.currentBook != null && ap.currentChapter != null) {
-      await ap.ensurePrepared();
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => BookDetailScreen(
-            book: ap.currentBook!,
-            initialChapter: ap.currentChapter!,
-            initialPosition: ap.position.inSeconds,
-            autoPlay: true,
-          ),
-        ),
-      );
-      return;
-    }
-
-    // 3) нічого не знайшли
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Немає поточного прослуховування')),
-    );
-  }
-
-  Future<void> _openPlayer() async {
-    final ap = context.read<AudioPlayerProvider>();
-    final book = ap.currentBook;
-    final chapter = ap.currentChapter;
-    if (book != null && chapter != null) {
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => BookDetailScreen(
-            book: book,
-            initialChapter: chapter,
-            initialPosition: ap.position.inSeconds,
-            autoPlay: false,
-          ),
-        ),
-      );
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Немає поточного прослуховування')),
-      );
-    }
-  }
-
-  void _switchMainTabAndClose(int tab) {
-    final ms = MainScreen.of(context);
-    if (ms != null) {
-      ms.setTab(tab);
-      Navigator.of(context).pop();
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
-            (route) => false,
-      );
-    }
-  }
-
-  /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
-  void _onBottomTab(int index) {
-    switch (index) {
-      case 0:
-        _switchMainTabAndClose(0);
-        break;
-      case 1:
-        _switchMainTabAndClose(1);
-        break;
-      case 2:
-        _openPlayer();
-        break;
-      case 3:
-        break;
-    }
-  }
-
-  /// thumb_url > cover_url → абсолютний URL
-  String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
-    String? pick(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      return s.isEmpty ? null : s;
-    }
-
-    String? thumb = pick(book['thumb_url'] ?? book['thumbUrl']);
-    if (thumb != null) {
-      if (thumb.startsWith('http')) return thumb;
-      return fullResourceUrl('storage/$thumb');
-    }
-
-    String? cover = pick(book['cover_url'] ?? book['coverUrl']);
-    if (cover != null) {
-      if (cover.startsWith('http')) return cover;
-      return fullResourceUrl('storage/$cover');
-    }
-    return null;
-  }
-
-  /// Нормалізуємо карту книги, щоб Book.fromJson отримав абсолютні поля обкладинки
-  Map<String, dynamic> _normalizedBookMap(Map<String, dynamic> m) {
-    final map = Map<String, dynamic>.from(m);
-    final abs = _resolveThumbOrCoverUrl(map);
-    if (abs != null) {
-      map['thumb_url'] = abs;
-      map['thumbUrl'] = abs;
-      map['cover_url'] = abs;
-      map['coverUrl'] = abs;
-    }
-    return map;
-  }
-
-  void _openBookFromMap(Map<String, dynamic> raw) {
-    try {
-      final book = Book.fromJson(_normalizedBookMap(raw));
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не вдалося відкрити книгу')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final userNotifier = Provider.of<UserNotifier>(context);
-    if (!userNotifier.isAuth) return const LoginScreen();
-
-    debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
-    return Scaffold(
-      appBar: bookaAppBar(actions: const []),
-      body: FutureBuilder<Map<String, dynamic>?>(
-        future: profileFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const _ProfileLoadingSkeleton();
-          }
-          if (snapshot.hasError) {
-            return _CenteredMessage(
-              title: 'Помилка',
-              subtitle: safeErrorMessage(
-                snapshot.error!,
-                fallback: 'Не вдалося завантажити профіль',
-              ),
-              actionText: 'Спробувати ще',
-              onAction: _refresh,
-            );
-          }
-
-          final data = snapshot.data;
-          if (data == null) {
-            return _CenteredMessage(
-              title: 'Не вдалося завантажити профіль',
-              subtitle: 'Перевірте зʼєднання або увійдіть ще раз',
-              actionText: 'Оновити',
-              onAction: _refresh,
-            );
-          }
-
-          final favoritesRaw = data['favorites'];
-          final listenedRaw = data['listened'];
-
-          final List<Map<String, dynamic>> favorites = (favoritesRaw is List)
-              ? favoritesRaw.whereType<Map>().map<Map<String, dynamic>>((m) {
-            final out = <String, dynamic>{};
-            (m as Map).forEach((k, v) => out['$k'] = v);
-            return out;
-          }).toList()
-              : <Map<String, dynamic>>[];
-
-          final List<Map<String, dynamic>> listened = (listenedRaw is List)
-              ? listenedRaw.whereType<Map>().map<Map<String, dynamic>>((m) {
-            final out = <String, dynamic>{};
-            (m as Map).forEach((k, v) => out['$k'] = v);
-            return out;
-          }).toList()
-              : <Map<String, dynamic>>[];
-
-          final String name = (data['name'] ?? '').toString();
-          final String email = (data['email'] ?? '').toString();
-          final bool isPaid =
-              (data['is_paid'] == true) || (data['isPaid'] == true);
-
-          return RefreshIndicator.adaptive(
-            onRefresh: _refresh,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: _ProfileHeader(
-                      name: name.isNotEmpty ? name : 'Користувач',
-                      email: email.isNotEmpty ? email : '—',
-                      isPaid: isPaid,
-                      onLogout: () => logout(context),
-                    ),
-                  ),
-                ),
-
-                // ⬇️ СЕКЦИЯ ПОДПИСКИ (кнопка покупки / статус Premium)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    child: SubscriptionSection(),
-                  ),
-                ),
-
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: const _SectionTitle('Поточна книга'),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: CurrentListenCard(onContinue: _continueListening),
-                  ),
-                ),
-
-                // Вибране
-                SliverToBoxAdapter(
-                  child: _PreviewSection(
-                    title: 'Вибране',
-                    total: favorites.length,
-                    emptyText: 'Немає обраних книг',
-                    hintText: 'Додайте книги у «вибране» зі сторінки книги',
-                    covers: favorites.take(12).map((m) {
-                      return _PreviewCover(
-                        imageUrl: _resolveThumbOrCoverUrl(m),
-                        onTap: () => _openBookFromMap(m),
-                      );
-                    }).toList(),
-                    onSeeAll: favorites.isEmpty
-                        ? null
-                        : () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => FullBooksGridScreen(
-                            title: 'Вибране',
-                            items: favorites,
-                            resolveUrl: _resolveThumbOrCoverUrl,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Прослухані
-                SliverToBoxAdapter(
-                  child: _PreviewSection(
-                    title: 'Прослухані',
-                    total: listened.length,
-                    emptyText: 'Немає прослуханих книг',
-                    hintText:
-                    'Після завершення книги вона зʼявиться тут',
-                    covers: listened.take(12).map((m) {
-                      return _PreviewCover(
-                        imageUrl: _resolveThumbOrCoverUrl(m),
-                        onTap: () => _openBookFromMap(m),
-                      );
-                    }).toList(),
-                    onSeeAll: listened.isEmpty
-                        ? null
-                        : () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => FullBooksGridScreen(
-                            title: 'Прослухані',
-                            items: listened,
-                            resolveUrl: _resolveThumbOrCoverUrl,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 8)),
-              ],
-            ),
-          );
-        },
-      ),
-      bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: 3,
-        onTap: _onBottomTab,
-        onOpenPlayer: _openPlayer,
-        onPlayerTap: _openPlayer,
-      ),
-    );
-  }
-}
-
-/// ===== Допоміжні міні-виджети профілю =====
+/// ===== ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ (подняты НАВЕРХ) =====
 
 class _SectionTitle extends StatelessWidget {
   final String text;
@@ -431,191 +49,121 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _PreviewSection extends StatelessWidget {
-  final String title;
-  final int total;
-  final List<_PreviewCover> covers;
-  final String emptyText;
-  final String? hintText;
-  final VoidCallback? onSeeAll;
-
-  const _PreviewSection({
-    required this.title,
-    required this.total,
-    required this.covers,
-    required this.emptyText,
-    this.hintText,
-    this.onSeeAll,
-  });
+class _EmptySection extends StatelessWidget {
+  final String text;
+  final String? hint;
+  const _EmptySection({required this.text, this.hint});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hasItems = total > 0;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+    final t = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(
+          Theme.of(context).brightness == Brightness.dark ? 0.20 : 0.35,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-              if (hasItems && onSeeAll != null)
-                TextButton(onPressed: onSeeAll, child: Text('Усі ($total)')),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (!hasItems)
-            _EmptySection(text: emptyText, hint: hintText)
-          else
-            SizedBox(
-              height: 158,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.only(right: 4),
-                itemBuilder: (context, i) => covers[i],
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemCount: covers.length,
+          Text(text, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+          if (hint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              hint!,
+              style: t.bodySmall?.copyWith(
+                color: t.bodySmall?.color?.withOpacity(0.85),
               ),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _PreviewCover extends StatelessWidget {
-  final String? imageUrl;
-  final VoidCallback? onTap;
-
-  const _PreviewCover({
-    required this.imageUrl,
-    this.onTap,
-  });
+class _ProfileLoadingSkeleton extends StatelessWidget {
+  const _ProfileLoadingSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark ? Colors.white10 : Colors.black12;
-    final iconColor = isDark ? Colors.white54 : Colors.black45;
+    final base = theme.colorScheme.surfaceVariant.withOpacity(
+      theme.brightness == Brightness.dark ? 0.24 : 0.35,
+    );
 
-    Widget frame(Widget child) => SizedBox(
-      width: 96,
-      height: 128,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: bg),
-          child: child,
-        ),
+    Widget bar({double h = 12, double w = double.infinity, double r = 8}) => Container(
+      height: h,
+      width: w,
+      decoration: BoxDecoration(
+        color: base,
+        borderRadius: BorderRadius.circular(r),
       ),
     );
 
-    final placeholder = frame(
-      Center(child: Icon(Icons.book_rounded, color: iconColor, size: 30)),
-    );
-
-    final image = frame(
-      Image.network(
-        imageUrl ?? '',
-        fit: BoxFit.contain,
-        alignment: Alignment.center,
-        filterQuality: FilterQuality.medium,
-        errorBuilder: (_, __, ___) => placeholder,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return const Center(
-            child: SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
-          );
-        },
-      ),
-    );
-
-    final coverCore = (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
-
-    final cover = onTap == null
-        ? coverCore
-        : Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: coverCore,
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        cover,
-        const SizedBox(height: 6),
-        Opacity(opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
-      ],
-    );
-  }
-}
-
-class _CenteredMessage extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final String? actionText;
-  final Future<void> Function()? onAction;
-
-  const _CenteredMessage({
-    required this.title,
-    this.subtitle,
-    this.actionText,
-    this.onAction,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return SafeArea(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  subtitle!,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  CircleAvatar(radius: 28, backgroundColor: base),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        bar(h: 16, w: 140, r: 6),
+                        const SizedBox(height: 8),
+                        bar(h: 12, w: 200, r: 6),
+                        const SizedBox(height: 12),
+                        bar(h: 18, w: 92, r: 9),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-              if (onAction != null && actionText != null) ...[
-                const SizedBox(height: 16),
-                ElevatedButton(onPressed: onAction, child: Text(actionText!)),
-              ],
-            ],
+                ],
+              ),
+            ),
           ),
-        ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+              child: bar(h: 16, w: 120),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              child: bar(h: 112, r: 14),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+              child: bar(h: 16, w: 96),
+            ),
+          ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+                  (context, i) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                child: bar(h: 110, r: 14),
+              ),
+              childCount: 3,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        ],
       ),
     );
   }
 }
 
-/// ===== ИСПРАВЛЕНО: бейдж вынесен ПОД Row и тянется на всю ширину карточки
 class _ProfileHeader extends StatelessWidget {
   final String name;
   final String email;
@@ -623,6 +171,7 @@ class _ProfileHeader extends StatelessWidget {
   final VoidCallback onLogout;
 
   const _ProfileHeader({
+    super.key,
     required this.name,
     required this.email,
     required this.isPaid,
@@ -743,125 +292,571 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-class _EmptySection extends StatelessWidget {
-  final String text;
-  final String? hint;
-  const _EmptySection({required this.text, this.hint});
+class _PreviewCover extends StatelessWidget {
+  final String? imageUrl;
+  final VoidCallback? onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(
-          Theme.of(context).brightness == Brightness.dark ? 0.20 : 0.35,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(text, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-          if (hint != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              hint!,
-              style: t.bodySmall?.copyWith(
-                color: t.bodySmall?.color?.withOpacity(0.85),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ProfileLoadingSkeleton extends StatelessWidget {
-  const _ProfileLoadingSkeleton();
+  const _PreviewCover({
+    super.key,
+    required this.imageUrl,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final base = theme.colorScheme.surfaceVariant.withOpacity(
-      theme.brightness == Brightness.dark ? 0.24 : 0.35,
-    );
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark ? Colors.white10 : Colors.black12;
+    final iconColor = isDark ? Colors.white54 : Colors.black45;
 
-    Widget bar({double h = 12, double w = double.infinity, double r = 8}) => Container(
-      height: h,
-      width: w,
-      decoration: BoxDecoration(
-        color: base,
-        borderRadius: BorderRadius.circular(r),
+    Widget frame(Widget child) => SizedBox(
+      width: 96,
+      height: 128,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: bg),
+          child: child,
+        ),
       ),
     );
 
-    return SafeArea(
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  CircleAvatar(radius: 28, backgroundColor: base),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        bar(h: 16, w: 140, r: 6),
-                        const SizedBox(height: 8),
-                        bar(h: 12, w: 200, r: 6),
-                        const SizedBox(height: 12),
-                        bar(h: 18, w: 92, r: 9),
-                      ],
-                    ),
+    final placeholder = frame(
+      Center(child: Icon(Icons.book_rounded, color: iconColor, size: 30)),
+    );
+
+    final image = frame(
+      Image.network(
+        imageUrl ?? '',
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => placeholder,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return const Center(
+            child: SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
+          );
+        },
+      ),
+    );
+
+    final coverCore = (imageUrl == null || imageUrl!.isEmpty) ? placeholder : image;
+
+    final cover = onTap == null
+        ? coverCore
+        : Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: coverCore,
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        cover,
+        const SizedBox(height: 6),
+        Opacity(opacity: 0.0, child: Text('•', style: theme.textTheme.bodySmall)),
+      ],
+    );
+  }
+}
+
+class _PreviewSection extends StatelessWidget {
+  final String title;
+  final int total;
+  final List<_PreviewCover> covers;
+  final String emptyText;
+  final String? hintText;
+  final VoidCallback? onSeeAll;
+
+  const _PreviewSection({
+    super.key,
+    required this.title,
+    required this.total,
+    required this.covers,
+    required this.emptyText,
+    this.hintText,
+    this.onSeeAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasItems = total > 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
                   ),
-                ],
+                ),
+              ),
+              if (hasItems && onSeeAll != null)
+                TextButton(onPressed: onSeeAll, child: Text('Усі ($total)')),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (!hasItems)
+            _EmptySection(text: emptyText, hint: hintText)
+          else
+            SizedBox(
+              height: 158,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(right: 4),
+                itemBuilder: (context, i) => covers[i],
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemCount: covers.length,
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-              child: bar(h: 16, w: 120),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-              child: bar(h: 112, r: 14),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-              child: bar(h: 16, w: 96),
-            ),
-          ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-                  (context, i) => Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                child: bar(h: 110, r: 14),
-              ),
-              childCount: 3,
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
     );
   }
 }
 
-// ================== SUBSCRIPTION SECTION ==================
-// Комментарии на русском, сам код/строки — українські.
-// Этот виджет показывает кнопку покупки Premium, делает покупку
-// через Google Play, шлёт verify на бэк и обновляет профіль.
+class _CenteredMessage extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final String? actionText;
+  final Future<void> Function()? onAction;
+
+  const _CenteredMessage({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.actionText,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).textTheme;
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  subtitle!,
+                  textAlign: TextAlign.center,
+                  style: theme.bodyMedium?.copyWith(
+                    color: theme.bodyMedium?.color?.withOpacity(0.8),
+                  ),
+                ),
+              ],
+              if (onAction != null && actionText != null) ...[
+                const SizedBox(height: 16),
+                ElevatedButton(onPressed: onAction, child: Text(actionText!)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ================== ОСНОВНОЙ ЭКРАН ПРОФИЛЯ ==================
+
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<Map<String, dynamic>?> profileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('Profile: initState');
+    profileFuture = _fetchUserProfile();
+
+    // локал-first: тягнемо сервер лише якщо немає локальної сесії
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final ap = context.read<AudioPlayerProvider>();
+      final hasLocal = await ap.hasSavedSession();
+      debugPrint('Profile: postFrame hasLocalSession=$hasLocal');
+      if (!hasLocal) {
+        await ap.hydrateFromServerIfAvailable();
+      }
+    });
+  }
+
+  Future<Map<String, dynamic>?> _fetchUserProfile({bool force = false}) async {
+    try {
+      debugPrint('Profile: load profile (force=$force)');
+      return await ProfileRepository.I.loadMap(
+        force: force,
+        debugTag: 'ProfileScreen.load',
+      );
+    } catch (e) {
+      debugPrint('Profile: load profile error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _refresh() async {
+    debugPrint('Profile: pull-to-refresh');
+    final audio = context.read<AudioPlayerProvider>();
+    final futProfile = _fetchUserProfile(force: true);
+    final hasLocal = await audio.hasSavedSession();
+    final futHydrate = hasLocal ? Future.value(false) : audio.hydrateFromServerIfAvailable();
+
+    setState(() => profileFuture = futProfile);
+    await Future.wait([futProfile, futHydrate]);
+  }
+
+  Future<void> logout(BuildContext context) async {
+    debugPrint('Profile: logout');
+    await Provider.of<UserNotifier>(context, listen: false).logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+    );
+  }
+
+  Future<void> _continueListening() async {
+    final ap = context.read<AudioPlayerProvider>();
+
+    await ap.ensurePrepared();
+    if (ap.currentBook != null && ap.currentChapter != null) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: ap.currentBook!,
+            initialChapter: ap.currentChapter!,
+            initialPosition: ap.position.inSeconds,
+            autoPlay: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final ok = await ap.hydrateFromServerIfAvailable();
+    if (ok && ap.currentBook != null && ap.currentChapter != null) {
+      await ap.ensurePrepared();
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: ap.currentBook!,
+            initialChapter: ap.currentChapter!,
+            initialPosition: ap.position.inSeconds,
+            autoPlay: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Немає поточного прослуховування')),
+    );
+  }
+
+  Future<void> _openPlayer() async {
+    final ap = context.read<AudioPlayerProvider>();
+    final book = ap.currentBook;
+    final chapter = ap.currentChapter;
+    if (book != null && chapter != null) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailScreen(
+            book: book,
+            initialChapter: chapter,
+            initialPosition: ap.position.inSeconds,
+            autoPlay: false,
+          ),
+        ),
+      );
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Немає поточного прослуховування')),
+      );
+    }
+  }
+
+  void _switchMainTabAndClose(int tab) {
+    final ms = MainScreen.of(context);
+    if (ms != null) {
+      ms.setTab(tab);
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
+            (route) => false,
+      );
+    }
+  }
+
+  /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
+  void _onBottomTab(int index) {
+    switch (index) {
+      case 0:
+        _switchMainTabAndClose(0);
+        break;
+      case 1:
+        _switchMainTabAndClose(1);
+        break;
+      case 2:
+        _openPlayer();
+        break;
+      case 3:
+        break;
+    }
+  }
+
+  /// thumb_url > cover_url → абсолютний URL
+  String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    String? thumb = pick(book['thumb_url'] ?? book['thumbUrl']);
+    if (thumb != null) {
+      if (thumb.startsWith('http')) return thumb;
+      return fullResourceUrl('storage/$thumb');
+    }
+
+    String? cover = pick(book['cover_url'] ?? book['coverUrl']);
+    if (cover != null) {
+      if (cover.startsWith('http')) return cover;
+      return fullResourceUrl('storage/$cover');
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _normalizedBookMap(Map<String, dynamic> m) {
+    final map = Map<String, dynamic>.from(m);
+    final abs = _resolveThumbOrCoverUrl(map);
+    if (abs != null) {
+      map['thumb_url'] = abs;
+      map['thumbUrl'] = abs;
+      map['cover_url'] = abs;
+      map['coverUrl'] = abs;
+    }
+    return map;
+  }
+
+  void _openBookFromMap(Map<String, dynamic> raw) {
+    try {
+      final book = Book.fromJson(_normalizedBookMap(raw));
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не вдалося відкрити книгу')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userNotifier = Provider.of<UserNotifier>(context);
+    if (!userNotifier.isAuth) return const LoginScreen();
+
+    debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
+    return Scaffold(
+      appBar: bookaAppBar(actions: const []),
+      body: FutureBuilder<Map<String, dynamic>?>(
+        future: profileFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            // не константой — на некоторых каналах были глюки резолвинга const в приватных классах
+            return const _ProfileLoadingSkeleton();
+          }
+          if (snapshot.hasError) {
+            return _CenteredMessage(
+              title: 'Помилка',
+              subtitle: safeErrorMessage(
+                snapshot.error!,
+                fallback: 'Не вдалося завантажити профіль',
+              ),
+              actionText: 'Спробувати ще',
+              onAction: _refresh,
+            );
+          }
+
+          final data = snapshot.data;
+          if (data == null) {
+            return _CenteredMessage(
+              title: 'Не вдалося завантажити профіль',
+              subtitle: 'Перевірте зʼєднання або увійдіть ще раз',
+              actionText: 'Оновити',
+              onAction: _refresh,
+            );
+          }
+
+          final favoritesRaw = data['favorites'];
+          final listenedRaw = data['listened'];
+
+          final List<Map<String, dynamic>> favorites = (favoritesRaw is List)
+              ? favoritesRaw.whereType<Map>().map<Map<String, dynamic>>((m) {
+            final out = <String, dynamic>{};
+            (m as Map).forEach((k, v) => out['$k'] = v);
+            return out;
+          }).toList()
+              : <Map<String, dynamic>>[];
+
+          final List<Map<String, dynamic>> listened = (listenedRaw is List)
+              ? listenedRaw.whereType<Map>().map<Map<String, dynamic>>((m) {
+            final out = <String, dynamic>{};
+            (m as Map).forEach((k, v) => out['$k'] = v);
+            return out;
+          }).toList()
+              : <Map<String, dynamic>>[];
+
+          final String name = (data['name'] ?? '').toString();
+          final String email = (data['email'] ?? '').toString();
+          final bool isPaid =
+              (data['is_paid'] == true) || (data['isPaid'] == true);
+
+          return RefreshIndicator.adaptive(
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: _ProfileHeader(
+                      name: name.isNotEmpty ? name : 'Користувач',
+                      email: email.isNotEmpty ? email : '—',
+                      isPaid: isPaid,
+                      onLogout: () => logout(context),
+                    ),
+                  ),
+                ),
+
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: SubscriptionSection(),
+                  ),
+                ),
+
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: _SectionTitle('Поточна книга'),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                    child: CurrentListenCard(onContinue: _continueListening),
+                  ),
+                ),
+
+                SliverToBoxAdapter(
+                  child: _PreviewSection(
+                    title: 'Вибране',
+                    total: favorites.length,
+                    emptyText: 'Немає обраних книг',
+                    hintText: 'Додайте книги у «вибране» зі сторінки книги',
+                    covers: favorites.take(12).map((m) {
+                      return _PreviewCover(
+                        imageUrl: _resolveThumbOrCoverUrl(m),
+                        onTap: () => _openBookFromMap(m),
+                      );
+                    }).toList(),
+                    onSeeAll: favorites.isEmpty
+                        ? null
+                        : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => FullBooksGridScreen(
+                            title: 'Вибране',
+                            items: favorites,
+                            resolveUrl: _resolveThumbOrCoverUrl,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                SliverToBoxAdapter(
+                  child: _PreviewSection(
+                    title: 'Прослухані',
+                    total: listened.length,
+                    emptyText: 'Немає прослуханих книг',
+                    hintText: 'Після завершення книги вона зʼявиться тут',
+                    covers: listened.take(12).map((m) {
+                      return _PreviewCover(
+                        imageUrl: _resolveThumbOrCoverUrl(m),
+                        onTap: () => _openBookFromMap(m),
+                      );
+                    }).toList(),
+                    onSeeAll: listened.isEmpty
+                        ? null
+                        : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => FullBooksGridScreen(
+                            title: 'Прослухані',
+                            items: listened,
+                            resolveUrl: _resolveThumbOrCoverUrl,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              ],
+            ),
+          );
+        },
+      ),
+      bottomNavigationBar: CustomBottomNavBar(
+        currentIndex: 3,
+        onTap: _onBottomTab,
+        onOpenPlayer: _openPlayer,
+        onPlayerTap: _openPlayer,
+      ),
+    );
+  }
+}
+
+/// ================== SUBSCRIPTION SECTION ==================
 
 class SubscriptionSection extends StatefulWidget {
   const SubscriptionSection({super.key});
@@ -884,11 +879,23 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   void initState() {
     super.initState();
     debugPrint('Billing: SubscriptionSection init, product=$kProductId, platform=${Platform.isAndroid ? "android" : "other"}');
+
     _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e, st) {
       debugPrint('Billing: stream error: $e');
       setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
     });
-    _queryProduct();
+
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _queryProduct();
+    try {
+      debugPrint('Billing: restorePurchases()');
+      await _iap.restorePurchases();
+    } catch (e) {
+      debugPrint('Billing: restorePurchases error: $e');
+    }
   }
 
   @override
@@ -897,7 +904,6 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     super.dispose();
   }
 
-  // Запросить товар в Play
   Future<void> _queryProduct() async {
     setState(() {
       _isQuerying = true;
@@ -926,8 +932,10 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         });
         return;
       }
+
+      final pd = resp.productDetails.first;
       setState(() {
-        _product = resp.productDetails.first;
+        _product = pd;
         _isQuerying = false;
       });
     } catch (e, st) {
@@ -939,57 +947,53 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     }
   }
 
-  // ===================================================================
-  // =================== ⬇️ ИСПРАВЛЕННЫЙ МЕТОД ⬇️ ===================
-  // ===================================================================
+  Future<void> _pollPaidStatus() async {
+    final userN = context.read<UserNotifier>();
+    for (int i = 0; i < 10; i++) {
+      await Future.delayed(const Duration(seconds: 2));
+      await userN.refreshUserFromMe();
+      debugPrint('Billing: poll paid? -> ${userN.isPaidNow}');
+      if (!mounted) return;
+      if (userN.isPaidNow) {
+        setState(() {});
+        return;
+      }
+    }
+  }
 
-  // Обработка результатов покупки
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
     for (final p in purchases) {
       debugPrint('Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
-
       if (p.status == PurchaseStatus.pending) {
         setState(() => _isBuying = true);
-
       } else if (p.status == PurchaseStatus.error) {
         debugPrint('Billing: purchase error -> ${p.error}');
         setState(() {
           _isBuying = false;
           _error = 'Помилка оплати';
         });
-        // ⚠️ ВАЖНО: Закрываем транзакцию, даже если она с ошибкой
-        if (p.pendingCompletePurchase) {
-          await _iap.completePurchase(p);
-        }
-
       } else if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
-
-        // ⚠️ ИСПРАВЛЕНИЕ 1:
-        // СНАЧАЛА подтверждаем покупку в Google Play.
-        // Это аналог "acknowledgePurchase()".
-        if (p.pendingCompletePurchase) {
-          debugPrint('Billing: completing purchase (acknowledge) BEFORE backend verify...');
-          await _iap.completePurchase(p);
-          debugPrint('Billing: purchase completed/acknowledged.');
-        }
-
-        // Теперь, когда Google "успокоился", верифицируем на бэкенде.
         final token = p.verificationData.serverVerificationData;
-        debugPrint('Billing: purchased/restored, sending verify token=${token.substring(0, token.length.clamp(0, 12))}...');
+        final short = token.isNotEmpty ? token.substring(0, token.length.clamp(0, 12)) : '';
+        debugPrint('Billing: purchased/restored, sending verify token=$short...');
 
         try {
-          // ⚠️ ИСПРАВЛЕНИЕ 2: Блок try-catch теперь только вокруг верификации
-          final resp = await ApiClient.i().post('/subscriptions/play/verify', data: {
+          await ApiClient.i().post('/subscriptions/play/verify', data: {
+            // ⬇️ соответствие бэку
             'purchaseToken': token,
             'productId': kProductId,
           });
-          debugPrint('Billing: verify OK -> $resp');
 
-          // Обновляем профиль и статус платности
+          if (p.pendingCompletePurchase) {
+            debugPrint('Billing: completing purchase (acknowledge)');
+            await _iap.completePurchase(p);
+          }
+
           if (mounted) {
-            debugPrint('Billing: refresh user from /auth/me');
+            debugPrint('Billing: refresh user from /auth/me (immediate)');
             await context.read<UserNotifier>().refreshUserFromMe();
+            unawaited(_pollPaidStatus());
           }
 
           setState(() {
@@ -997,39 +1001,17 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             _error = null;
           });
         } catch (e, st) {
-          debugPrint('Billing: backend verify failed -> $e\n$st');
-          // ⚠️ ИСПРАВЛЕНИЕ 3:
-          // Покупка уже подтверждена! Ошибка бэкенда - это проблема,
-          // но она не сломает цикл покупки в Google.
-          // Просто сообщаем пользователю, что что-то пошло не так
-          // при синхронизации.
+          debugPrint('Billing: verify failed -> $e\n$st');
           setState(() {
             _isBuying = false;
-            _error = 'Покупку підтверджено, але сталася помилка синхронізації з сервером.';
+            _error = 'Не вдалося підтвердити покупку на сервері';
           });
         }
-      }
-
-      // ⚠️ ИСПРАВЛЕНИЕ 4: (На всякий случай)
-      // Если пользователь сам отменил покупку, ее тоже надо "закрыть".
-      else if (p.status == PurchaseStatus.canceled) {
-        if (p.pendingCompletePurchase) {
-          debugPrint('Billing: completing CANCELED purchase');
-          await _iap.completePurchase(p);
-        }
-        setState(() {
-          _isBuying = false;
-          _error = 'Покупку скасовано';
-        });
       }
     }
   }
 
-  // ===================================================================
-  // =================== ⬆️ ИСПРАВЛЕННЫЙ МЕТОД ⬆️ ===================
-  // ===================================================================
-
-
+  // ✅ Покупка без offerToken/GooglePlayPurchaseParam (универсально для v3.1.11)
   Future<void> _buy() async {
     final product = _product;
     if (product == null) {
@@ -1040,10 +1022,10 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       _isBuying = true;
       _error = null;
     });
-    final param = PurchaseParam(productDetails: product);
+
     try {
-      debugPrint('Billing: buyNonConsumable for ${product.id}');
-      // Для підписок у in_app_purchase використовується buyNonConsumable
+      debugPrint('Billing: buy for ${product.id}');
+      final param = PurchaseParam(productDetails: product);
       await _iap.buyNonConsumable(purchaseParam: param);
     } catch (e, st) {
       debugPrint('Billing: buy error -> $e\n$st');
@@ -1060,7 +1042,6 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     final isPaidNow = userN.isPaidNow;
     debugPrint('Billing: build section, isPaidNow=$isPaidNow, productLoaded=${_product != null}, querying=$_isQuerying, error=$_error');
 
-    // Якщо користувач вже Premium — показуємо статус замість кнопки
     if (isPaidNow) {
       final until = userN.user?.paidUntil;
       final subtitle =
@@ -1074,7 +1055,6 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       );
     }
 
-    // Гость або free — показуємо кнопку покупки
     Widget body;
     if (_isQuerying) {
       body = const Text('Завантаження…');
@@ -1084,28 +1064,67 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         children: [
           Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _queryProduct,
-            child: const Text('Спробувати ще раз'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: _queryProduct,
+                child: const Text('Спробувати ще раз'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  try {
+                    await _iap.restorePurchases();
+                  } catch (_) {}
+                },
+                child: const Text('Відновити покупку'),
+              ),
+            ],
           ),
         ],
       );
     } else if (_product == null) {
-      body = OutlinedButton(
-        onPressed: _queryProduct,
-        child: const Text('Оновити'),
+      body = Row(
+        children: [
+          OutlinedButton(
+            onPressed: _queryProduct,
+            child: const Text('Оновити'),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton(
+            onPressed: () async {
+              try {
+                await _iap.restorePurchases();
+              } catch (_) {}
+            },
+            child: const Text('Відновити покупку'),
+          ),
+        ],
       );
     } else {
-      final price = _product!.price; // локалізована ціна
+      final price = _product!.price;
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Місячна підписка: $price',
-              style: Theme.of(context).textTheme.bodyMedium),
+          Text('Місячна підписка: $price', style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 8),
-          ElevatedButton(
-            onPressed: _isBuying ? null : _buy,
-            child: Text(_isBuying ? 'Обробка…' : 'Підключити Premium'),
+          Wrap(
+            spacing: 8,
+            children: [
+              ElevatedButton(
+                onPressed: _isBuying ? null : _buy,
+                child: Text(_isBuying ? 'Обробка…' : 'Підключити Premium'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  try {
+                    await _iap.restorePurchases();
+                  } catch (_) {}
+                },
+                child: const Text('Відновити покупку'),
+              ),
+            ],
           ),
         ],
       );
@@ -1115,7 +1134,6 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   }
 }
 
-// Невелика каорточка-обгортка для секції
 class _CardWrap extends StatelessWidget {
   final String title;
   final Widget child;
@@ -1136,11 +1154,10 @@ class _CardWrap extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           child,
         ],
