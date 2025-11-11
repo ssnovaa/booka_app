@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -30,8 +31,8 @@ import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/network/api_client.dart';
 // Billing (встроенный флоу Google Play)
 import 'package:in_app_purchase/in_app_purchase.dart';
-// ❌ НЕ НУЖНО для текущей схемы: offerToken/GooglePlayPurchaseParam
-// import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart'
+    show GooglePlayPurchaseDetails;
 
 /// ===== ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ (подняты НАВЕРХ) =====
 
@@ -961,6 +962,107 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     }
   }
 
+  String _resolvePurchaseToken(PurchaseDetails details) {
+    final serverData = details.verificationData.serverVerificationData;
+
+    if (Platform.isAndroid) {
+      if (details is GooglePlayPurchaseDetails) {
+        final purchaseToken =
+            details.billingClientPurchase.purchaseToken;
+        if (purchaseToken.isNotEmpty) {
+          return purchaseToken;
+        }
+
+        final fromOriginal = _parsePurchaseTokenFromJson(
+            details.billingClientPurchase.originalJson);
+        if (fromOriginal != null && fromOriginal.isNotEmpty) {
+          return fromOriginal;
+        }
+      }
+
+      final fromServer = _parsePurchaseTokenFromJson(serverData);
+      if (fromServer != null && fromServer.isNotEmpty) {
+        return fromServer;
+      }
+    }
+
+    return serverData;
+  }
+
+  String? _parsePurchaseTokenFromJson(String? raw) {
+    final visited = <String>{};
+
+    String? visit(String? input) {
+      final trimmed = input?.trim();
+      if (trimmed == null || trimmed.isEmpty || !visited.add(trimmed)) {
+        return null;
+      }
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(trimmed);
+      } catch (_) {
+        // Возможно, строка — base64, попробуем декодировать её в UTF-8 JSON.
+        try {
+          final normalized = base64.normalize(trimmed);
+          final decodedBytes = base64.decode(normalized);
+          final asString = utf8.decode(decodedBytes);
+          decoded = jsonDecode(asString);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      return _extractToken(decoded);
+    }
+
+    String? _extractToken(dynamic node) {
+      if (node is Map) {
+        for (final key in ['purchaseToken', 'token']) {
+          final value = node[key];
+          if (value is String && value.isNotEmpty) {
+            return value;
+          }
+        }
+
+        for (final key in ['json', 'data', 'signedData', 'receipt']) {
+          final nested = node[key];
+          if (nested is String) {
+            final token = visit(nested);
+            if (token != null && token.isNotEmpty) {
+              return token;
+            }
+          } else {
+            final token = _extractToken(nested);
+            if (token != null && token.isNotEmpty) {
+              return token;
+            }
+          }
+        }
+
+        for (final value in node.values) {
+          final token = _extractToken(value);
+          if (token != null && token.isNotEmpty) {
+            return token;
+          }
+        }
+      } else if (node is List) {
+        for (final item in node) {
+          final token = _extractToken(item);
+          if (token != null && token.isNotEmpty) {
+            return token;
+          }
+        }
+      } else if (node is String) {
+        return visit(node);
+      }
+
+      return null;
+    }
+
+    return visit(raw);
+  }
+
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
     for (final p in purchases) {
       debugPrint('Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
@@ -974,15 +1076,28 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         });
       } else if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
-        final token = p.verificationData.serverVerificationData;
-        final short = token.isNotEmpty ? token.substring(0, token.length.clamp(0, 12)) : '';
-        debugPrint('Billing: purchased/restored, sending verify token=$short...');
+        final token = _resolvePurchaseToken(p);
+        final short =
+            token.isNotEmpty ? token.substring(0, token.length.clamp(0, 12)) : '';
+        final productId = p.productID;
+        debugPrint(
+            'Billing: purchased/restored, sending verify token=$short product=$productId...');
+
+        if (token.isEmpty) {
+          debugPrint(
+              'Billing: unable to resolve purchase token, serverData=${p.verificationData.serverVerificationData}');
+          setState(() {
+            _isBuying = false;
+            _error = 'Не вдалося підтвердити покупку на сервері';
+          });
+          continue;
+        }
 
         try {
           await ApiClient.i().post('/subscriptions/play/verify', data: {
             // ⬇️ соответствие бэку
             'purchaseToken': token,
-            'productId': kProductId,
+            'productId': productId,
           });
 
           if (p.pendingCompletePurchase) {
