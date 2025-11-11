@@ -1,16 +1,37 @@
 # booka_app
 
-A new Flutter project.
+Клиентское Flutter-приложение проекта Booka.
 
-## Getting Started
+## Быстрый старт
 
-This project is a starting point for a Flutter application.
+1. Установите [Flutter SDK](https://docs.flutter.dev/get-started/install) и выполните `flutter doctor`.
+2. Установите зависимости: `flutter pub get`.
+3. Запустите приложение: `flutter run`.
 
-A few resources to get you started if this is your first Flutter project:
+## Подключение бэкенд-репозитория
+
+Если вам нужен серверный код из репозитория `booka_project`, его можно
+добавить в рабочее окружение рядом с этим проектом:
+
+```bash
+cd /workspace
+git clone https://github.com/ssnovaa/booka_project
+```
+
+Команды выполняются в терминале (например, встроенном терминале IDE или окне
+команд контейнера). После клонирования появится папка `booka_project`, в
+которой можно работать с бэкендом.
+
+> ℹ️ **Важно.** Агент видит только файлы, доступные внутри текущего
+> контейнера. Если репозиторий `booka_project` уже существует локально на вашем
+> компьютере, но не склонирован в контейнер, агент не сможет к нему обратиться.
+> Чтобы предоставить доступ, клонируйте репозиторий в каталог `/workspace` или
+> поделитесь архивом/ссылкой, доступной из рабочей среды агента.
+
+## Полезные ресурсы Flutter
 
 - [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
 - [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Дополнительную информацию по разработке приложений на Flutter можно найти в
+[официальной документации](https://docs.flutter.dev/).
