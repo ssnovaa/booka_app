@@ -15,7 +15,7 @@ import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
 
 // 👇 Экран согласия на режим «с рекламой»
-import 'package:booka_app/screens/reward_test_screen.dart';
+// ᐊ===== ВИДАЛЕНО: import 'package:booka_app/screens/reward_test_screen.dart';
 
 // 👇 Глобальный инжектор баннера поверх всех экранов
 import 'package:booka_app/widgets/global_banner_injector.dart';
@@ -25,7 +25,11 @@ final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
 /// Реактор на изменение жизненного цикла приложения
 class _LifecycleReactor with WidgetsBindingObserver {
   final AudioPlayerProvider audio;
-  _LifecycleReactor(this.audio) {
+  // ᐊ===== 1. ДОДАЄМО UserNotifier
+  final UserNotifier userNotifier;
+
+  // ᐊ===== 2. ОНОВЛЮЄМО КОНСТРУКТОР
+  _LifecycleReactor(this.audio, this.userNotifier) {
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -33,6 +37,18 @@ class _LifecycleReactor with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       unawaited(audio.flushProgress());
+    }
+
+    // ᐊ===== 3. ДОДАЄМО БЛОК ДЛЯ ОНОВЛЕННЯ СТАТУСУ
+    // Цей код спрацює, коли користувач повернеться в додаток
+    if (state == AppLifecycleState.resumed) {
+      try {
+        // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
+        //    (Цей метод існує у lib/user_notifier.dart [lib/user_notifier.dart:115])
+        userNotifier.fetchCurrentUser();
+      } catch (e) {
+        // ігноруємо помилку, якщо запит не вдався (напр. немає мережі)
+      }
     }
   }
 }
@@ -93,19 +109,20 @@ Future<void> main() async {
     // === ВАЖНО: назначаем колбэки провайдера АУДИО ===
 
     // 1) Экран согласия «продолжить с рекламой»
-    audioProvider.onNeedAdConsent = () async {
-      final ctx = _navKey.currentContext;
-      if (ctx == null) return false;
-
-      final result = await Navigator.of(ctx).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => const RewardTestScreen(),
-          fullscreenDialog: true,
-        ),
-      );
-
-      return result == true;
-    };
+    // ᐊ===== ВИДАЛЕНО: Цей блок більше не потрібен
+    // audioProvider.onNeedAdConsent = () async {
+    //   final ctx = _navKey.currentContext;
+    //   if (ctx == null) return false;
+    //
+    //   final result = await Navigator.of(ctx).push<bool>(
+    //     MaterialPageRoute(
+    //       builder: (_) => const RewardTestScreen(),
+    //       fullscreenDialog: true,
+    //     ),
+    //   );
+    //
+    //   return result == true;
+    // };
 
     // 2) Автопоказ межстраничной рекламы раз в 10 минут (ad-mode)
     audioProvider.onShowIntervalAd = () async {
@@ -113,19 +130,21 @@ Future<void> main() async {
     };
 
     // 3) Фоллбек: если секунд нет и ad-consent не получен — отправим на тот же экран
-    audioProvider.onCreditsExhausted = () {
-      final ctx = _navKey.currentContext;
-      if (ctx == null) return;
-      // Не плодим копии, если уже открыто
-      if (ModalRoute.of(ctx)?.settings.name == '/rewarded') return;
-      Navigator.of(ctx).pushNamed('/rewarded');
-    };
+    // ᐊ===== ВИДАЛЕНО: Цей блок більше не потрібен
+    // audioProvider.onCreditsExhausted = () {
+    //   final ctx = _navKey.currentContext;
+    //   if (ctx == null) return;
+    //   // Не плодим копии, если уже открыто
+    //   if (ModalRoute.of(ctx)?.settings.name == '/rewarded') return;
+    //   Navigator.of(ctx).pushNamed('/rewarded');
+    // };
 
     // Запуск приложения
     runApp(
       MultiProvider(
         providers: [
           ChangeNotifierProvider<ThemeNotifier>.value(value: themeNotifier),
+          // ᐊ===== ✅✅✅ ВИПРАВЛЕНО ОДРУК (з ChangeNodeNotifierProvider)
           ChangeNotifierProvider<UserNotifier>.value(value: userNotifier),
           ChangeNotifierProvider<AudioPlayerProvider>.value(value: audioProvider),
         ],
@@ -143,15 +162,25 @@ Future<void> main() async {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
           final audio = Provider.of<AudioPlayerProvider>(ctx, listen: false);
+          // ᐊ===== 4. ОТРИМУЄМО UserNotifier З КОНТЕКСТУ
+          final user = Provider.of<UserNotifier>(ctx, listen: false);
 
           final hasLocal = await audio.hasSavedSession();
           if (!hasLocal) {
+            // ᐊ===== 5. ДОДАЄМО ПЕРВИННЕ ЗАВАНТАЖЕННЯ СТАТУСУ
+            try {
+              // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
+              await user.fetchCurrentUser(); // [lib/user_notifier.dart:115]
+            } catch (e) {
+              // ігноруємо, якщо немає мережі
+            }
             await audio.hydrateFromServerIfAvailable();
           }
 
           await audio.ensurePrepared();
 
-          _reactor ??= _LifecycleReactor(audio);
+          // ᐊ===== 6. ОНОВЛЮЄМО СТВОРЕННЯ РЕАКТОРА
+          _reactor ??= _LifecycleReactor(audio, user);
         }
       } catch (_) {}
     });
@@ -186,9 +215,10 @@ class BookaApp extends StatelessWidget {
           navigatorKey: _navKey,
 
           // Именованный маршрут на экран согласия
-          routes: <String, WidgetBuilder>{
-            '/rewarded': (_) => const RewardTestScreen(),
-          },
+          // ᐊ===== ВИДАЛЕНО: Маршрут /rewarded більше не потрібен
+          // routes: <String, WidgetBuilder>{
+          //   '/rewarded': (_) => const RewardTestScreen(),
+          // },
 
           // Единый хост баннера
           builder: (context, child) {

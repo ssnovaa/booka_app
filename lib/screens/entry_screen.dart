@@ -46,7 +46,7 @@ class _EntryScreenState extends State<EntryScreen> {
         // 1) Обновляем тип пользователя для поведения плеера из локального состояния
         audio.userType = getUserType(userN.user);
 
-        // 2) 🔁 Дотягиваем приватный статус подписки (is_paid/paid_until) и обновляем тип
+        // 2) 🔁 Дотягиваем приватный статус подписки (is_paid/paid_until) и оновлюємо тип
         try {
           await userN.refreshUserFromMe();
           audio.userType = getUserType(userN.user);
@@ -160,27 +160,30 @@ class _EntryScreenState extends State<EntryScreen> {
       );
     }
 
-    // ✅ Повертаємо основний екран, а для тесту реклами (тільки debug)
-    // поверх додаємо плаваючу кнопку, яка відкриває RewardTestScreen.
+    // ✅ Повертаємо основний екран.
+    // Кнопка теста наградной рекламы залишена в коді, але повністю закоментована,
+    // щоб її можна було легко повернути при налагодженні.
     return Stack(
       children: [
         const MainScreen(),
-        if (kDebugMode)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton.extended(
-              // Комментарий: кнопка видна только в debug-сборках
-              heroTag: 'reward_test_fab',
-              icon: const Icon(Icons.ondemand_video),
-              label: const Text('Reward test'),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const RewardTestScreen()),
-                );
-              },
-            ),
-          ),
+
+        // DEBUG Reward-test FAB (зараз вимкнено):
+        // if (kDebugMode)
+        //   Positioned(
+        //     right: 16,
+        //     bottom: 16,
+        //     child: FloatingActionButton.extended(
+        //       // Комментарий: кнопка видна только в debug-сборках
+        //       heroTag: 'reward_test_fab',
+        //       icon: const Icon(Icons.ondemand_video),
+        //       label: const Text('Reward test'),
+        //       onPressed: () {
+        //         Navigator.of(context).push(
+        //           MaterialPageRoute(builder: (_) => const RewardTestScreen()),
+        //         );
+        //       },
+        //     ),
+        //   ),
       ],
     );
   }

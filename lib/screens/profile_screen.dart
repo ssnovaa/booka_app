@@ -274,9 +274,14 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          const MinutesBadge(),
-          const SizedBox(height: 8),
+          // ᐊ===== ✅✅✅ ВИПРАВЛЕННЯ 1: ХОВАЄМО ТАЙМЕР ДЛЯ ПЛАТНИХ ✅✅✅ =====
+          // Показуємо бейдж з хвилинами, ТІЛЬКИ якщо користувач НЕ платний
+          if (!isPaid) ...[
+            const SizedBox(height: 6),
+            const MinutesBadge(),
+            const SizedBox(height: 8),
+          ],
+          // ᐊ==============================================================
         ],
       ),
     );
@@ -525,12 +530,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _refresh() async {
     debugPrint('Profile: pull-to-refresh');
     final audio = context.read<AudioPlayerProvider>();
+    // ᐊ===== ✅✅✅ ВИПРАВЛЕННЯ 2 (A): ОНОВЛЮЄМО UserNotifier ПІД ЧАС REFRESH ✅✅✅ =====
+    // Одночасно запускаємо оновлення FutureBuilder (futProfile)
+    // та оновлення UserNotifier (user.fetchCurrentUser())
+    final user = context.read<UserNotifier>();
     final futProfile = _fetchUserProfile(force: true);
+    final futUser = user.fetchCurrentUser(); // [lib/user_notifier.dart:184]
+    // ᐊ========================================================================
+
     final hasLocal = await audio.hasSavedSession();
     final futHydrate = hasLocal ? Future.value(false) : audio.hydrateFromServerIfAvailable();
 
     setState(() => profileFuture = futProfile);
-    await Future.wait([futProfile, futHydrate]);
+    // Чекаємо на завершення всіх паралельних запитів
+    await Future.wait([futProfile, futHydrate, futUser]);
   }
 
   Future<void> logout(BuildContext context) async {
@@ -688,7 +701,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final userNotifier = Provider.of<UserNotifier>(context);
+    // ᐊ===== ✅✅✅ ВИПРАВЛЕННЯ 2 (B): ОТРИМУЄМО АКТУАЛЬНИЙ СТАТУС З NOTIFIER ✅✅✅ =====
+    // Ми використовуємо 'watch', щоб екран перебудовувався,
+    // коли 'userNotifier.isPaidNow' змінюється.
+    final userNotifier = context.watch<UserNotifier>();
+    // ᐊ========================================================================
+
     if (!userNotifier.isAuth) return const LoginScreen();
 
     debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
@@ -744,8 +762,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           final String name = (data['name'] ?? '').toString();
           final String email = (data['email'] ?? '').toString();
-          final bool isPaid =
-              (data['is_paid'] == true) || (data['isPaid'] == true);
+
+          // ᐊ===== ⚠️ МИ БІЛЬШЕ НЕ ВИКОРИСТОВУЄМО 'isPaid' З 'FutureBuilder' =====
+          // final bool isPaid =
+          //     (data['is_paid'] == true) || (data['isPaid'] == true);
+          // ᐊ================================================================
 
           return RefreshIndicator.adaptive(
             onRefresh: _refresh,
@@ -758,7 +779,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: _ProfileHeader(
                       name: name.isNotEmpty ? name : 'Користувач',
                       email: email.isNotEmpty ? email : '—',
-                      isPaid: isPaid,
+                      // ᐊ===== ✅✅✅ ВИПРАВЛЕННЯ 2 (C): ПЕРЕДАЄМО АКТУАЛЬНИЙ СТАТУС ✅✅✅ =====
+                      isPaid: userNotifier.isPaidNow,
+                      // ᐊ=================================================================
                       onLogout: () => logout(context),
                     ),
                   ),
@@ -947,14 +970,20 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     }
   }
 
+  /// ⚠️ Цей метод - для "опитування" статусу ПІСЛЯ покупки,
+  /// оскільки /auth/me може оновлюватися не миттєво.
+  /// (Це не стосується RTDN, це саме для флоу покупки).
   Future<void> _pollPaidStatus() async {
     final userN = context.read<UserNotifier>();
     for (int i = 0; i < 10; i++) {
       await Future.delayed(const Duration(seconds: 2));
+      // Викликаємо `refreshUserFromMe`, який тягне /auth/me
       await userN.refreshUserFromMe();
       debugPrint('Billing: poll paid? -> ${userN.isPaidNow}');
       if (!mounted) return;
       if (userN.isPaidNow) {
+        // Як тільки сервер сказав isPaidNow == true,
+        // ми оновлюємо UI (StatefulWidget)
         setState(() {});
         return;
       }
@@ -972,8 +1001,15 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           _isBuying = false;
           _error = 'Помилка оплати';
         });
+        // Потрібно завершити помилкову покупку
+        if (p.pendingCompletePurchase) {
+          await _iap.completePurchase(p);
+        }
       } else if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
+
+        // Android: 'serverVerificationData' - це токен
+        // iOS: 'serverVerificationData' - це receipt
         final token = p.verificationData.serverVerificationData;
         final short = token.isNotEmpty ? token.substring(0, token.length.clamp(0, 12)) : '';
         debugPrint('Billing: purchased/restored, sending verify token=$short...');
@@ -985,15 +1021,25 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             'productId': kProductId,
           });
 
+          // ᐊ===== ✅✅✅ ОСЬ КЛЮЧОВЕ ВИРІШЕННЯ ✅✅✅ =====
+          // Ми щойно успішно відправили токен на сервер.
+          // Тепер ми негайно викликаємо `refreshUserFromMe()`,
+          // щоб отримати свіжий статус (is_paid: true)
+          // і змусити весь додаток перебудуватися.
+          if (mounted) {
+            debugPrint('Billing: refresh user from /auth/me (immediate)');
+            // [lib/user_notifier.dart:214]
+            await context.read<UserNotifier>().refreshUserFromMe();
+            // Запускаємо "опитування" на випадок,
+            // якщо /auth/me ще не встиг оновитися
+            unawaited(_pollPaidStatus());
+          }
+          // ᐊ=============================================
+
+          // Тільки ТЕПЕР завершуємо покупку
           if (p.pendingCompletePurchase) {
             debugPrint('Billing: completing purchase (acknowledge)');
             await _iap.completePurchase(p);
-          }
-
-          if (mounted) {
-            debugPrint('Billing: refresh user from /auth/me (immediate)');
-            await context.read<UserNotifier>().refreshUserFromMe();
-            unawaited(_pollPaidStatus());
           }
 
           setState(() {
@@ -1007,11 +1053,20 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             _error = 'Не вдалося підтвердити покупку на сервері';
           });
         }
+      } else if (p.status == PurchaseStatus.canceled) {
+        debugPrint('Billing: purchase canceled');
+        setState(() {
+          _isBuying = false;
+          _error = null;
+        });
+        if (p.pendingCompletePurchase) {
+          await _iap.completePurchase(p);
+        }
       }
     }
   }
 
-  // ✅ Покупка без offerToken/GooglePlayPurchaseParam (универсально для v3.1.11)
+  // ✅ Покупка без offerToken/GooglePlayPurchaseParam
   Future<void> _buy() async {
     final product = _product;
     if (product == null) {
@@ -1026,6 +1081,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     try {
       debugPrint('Billing: buy for ${product.id}');
       final param = PurchaseParam(productDetails: product);
+      // `buyNonConsumable` використовується для підписок
       await _iap.buyNonConsumable(purchaseParam: param);
     } catch (e, st) {
       debugPrint('Billing: buy error -> $e\n$st');
@@ -1042,10 +1098,11 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     final isPaidNow = userN.isPaidNow;
     debugPrint('Billing: build section, isPaidNow=$isPaidNow, productLoaded=${_product != null}, querying=$_isQuerying, error=$_error');
 
+    // 1. Вже платний
     if (isPaidNow) {
       final until = userN.user?.paidUntil;
       final subtitle =
-      until != null ? 'Активно до: ${until.toLocal()}' : 'Преміум активний';
+      until != null ? 'Активно до: ${until.toLocal().toString().substring(0, 10)}' : 'Преміум активний';
       return _CardWrap(
         title: 'Booka Premium',
         child: Text(
@@ -1055,6 +1112,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       );
     }
 
+    // 2. Інші стани (йде завантаження, помилка, кнопка покупки)
     Widget body;
     if (_isQuerying) {
       body = const Text('Завантаження…');
@@ -1103,6 +1161,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         ],
       );
     } else {
+      // 3. Готово до покупки
       final price = _product!.price;
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,

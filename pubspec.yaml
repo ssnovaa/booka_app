@@ -2,7 +2,7 @@ name: booka_app
 description: "Booka — аудіокниги українською"
 publish_to: 'none'
 
-version: 1.0.0+20
+version: 1.0.0+22
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
