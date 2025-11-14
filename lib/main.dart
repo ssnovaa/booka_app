@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // ᐊ===== 1. ДОБАВЛЕН ИМПОРТ PUSH
 
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/theme_notifier.dart';
@@ -13,9 +14,6 @@ import 'package:booka_app/screens/catalog_screen.dart' show routeObserver;
 
 import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
-
-// 👇 Экран согласия на режим «с рекламой»
-// ᐊ===== ВИДАЛЕНО: import 'package:booka_app/screens/reward_test_screen.dart';
 
 // 👇 Глобальный инжектор баннера поверх всех экранов
 import 'package:booka_app/widgets/global_banner_injector.dart';
@@ -84,6 +82,23 @@ Future<void> main() async {
     final userNotifier = UserNotifier();
     final audioProvider = AudioPlayerProvider();
 
+    // ᐊ===== 2. ‼️ ДОБАВЛЕН СЛУШАТЕЛЬ PUSH-УВЕДОМЛЕНИЙ ‼️ =====
+    // Этот код будет слушать ТИХИЕ пуши от сервера (когда приложение открыто)
+    try {
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        // Убедимся, что ключ совпадает с тем, что шлет бэкенд
+        if (message.data['type'] == 'subscription_update') {
+          print('🔄 [Push] Получена команда обновить статус подписки!');
+          // Принудительно обновляем статус пользователя с сервера
+          userNotifier.refreshUserFromMe();
+        }
+      });
+    } catch (e) {
+      print('Ошибка подписки на FirebaseMessaging.onMessage: $e');
+    }
+    // =======================================================
+
+
     // Связка секунд с UserNotifier
     audioProvider.getFreeSeconds = () => userNotifier.freeSeconds;
     audioProvider.setFreeSeconds = (int v) {
@@ -108,36 +123,12 @@ Future<void> main() async {
 
     // === ВАЖНО: назначаем колбэки провайдера АУДИО ===
 
-    // 1) Экран согласия «продолжить с рекламой»
-    // ᐊ===== ВИДАЛЕНО: Цей блок більше не потрібен
-    // audioProvider.onNeedAdConsent = () async {
-    //   final ctx = _navKey.currentContext;
-    //   if (ctx == null) return false;
-    //
-    //   final result = await Navigator.of(ctx).push<bool>(
-    //     MaterialPageRoute(
-    //       builder: (_) => const RewardTestScreen(),
-    //       fullscreenDialog: true,
-    //     ),
-    //   );
-    //
-    //   return result == true;
-    // };
-
     // 2) Автопоказ межстраничной рекламы раз в 10 минут (ad-mode)
     audioProvider.onShowIntervalAd = () async {
       await _showInterstitialAd(audioProvider);
     };
 
-    // 3) Фоллбек: если секунд нет и ad-consent не получен — отправим на тот же экран
-    // ᐊ===== ВИДАЛЕНО: Цей блок більше не потрібен
-    // audioProvider.onCreditsExhausted = () {
-    //   final ctx = _navKey.currentContext;
-    //   if (ctx == null) return;
-    //   // Не плодим копии, если уже открыто
-    //   if (ModalRoute.of(ctx)?.settings.name == '/rewarded') return;
-    //   Navigator.of(ctx).pushNamed('/rewarded');
-    // };
+    // (Удалены старые колбэки, как и в вашем файле)
 
     // Запуск приложения
     runApp(
@@ -214,11 +205,7 @@ class BookaApp extends StatelessWidget {
           navigatorObservers: [routeObserver],
           navigatorKey: _navKey,
 
-          // Именованный маршрут на экран согласия
-          // ᐊ===== ВИДАЛЕНО: Маршрут /rewarded більше не потрібен
-          // routes: <String, WidgetBuilder>{
-          //   '/rewarded': (_) => const RewardTestScreen(),
-          // },
+          // (Удалены старые роуты, как и в вашем файле)
 
           // Единый хост баннера
           builder: (context, child) {
