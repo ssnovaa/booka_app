@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:provider/provider.dart';
 import 'package:characters/characters.dart';
 
-// app а
+// app
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/widgets/current_listen_card.dart';
 import 'package:booka_app/user_notifier.dart';
