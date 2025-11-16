@@ -17,9 +17,13 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:dio/dio.dart' show Options, Headers;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:booka_app/user_notifier.dart';
+import 'package:booka_app/providers/audio_player_provider.dart';
+import 'package:booka_app/models/user.dart' show getUserType;
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -36,7 +40,8 @@ class PushService {
   // 🇺🇦 Ліниво ініціалізуємо після Firebase.initializeApp()
   late final FirebaseMessaging _fcm;
 
-  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _local =
+  FlutterLocalNotificationsPlugin();
   GlobalKey<NavigatorState>? _navigatorKey;
 
   bool _initialized = false;
@@ -63,13 +68,15 @@ class PushService {
 
     // 3) Локальні нотифікації (foreground)
     // ❗ Використовуємо монохромну білу іконку в статус-барі
-    const androidInit = AndroidInitializationSettings('@drawable/ic_stat_notify');
+    const androidInit =
+    AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
-    const initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
+    const initSettings =
+    InitializationSettings(android: androidInit, iOS: iosInit);
     await _local.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (resp) => _onLocalTap(resp),
@@ -79,8 +86,13 @@ class PushService {
     // 4) iOS дозволи
     if (Platform.isIOS) {
       final settings = await _fcm.requestPermission(
-        alert: true, badge: true, sound: true,
-        announcement: false, criticalAlert: false, provisional: false, carPlay: false,
+        alert: true,
+        badge: true,
+        sound: true,
+        announcement: false,
+        criticalAlert: false,
+        provisional: false,
+        carPlay: false,
       );
       if (kDebugMode) {
         print('🔔 iOS notification permission: ${settings.authorizationStatus}');
@@ -88,7 +100,11 @@ class PushService {
     }
 
     // 5) Показ heads-up у форграунді (і презентація на iOS)
-    await _fcm.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
+    await _fcm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
     // 6) Android канал (ID має збігатися з AndroidManifest.xml)
     const androidChannel = AndroidNotificationChannel(
@@ -101,7 +117,8 @@ class PushService {
       enableVibration: true,
     );
     await _local
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(androidChannel);
 
     // 6.1) Android 13+ — runtime-дозвіл
@@ -109,25 +126,92 @@ class PushService {
       final status = await Permission.notification.status;
       if (!status.isGranted) {
         final res = await Permission.notification.request();
-        if (kDebugMode) print('🔔 Android notification permission result: $res');
+        if (kDebugMode) {
+          print('🔔 Android notification permission result: $res');
+        }
       }
     }
 
     // 7) Обробники життєвого циклу повідомлень
-    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-    FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpenedApp);
+    FirebaseMessaging.onMessage
+        .listen((msg) => _handleRemoteMessage(msg, fromTap: false));
+    FirebaseMessaging.onMessageOpenedApp
+        .listen((msg) => _handleRemoteMessage(msg, fromTap: true));
 
-    // 8) Якщо застосунок відкрито з пушу
+    // 8) Якщо застосунок відкрито з пушу (термінований стан)
     final initialMessage = await _fcm.getInitialMessage();
-    if (initialMessage != null) _handleDeepLink(initialMessage.data);
+    if (initialMessage != null) {
+      await _handleRemoteMessage(initialMessage, fromTap: true);
+    }
 
     // 9) Реєстрація токена на бекенді
     await _registerToken();
 
     // 10) Оновлення токена
-    _fcm.onTokenRefresh.listen((token) => _registerToken(force: true, overrideToken: token));
+    _fcm.onTokenRefresh
+        .listen((token) => _registerToken(force: true, overrideToken: token));
   }
 
+  /// Єдиний вхід для всіх RemoteMessage (foreground / tap / initial)
+  Future<void> _handleRemoteMessage(
+      RemoteMessage msg, {
+        required bool fromTap,
+      }) async {
+    final data = msg.data;
+    if (kDebugMode) {
+      print('[PUSH] message received: fromTap=$fromTap, data=$data');
+    }
+
+    // 1) Реакція на зміну статусу підписки
+    //    👇 Бек шле type = 'subscription_update'
+    if (data['type'] == 'subscription_update') {
+      final ctx = _navigatorKey?.currentContext;
+      if (ctx != null) {
+        try {
+          if (kDebugMode) {
+            print('[PUSH] subscription_update → refresh /auth/me + audio.userType');
+          }
+
+          final userN = ctx.read<UserNotifier>();
+          await userN.refreshUserFromMe();
+
+          final u = userN.user;
+          if (u != null) {
+            final audio = ctx.read<AudioPlayerProvider>();
+            audio.userType = getUserType(u);
+            audio.notifyListeners();
+            if (kDebugMode) {
+              print('[PUSH] userType updated from push -> ${audio.userType}');
+            }
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('[PUSH] failed to refresh subscription status from push: $e');
+          }
+        }
+      } else {
+        if (kDebugMode) {
+          print('[PUSH] no navigator context, skip subscription refresh');
+        }
+      }
+
+      // ❗ Для цього сервісного пуша НЕ показуємо локальну нотифікацію
+      // і не робимо диплінк.
+      return;
+    }
+
+    // 2) Якщо користувач натиснув на повідомлення → диплінк
+    if (fromTap) {
+      _handleDeepLink(data);
+    }
+
+    // 3) Показ локальної нотифікації у форграунді (onMessage).
+    if (!fromTap) {
+      await _onForegroundMessage(msg);
+    }
+  }
+
+  /// Локальне повідомлення, коли додаток у форграунді
   Future<void> _onForegroundMessage(RemoteMessage msg) async {
     final notif = msg.notification;
 
@@ -139,7 +223,8 @@ class PushService {
         android: AndroidNotificationDetails(
           'booka_default',
           'Booka · Push',
-          channelDescription: 'Канал за замовчуванням для push-сповіщень Booka',
+          channelDescription:
+          'Канал за замовчуванням для push-сповіщень Booka',
           priority: Priority.high,
           importance: Importance.high,
           icon: '@drawable/ic_stat_notify', // 🇺🇦 Монохромна біла іконка
@@ -150,20 +235,21 @@ class PushService {
     );
   }
 
-  void _onMessageOpenedApp(RemoteMessage msg) {
-    _handleDeepLink(msg.data);
-  }
-
   static void _onLocalTap(NotificationResponse resp) {
     // 🇺🇦 Розбір payload за потреби
+    // (resp.payload — це String? з msg.data.toString())
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
     if (_navigatorKey == null || data.isEmpty) return;
 
+    // каст даних може приходити як String/int — приводимо до String
     final bookId = data['book_id'] ?? data['bookId'];
     if (bookId != null) {
-      _navigatorKey!.currentState?.pushNamed('/book', arguments: {'id': bookId});
+      _navigatorKey!.currentState?.pushNamed(
+        '/book',
+        arguments: {'id': bookId},
+      );
       return;
     }
 
@@ -187,7 +273,9 @@ class PushService {
         '/push/register',
         data: {
           'token': token,
-          'platform': Platform.isAndroid ? 'android' : (Platform.isIOS ? 'ios' : 'other'),
+          'platform': Platform.isAndroid
+              ? 'android'
+              : (Platform.isIOS ? 'ios' : 'other'),
           'app_version': appVersion,
         },
         // 🇺🇦 Сервер стабільно приймає form-urlencoded
