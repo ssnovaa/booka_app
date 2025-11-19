@@ -1,11 +1,11 @@
-/// lib/core/push/push_service.dart
+/// lib/core/push/push_service.dart (З ІСПРАВЛЕННЯМИ)
 /// FCM bootstrap для Flutter (Android/iOS).
 /// - init() викликає Firebase.initializeApp(), потім ліниво ініціалізує FirebaseMessaging
 /// - запитує дозволи (iOS + Android 13+)
 /// - обробляє фонові й форграундні повідомлення
 /// - реєструє токен на бекенді (Laravel)
 ///
-/// У main.dart:  await PushService.instance.init(navigatorKey: _navKey);
+/// У main.dart:  await PushService.instance.init(navigatorKey: _navKey, userNotifier: userNotifier);
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -19,18 +19,44 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:dio/dio.dart' show Options, Headers;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+// ‼️‼️‼️ ІМПОРТУЄМО, ПОТРІБНО ДЛЯ ФОНОВОГО ОБРОБНИКА ‼️‼️‼️
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/models/user.dart' show getUserType;
 
+// ‼️‼️‼️ ЗМІНА 4: Додаємо логіку у фоновий обробник ‼️‼️‼️
+// Цей обробник запускається в окремому ізоляті (isolate)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Переконуємося, що Firebase ініціалізовано
   try {
     await Firebase.initializeApp();
   } catch (_) {}
-  // 🇺🇦 Логування фонових повідомлень за потреби
+
+  // Перевіряємо, чи це наш "тихий" push про оновлення статусу
+  if (message.data['type'] == 'subscription_update') {
+    if (kDebugMode) {
+      print('[PUSH_BG] Отримано фонове сповіщення про оновлення підписки!');
+    }
+    try {
+      // Оскільки це ізолят, ми не можемо оновити UserNotifier.
+      // Замість цього, ми встановлюємо прапор у SharedPreferences.
+      // _LifecycleReactor у main.dart побачить цей прапор при
+      // поверненні додатка у foreground.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('force_refresh_user_status', true);
+      if (kDebugMode) {
+        print('[PUSH_BG] Встановлено прапор force_refresh_user_status');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[PUSH_BG] Помилка встановлення прапора SharedPreferences: $e');
+      }
+    }
+  }
 }
 
 class PushService {
@@ -44,30 +70,38 @@ class PushService {
   FlutterLocalNotificationsPlugin();
   GlobalKey<NavigatorState>? _navigatorKey;
 
+  // ‼️ Зберігаємо UserNotifier (з попередньої правки)
+  UserNotifier? _userNotifier;
+
   bool _initialized = false;
   String? _lastTokenSent;
 
-  Future<void> init({GlobalKey<NavigatorState>? navigatorKey}) async {
+  // ‼️ Оновлюємо init (з попередньої правки)
+  Future<void> init({
+    GlobalKey<NavigatorState>? navigatorKey,
+    UserNotifier? userNotifier,
+  }) async {
     if (_initialized) return;
     _initialized = true;
 
     _navigatorKey = navigatorKey;
+    _userNotifier = userNotifier;
 
-    // 1) Firebase Core
+    // 1) Firebase Core (вже має бути ініціалізовано в main.dart)
     try {
       await Firebase.initializeApp();
     } catch (e) {
-      if (kDebugMode) print('Firebase.initializeApp failed: $e');
+      if (kDebugMode) print('Firebase.initializeApp (в PushService) failed: $e');
     }
 
     // 1.1) Тепер можна брати instance
     _fcm = FirebaseMessaging.instance;
 
     // 2) Обробник фонових повідомлень
+    // (вже зареєстрований у main.dart, але дублювання тут не завадить)
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     // 3) Локальні нотифікації (foreground)
-    // ❗ Використовуємо монохромну білу іконку в статус-барі
     const androidInit =
     AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosInit = DarwinInitializationSettings(
@@ -127,7 +161,7 @@ class PushService {
       if (!status.isGranted) {
         final res = await Permission.notification.request();
         if (kDebugMode) {
-          print('🔔 Android notification permission result: $res');
+          print('🔔 Android notification result: $res');
         }
       }
     }
@@ -145,14 +179,17 @@ class PushService {
     }
 
     // 9) Реєстрація токена на бекенді
-    await _registerToken();
+    // ‼️‼️‼️ ЗМІНА 1: Викликаємо ПУБЛІЧНИЙ метод ‼️‼️‼️
+    await registerToken();
 
     // 10) Оновлення токена
     _fcm.onTokenRefresh
-        .listen((token) => _registerToken(force: true, overrideToken: token));
+    // ‼️‼️‼️ ЗМІНА 2: Викликаємо ПУБЛІЧНИЙ метод ‼️‼️‼️
+        .listen((token) => registerToken(force: true, overrideToken: token));
   }
 
   /// Єдиний вхід для всіх RemoteMessage (foreground / tap / initial)
+  // ‼️ Оновлюємо _handleRemoteMessage (з попередньої правки)
   Future<void> _handleRemoteMessage(
       RemoteMessage msg, {
         required bool fromTap,
@@ -165,23 +202,32 @@ class PushService {
     // 1) Реакція на зміну статусу підписки
     //    👇 Бек шле type = 'subscription_update'
     if (data['type'] == 'subscription_update') {
-      final ctx = _navigatorKey?.currentContext;
-      if (ctx != null) {
+      // Більше не залежимо від `context` для *оновлення* статусу.
+      if (_userNotifier != null) {
         try {
           if (kDebugMode) {
-            print('[PUSH] subscription_update → refresh /auth/me + audio.userType');
+            print('[PUSH] subscription_update → running refreshUserFromMe()');
           }
+          // 1. Гарантовано оновлюємо UserNotifier
+          await _userNotifier!.refreshUserFromMe();
 
-          final userN = ctx.read<UserNotifier>();
-          await userN.refreshUserFromMe();
-
-          final u = userN.user;
-          if (u != null) {
-            final audio = ctx.read<AudioPlayerProvider>();
-            audio.userType = getUserType(u);
-            audio.notifyListeners();
+          // 2. Намагаємося оновити AudioPlayer (для реклами),
+          //    ця частина все ще може використовувати context, якщо він є
+          final ctx = _navigatorKey?.currentContext;
+          if (ctx != null) {
+            final u = _userNotifier!.user;
+            if (u != null) {
+              final audio = ctx.read<AudioPlayerProvider>();
+              audio.userType = getUserType(u);
+              audio.notifyListeners();
+              if (kDebugMode) {
+                print('[PUSH] userType updated from push -> ${audio.userType}');
+              }
+            }
+          } else {
             if (kDebugMode) {
-              print('[PUSH] userType updated from push -> ${audio.userType}');
+              print(
+                  '[PUSH] no navigator context, skipped AudioPlayer update (but UserNotifier updated!)');
             }
           }
         } catch (e) {
@@ -191,7 +237,7 @@ class PushService {
         }
       } else {
         if (kDebugMode) {
-          print('[PUSH] no navigator context, skip subscription refresh');
+          print('[PUSH] no UserNotifier, skip subscription refresh');
         }
       }
 
@@ -259,8 +305,10 @@ class PushService {
     }
   }
 
-  Future<void> _registerToken({bool force = false, String? overrideToken}) async {
+  // ‼️‼️‼️ ЗМІНА 3: Робимо метод ПУБЛІЧНИМ (прибираємо `_`) ‼️‼️‼️
+  Future<void> registerToken({bool force = false, String? overrideToken}) async {
     try {
+      // ‼️ Використовуємо _fcm, який вже ініціалізовано в init()
       final token = overrideToken ?? await _fcm.getToken();
       if (token == null) return;
       if (!force && _lastTokenSent == token) return;

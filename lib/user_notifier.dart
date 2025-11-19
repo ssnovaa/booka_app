@@ -1,4 +1,5 @@
 // lib/user_notifier.dart
+import 'dart:async'; // 👈 ‼️ ДОБАВЛЕН ИМПОРТ
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
@@ -10,6 +11,9 @@ import 'package:booka_app/models/user.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 // ⛑ Санитизация текстов ошибок
 import 'package:booka_app/core/security/safe_errors.dart';
+
+// ‼️‼️‼️ ЗМІНА 1: ІМПОРТУЄМО PUSH SERVICE ‼️‼️‼️
+import 'package:booka_app/core/push/push_service.dart';
 
 /// Глобальный нотифаер пользователя + отдельный баланс «минут без рекламы».
 //// ВАЖНО:
@@ -96,6 +100,10 @@ class UserNotifier extends ChangeNotifier {
       return;
     }
     await fetchCurrentUser();
+
+    // ‼️‼️‼️ ЗМІНА 2: ПРИМУСОВО РЕЄСТРУЄМО ТОКЕН ПІСЛЯ АВТО-ЛОГІНУ ‼️‼️‼️
+    // Це оновить `user_id` для токена з `null` на актуальний
+    unawaited(PushService.instance.registerToken(force: true));
   }
 
   Future<void> checkAuth() async => tryAutoLogin();
@@ -180,6 +188,11 @@ class UserNotifier extends ChangeNotifier {
           }
 
           notifyListeners();
+
+          // ‼️‼️‼️ ЗМІНА 3: ПРИМУСОВО РЕЄСТРУЄМО ТОКЕН ПІСЛЯ ЛОГІНУ ‼️‼️‼️
+          // Це оновить `user_id` для токена з `null` на актуальний
+          unawaited(PushService.instance.registerToken(force: true));
+
           return;
         }
       }
@@ -226,6 +239,11 @@ class UserNotifier extends ChangeNotifier {
 
       // 🔁 И дотягиваем приватный статус подписки из /auth/me
       await _refreshPaidStatusSoft();
+
+      // ‼️‼️‼️ ЗМІНА 4: ПРИМУСОВО РЕЄСТРУЄМО ТОКЕН ПІСЛЯ ВІДНОВЛЕННЯ СЕСІЇ ‼️‼️‼️
+      if (_isAuth) {
+        unawaited(PushService.instance.registerToken(force: true));
+      }
     } on DioException catch (e) {
       final sc = e.response?.statusCode ?? 0;
       if (sc == 401 || sc == 403) {

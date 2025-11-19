@@ -1,4 +1,4 @@
-// lib/main.dart
+// lib/main.dart (С ИСПРАВЛЕНИЯМИ)
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -82,21 +82,8 @@ Future<void> main() async {
     final userNotifier = UserNotifier();
     final audioProvider = AudioPlayerProvider();
 
-    // ᐊ===== 2. ‼️ ДОБАВЛЕН СЛУШАТЕЛЬ PUSH-УВЕДОМЛЕНИЙ ‼️ =====
-    // Этот код будет слушать ТИХИЕ пуши от сервера (когда приложение открыто)
-    try {
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        // Убедимся, что ключ совпадает с тем, что шлет бэкенд
-        if (message.data['type'] == 'subscription_update') {
-          print('🔄 [Push] Получена команда обновить статус подписки!');
-          // Принудительно обновляем статус пользователя с сервера
-          userNotifier.refreshUserFromMe();
-        }
-      });
-    } catch (e) {
-      print('Ошибка подписки на FirebaseMessaging.onMessage: $e');
-    }
-    // =======================================================
+    // ‼️‼️‼️ БЛОК СЛУШАТЕЛЯ PUSH УДАЛЕН ОТСЮДА (строки 81-93) ‼️‼️‼️
+    // Он будет обрабатываться только в PushService
 
 
     // Связка секунд с UserNotifier
@@ -146,14 +133,19 @@ Future<void> main() async {
     // Отложённые инициализации
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        await PushService.instance.init(navigatorKey: _navKey);
+        // ‼️‼️‼️ ИЗМЕНЕНИЕ ЗДЕСЬ ‼️‼️‼️
+        // Передаем userNotifier, который создали на строке 78
+        await PushService.instance.init(
+          navigatorKey: _navKey,
+          userNotifier: userNotifier,
+        );
       } catch (_) {}
 
       try {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
           final audio = Provider.of<AudioPlayerProvider>(ctx, listen: false);
-          // ᐊ===== 4. ОТРИМУЄМО UserNotifier З КОНТЕКСТУ
+          // ᐊ===== 4. ОТРИМУЄМО UserNotifier З КОНТЕКТУ
           final user = Provider.of<UserNotifier>(ctx, listen: false);
 
           final hasLocal = await audio.hasSavedSession();
