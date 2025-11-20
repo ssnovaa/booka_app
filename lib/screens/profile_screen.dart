@@ -916,6 +916,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   bool _isReconnectingBilling = false;
   // 👇 флаг автоповтора после "BillingClient is unset"
   bool _isAutoReloadingBilling = false;
+  // 👇 блокировка, чтобы не крутиться в retry-цикле, пока не закінчиться реініт
+  bool _stopRetriesUntilReinitCompletes = false;
 
   @override
   void initState() {
@@ -988,11 +990,21 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
   // ‼️ ОБГОРТКА: кілька спроб підключення/запиту ‼️
   Future<void> _queryProductWithRetry() async {
+    if (_stopRetriesUntilReinitCompletes) {
+      // вже очікуємо автоперезапуск після reinit — нові спроби не робимо
+      return;
+    }
+
     const maxRetries = 5; // Збільшено до 5, щоб впоратися з таймаутами
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await _queryProduct();
         if (_product != null) return; // Успіх
+
+        if (_stopRetriesUntilReinitCompletes) {
+          // Після "BillingClient is unset" виходимо з циклу, щоб дочекатися реініту
+          return;
+        }
 
         // Якщо повернувся null без помилки, значить, можливо, ще не підключилися
         if (attempt < maxRetries) {
@@ -1073,6 +1085,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           (e.message ?? '').contains('BillingClient is unset')) {
         debugPrint(
             'Billing: BillingClient is unset → run _tryReinitBillingClient()');
+        _stopRetriesUntilReinitCompletes = true;
         await _tryReinitBillingClient();
 
         if (!mounted) return;
@@ -1108,6 +1121,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       if (!mounted) return;
 
       debugPrint('Billing: [auto-reload] re-run _queryProductWithRetry()');
+      _stopRetriesUntilReinitCompletes = false; // після паузи — можна знову пробувати
       await _queryProductWithRetry();
     } finally {
       _isAutoReloadingBilling = false;
