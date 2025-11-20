@@ -918,6 +918,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   bool _isAutoReloadingBilling = false;
   // 👇 блокировка, чтобы не крутиться в retry-цикле, пока не закінчиться реініт
   bool _stopRetriesUntilReinitCompletes = false;
+  // 👇 лічильник послідовних невдалих реінітів BillingClient
+  int _failedReinitAttempts = 0;
 
   @override
   void initState() {
@@ -943,6 +945,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
+    _failedReinitAttempts = 0; // скидаємо лічильник при старті
     // ‼️ Викликаємо обгортку з повторними спробами
     await _queryProductWithRetry();
 
@@ -980,6 +983,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       debugPrint('Billing: [reinit] calling restorePurchases()...');
       await _iap.restorePurchases();
       debugPrint('Billing: [reinit] restorePurchases() finished');
+      _failedReinitAttempts = 0; // успішна спроба — обнуляємо
     } catch (e, st) {
       debugPrint('Billing: [reinit] restorePurchases error: $e\n$st');
     } finally {
@@ -1074,6 +1078,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         setState(() {
           _product = pd;
           _isQuerying = false;
+          _failedReinitAttempts = 0; // успішний запит — скидаємо
         });
       }
     } on PlatformException catch (e, st) {
@@ -1083,12 +1088,25 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       // 👇 наш кейс: BillingClient is unset → запускаем реинициализацию, НО не кидаем дальше
       if (e.code == 'UNAVAILABLE' &&
           (e.message ?? '').contains('BillingClient is unset')) {
-        debugPrint(
-            'Billing: BillingClient is unset → run _tryReinitBillingClient()');
-        _stopRetriesUntilReinitCompletes = true;
-        await _tryReinitBillingClient();
+      debugPrint(
+          'Billing: BillingClient is unset → run _tryReinitBillingClient()');
+      _stopRetriesUntilReinitCompletes = true;
 
+      // Якщо BillingClient падає більше 3 разів поспіль — пропонуємо перезапуск застосунку
+      if (_failedReinitAttempts >= 3) {
         if (!mounted) return;
+        setState(() {
+          _isQuerying = false;
+          _error =
+              'Платіжний сервіс недоступний. Повністю закрийте застосунок і відкрийте знову.';
+        });
+        return;
+      }
+
+      _failedReinitAttempts++;
+      await _tryReinitBillingClient();
+
+      if (!mounted) return;
         setState(() {
           _error =
           'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
