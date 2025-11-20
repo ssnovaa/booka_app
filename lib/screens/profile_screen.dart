@@ -914,6 +914,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
   // 👇 новый флаг, чтобы не дёргать реинициализацию параллельно
   bool _isReconnectingBilling = false;
+  // 👇 флаг автоповтора после "BillingClient is unset"
+  bool _isAutoReloadingBilling = false;
 
   @override
   void initState() {
@@ -1079,12 +1081,37 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
           _isQuerying = false;
         });
+
+        // 👇 автоматичний повтор запиту товару (імітація «перезапуску» застосунку)
+        await _autoReloadProductAfterReinit();
         // Не кидаем исключение дальше, чтобы _queryProductWithRetry не перезаписывал наше сообщение
         return;
       }
 
       // все остальные PlatformException отдаем наверх в _queryProductWithRetry
       rethrow;
+    }
+  }
+
+  /// ⚙️ Автоперезапуск запиту продукту після реініціалізації billing
+  Future<void> _autoReloadProductAfterReinit() async {
+    if (_isAutoReloadingBilling) {
+      debugPrint('Billing: [auto-reload] already scheduled, skip');
+      return;
+    }
+    _isAutoReloadingBilling = true;
+
+    try {
+      debugPrint('Billing: [auto-reload] wait 2s and query product again');
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (!mounted) return;
+
+      debugPrint('Billing: [auto-reload] re-run _queryProductWithRetry()');
+      await _queryProductWithRetry();
+    } finally {
+      _isAutoReloadingBilling = false;
+      debugPrint('Billing: [auto-reload] done');
     }
   }
 
