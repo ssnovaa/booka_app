@@ -55,6 +55,7 @@ class SubscriptionSection extends StatefulWidget {
 
 class _SubscriptionSectionState extends State<SubscriptionSection> {
   static const String kProductId = 'booka_premium_month'; // ← ID в Play Console
+  static const int _maxBillingReconnectAttempts = 3;
   final InAppPurchase _iap = InAppPurchase.instance;
 
   StreamSubscription<List<PurchaseDetails>>? _sub;
@@ -71,6 +72,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   bool _stopRetriesUntilReinitCompletes = false;
   // 👇 лічильник послідовних невдалих реінітів BillingClient
   int _failedReinitAttempts = 0;
+  bool _restoreInFlight = false;
 
   @override
   void initState() {
@@ -100,12 +102,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     // ‼️ Викликаємо обгортку з повторними спробами
     await _queryProductWithRetry();
 
-    try {
-      debugPrint('Billing: restorePurchases()');
-      await _iap.restorePurchases();
-    } catch (e) {
-      debugPrint('Billing: restorePurchases error: $e');
-    }
+    await _restorePurchasesSafely(reason: 'bootstrap');
   }
 
   @override
@@ -121,6 +118,11 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       return;
     }
 
+    if (_failedReinitAttempts >= _maxBillingReconnectAttempts) {
+      debugPrint('Billing: [reinit] max attempts reached, skip further reinit');
+      return;
+    }
+
     _isReconnectingBilling = true;
     debugPrint('Billing: [reinit] start re-init flow (like on app start)');
 
@@ -131,10 +133,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      debugPrint('Billing: [reinit] calling restorePurchases()...');
-      await _iap.restorePurchases();
-      debugPrint('Billing: [reinit] restorePurchases() finished');
-      _failedReinitAttempts = 0; // успішна спроба — обнуляємо
+      await _restorePurchasesSafely(reason: 'reinit');
     } catch (e, st) {
       debugPrint('Billing: [reinit] restorePurchases error: $e\n$st');
     } finally {
@@ -227,23 +226,25 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           e.message!.contains('BillingClient is unset')) {
         _failedReinitAttempts += 1;
         _stopRetriesUntilReinitCompletes = true; // блокуємо нові спроби
+
+        if (_failedReinitAttempts >= _maxBillingReconnectAttempts) {
+          if (mounted) {
+            setState(() {
+              _error =
+                  'Google Play Billing не відповідає. Повністю закрийте застосунок і відкрийте знову, щоб продовжити покупку.';
+            });
+          }
+          return false;
+        }
+
         await _tryReinitBillingClient();
 
         // Якщо реінітів вже декілька і все ще немає зв'язку — просимо перезапуск
-        if (_failedReinitAttempts >= 3) {
-          if (mounted) {
-            setState(() {
-              _error =
-                  'Google Play Billing перезапускається. Якщо проблема не зникає, повністю закрийте застосунок і відкрийте знову.';
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _error =
-                  'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
-            });
-          }
+        if (mounted) {
+          setState(() {
+            _error =
+                'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
+          });
         }
 
         if (mounted) {
@@ -433,6 +434,35 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
           _error = 'Не вдалося ініціювати покупку: $e';
         });
       }
+    }
+  }
+
+  Future<void> _restorePurchasesSafely({required String reason}) async {
+    if (_restoreInFlight) {
+      debugPrint('Billing: [$reason] restore already running, skip');
+      return;
+    }
+    if (_failedReinitAttempts >= _maxBillingReconnectAttempts) {
+      debugPrint('Billing: [$reason] restore skipped, max attempts reached');
+      return;
+    }
+
+    _restoreInFlight = true;
+    try {
+      final available = await _iap.isAvailable();
+      if (!available) {
+        debugPrint('Billing: [$reason] restore skipped, billing not available');
+        return;
+      }
+
+      debugPrint('Billing: [$reason] calling restorePurchases()...');
+      await _iap.restorePurchases();
+      debugPrint('Billing: [$reason] restorePurchases finished');
+      _failedReinitAttempts = 0;
+    } catch (e, st) {
+      debugPrint('Billing: [$reason] restorePurchases error: $e\n$st');
+    } finally {
+      _restoreInFlight = false;
     }
   }
 
