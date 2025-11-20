@@ -2,10 +2,11 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:characters/characters.dart';
+import 'package:flutter/services.dart' show PlatformException; // 👈 добавлено
 
 // app
 import 'package:booka_app/constants.dart';
@@ -26,12 +27,11 @@ import 'package:booka_app/widgets/minutes_badge.dart';
 import 'package:booka_app/core/security/safe_errors.dart';
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
-// 🔗 для verify після покупки
+// 🔗 для verify после покупки
 import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/core/network/app_exception.dart'; // Для проверки статуса ошибки
 // Billing (встроенный флоу Google Play)
 import 'package:in_app_purchase/in_app_purchase.dart';
-// ❌ НЕ НУЖНО для текущей схемы: offerToken/GooglePlayPurchaseParam
-// import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 // ⬇️ для getUserType / UserType
 import 'package:booka_app/models/user.dart' show UserType, getUserType;
@@ -538,7 +538,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } catch (e) {
       debugPrint('Profile: load profile error: $e');
-      return null;
+      // ‼️ АВТО-ЛОГАУТ ПРИ 401 (Щоб не зависало на екрані помилки)
+      if (e is AppNetworkException && e.statusCode == 401) {
+        debugPrint('Profile: 401 detected -> Auto Logout');
+        if (mounted) {
+          // Трохи чекаємо, щоб не було бліку
+          Future.microtask(() => logout(context));
+        }
+      }
+      rethrow;
     }
   }
 
@@ -727,6 +735,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return const _ProfileLoadingSkeleton();
           }
           if (snapshot.hasError) {
+            // Якщо 401 - вже спрацював автологаут, але покажемо лоадер
+            if (snapshot.error is AppNetworkException &&
+                (snapshot.error as AppNetworkException).statusCode == 401) {
+              return const Center(child: LoadingIndicator());
+            }
             return _CenteredMessage(
               title: 'Помилка',
               subtitle: safeErrorMessage(
@@ -899,6 +912,9 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   bool _isBuying = false;
   String? _error;
 
+  // 👇 новый флаг, чтобы не дёргать реинициализацию параллельно
+  bool _isReconnectingBilling = false;
+
   @override
   void initState() {
     super.initState();
@@ -907,14 +923,25 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
     _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e, st) {
       debugPrint('Billing: stream error: $e');
-      setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
+      if (mounted) {
+        setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
+      }
     });
 
-    _bootstrap();
+    // ‼️ Викликаємо ініціалізацію з невеликою затримкою, щоб дати Flutter час стабілізуватися
+    // Це часто вирішує проблему "not found" при швидкому переході
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
   Future<void> _bootstrap() async {
-    await _queryProduct();
+    // Маленька затримка для Android (InAppPurchasePlugin іноді потребує часу)
+    if (Platform.isAndroid) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    // ‼️ Викликаємо обгортку з повторними спробами
+    await _queryProductWithRetry();
+
     try {
       debugPrint('Billing: restorePurchases()');
       await _iap.restorePurchases();
@@ -929,47 +956,135 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     super.dispose();
   }
 
+  /// 🔄 Реинициализация BillingClient при "BillingClient is unset"
+  Future<void> _tryReinitBillingClient() async {
+    if (_isReconnectingBilling) {
+      debugPrint('Billing: [reinit] already in progress, skip');
+      return;
+    }
+
+    _isReconnectingBilling = true;
+    debugPrint('Billing: [reinit] start re-init flow (like on app start)');
+
+    try {
+      if (Platform.isAndroid) {
+        debugPrint(
+            'Billing: [reinit] Android, small delay before restorePurchases');
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      debugPrint('Billing: [reinit] calling restorePurchases()...');
+      await _iap.restorePurchases();
+      debugPrint('Billing: [reinit] restorePurchases() finished');
+    } catch (e, st) {
+      debugPrint('Billing: [reinit] restorePurchases error: $e\n$st');
+    } finally {
+      _isReconnectingBilling = false;
+      debugPrint('Billing: [reinit] done');
+    }
+  }
+
+  // ‼️ ОБГОРТКА: кілька спроб підключення/запиту ‼️
+  Future<void> _queryProductWithRetry() async {
+    const maxRetries = 5; // Збільшено до 5, щоб впоратися з таймаутами
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await _queryProduct();
+        if (_product != null) return; // Успіх
+
+        // Якщо повернувся null без помилки, значить, можливо, ще не підключилися
+        if (attempt < maxRetries) {
+          debugPrint(
+              'Billing: Product not found (Attempt $attempt). Retrying in 1s...');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } catch (e) {
+        final errorString = e.toString();
+
+        // Перевіряємо на типові помилки відключення
+        final isBillingClientUnset = errorString.contains('BillingClient is unset') ||
+            errorString.contains('Service is disconnected') ||
+            errorString.contains('not available for purchase');
+
+        if (isBillingClientUnset && attempt < maxRetries) {
+          debugPrint(
+              'Billing: Connection error detected (Attempt $attempt). Retrying in 2s...');
+          // Збільшуємо затримку, щоб дати Play Service час на відновлення
+          await Future.delayed(const Duration(seconds: 2));
+          continue; // Повторити спробу
+        }
+
+        // Якщо це не помилка з'єднання або остання спроба, встановлюємо помилку
+        if (mounted) {
+          setState(() {
+            _error =
+            'Не вдалося завантажити товар: $errorString (Спроба $attempt/$maxRetries)';
+            _isQuerying = false;
+          });
+        }
+        return; // Вихід з циклу
+      }
+    }
+  }
+
+  // ‼️ ЗМІНЕНИЙ МЕТОД: один запит + спец. обробка PlatformException(BillingClient is unset) ‼️
   Future<void> _queryProduct() async {
+    if (!mounted) return;
     setState(() {
       _isQuerying = true;
       _error = null;
     });
+
+    debugPrint('Billing: Starting single query for $kProductId...');
+
     try {
-      debugPrint('Billing: start query for $kProductId');
       final available = await _iap.isAvailable();
-      debugPrint('Billing: isAvailable = $available');
-
+      debugPrint('Billing: isAvailable() = $available');
       if (!available) {
-        setState(() {
-          _error = 'Оплата недоступна на пристрої';
-          _isQuerying = false;
-        });
-        return;
+        throw Exception(
+            'Оплата недоступна на пристрої (Store unavailable / isAvailable=false)');
       }
+
       final resp = await _iap.queryProductDetails({kProductId});
-      debugPrint('Billing: notFoundIDs = ${resp.notFoundIDs}');
       debugPrint(
-          'Billing: found = ${resp.productDetails.map((p) => "${p.id} | ${p.title} | ${p.price}").toList()}');
+          'Billing: queryProductDetails -> notFoundIDs=${resp.notFoundIDs}, products=${resp.productDetails.length}');
 
-      if (resp.notFoundIDs.isNotEmpty || resp.productDetails.isEmpty) {
+      if (resp.productDetails.isEmpty) {
+        // Викидаємо помилку, щоб її спіймав _queryProductWithRetry
+        throw Exception(
+            'Товар не знайдено ($kProductId). Перевірте інтернет або ID товару.');
+      }
+
+      if (mounted) {
+        final pd = resp.productDetails.first;
         setState(() {
-          _error = 'Товар не знайдено ($kProductId)';
+          _product = pd;
           _isQuerying = false;
         });
+      }
+    } on PlatformException catch (e, st) {
+      debugPrint(
+          'Billing: _queryProduct PlatformException code=${e.code}, message=${e.message}\n$st');
+
+      // 👇 наш кейс: BillingClient is unset → запускаем реинициализацию, НО не кидаем дальше
+      if (e.code == 'UNAVAILABLE' &&
+          (e.message ?? '').contains('BillingClient is unset')) {
+        debugPrint(
+            'Billing: BillingClient is unset → run _tryReinitBillingClient()');
+        await _tryReinitBillingClient();
+
+        if (!mounted) return;
+        setState(() {
+          _error =
+          'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
+          _isQuerying = false;
+        });
+        // Не кидаем исключение дальше, чтобы _queryProductWithRetry не перезаписывал наше сообщение
         return;
       }
 
-      final pd = resp.productDetails.first;
-      setState(() {
-        _product = pd;
-        _isQuerying = false;
-      });
-    } catch (e, st) {
-      debugPrint('Billing: _queryProduct error: $e\n$st');
-      setState(() {
-        _error = 'Не вдалося завантажити товар';
-        _isQuerying = false;
-      });
+      // все остальные PlatformException отдаем наверх в _queryProductWithRetry
+      rethrow;
     }
   }
 
@@ -1003,13 +1118,16 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     for (final p in purchases) {
       debugPrint(
           'Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
+
+      if (!mounted) return;
+
       if (p.status == PurchaseStatus.pending) {
         setState(() => _isBuying = true);
       } else if (p.status == PurchaseStatus.error) {
         debugPrint('Billing: purchase error -> ${p.error}');
         setState(() {
           _isBuying = false;
-          _error = 'Помилка оплати';
+          _error = 'Помилка: ${p.error?.message ?? "Unknown error"}';
         });
         if (p.pendingCompletePurchase) {
           await _iap.completePurchase(p);
@@ -1051,23 +1169,30 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             await _iap.completePurchase(p);
           }
 
+          if (mounted) {
+            setState(() {
+              _isBuying = false;
+              _error = null;
+            });
+          }
+        } catch (e, st) {
+          debugPrint('Billing: verify failed -> $e\n$st');
+          if (mounted) {
+            setState(() {
+              _isBuying = false;
+              _error =
+              'Не вдалося підтвердити покупку на сервері. Спробуйте оновити екран.';
+            });
+          }
+        }
+      } else if (p.status == PurchaseStatus.canceled) {
+        debugPrint('Billing: purchase canceled');
+        if (mounted) {
           setState(() {
             _isBuying = false;
             _error = null;
           });
-        } catch (e, st) {
-          debugPrint('Billing: verify failed -> $e\n$st');
-          setState(() {
-            _isBuying = false;
-            _error = 'Не вдалося підтвердити покупку на сервері';
-          });
         }
-      } else if (p.status == PurchaseStatus.canceled) {
-        debugPrint('Billing: purchase canceled');
-        setState(() {
-          _isBuying = false;
-          _error = null;
-        });
         if (p.pendingCompletePurchase) {
           await _iap.completePurchase(p);
         }
@@ -1079,24 +1204,29 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   Future<void> _buy() async {
     final product = _product;
     if (product == null) {
-      debugPrint('Billing: _buy() called but _product is null');
-      return;
+      debugPrint(
+          'Billing: _buy() called but _product is null. Retry querying.');
+      await _queryProductWithRetry(); // 👈 ВИКЛИКАЄМО НОВИЙ МЕТОД
+      if (_product == null) return; // Все ще нуль
     }
+
     setState(() {
       _isBuying = true;
       _error = null;
     });
 
     try {
-      debugPrint('Billing: buy for ${product.id}');
-      final param = PurchaseParam(productDetails: product);
+      debugPrint('Billing: buy for ${_product!.id}');
+      final param = PurchaseParam(productDetails: _product!);
       await _iap.buyNonConsumable(purchaseParam: param);
     } catch (e, st) {
       debugPrint('Billing: buy error -> $e\n$st');
-      setState(() {
-        _isBuying = false;
-        _error = 'Не вдалося ініціювати покупку';
-      });
+      if (mounted) {
+        setState(() {
+          _isBuying = false;
+          _error = 'Не вдалося ініціювати покупку: $e';
+        });
+      }
     }
   }
 
@@ -1123,14 +1253,24 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
 
     Widget body;
     if (_isQuerying) {
-      body = const Text('Завантаження…');
+      body = const Row(
+        children: [
+          SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: 12),
+          Text('Завантаження підписки…'),
+        ],
+      );
     } else if (_error != null) {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.error, fontSize: 13),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -1138,8 +1278,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: _queryProduct,
-                child: const Text('Спробувати ще раз'),
+                onPressed: _queryProductWithRetry,
+                child: const Text('Оновити'),
               ),
               OutlinedButton(
                 onPressed: () async {
@@ -1147,7 +1287,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
                     await _iap.restorePurchases();
                   } catch (_) {}
                 },
-                child: const Text('Відновити покупку'),
+                child: const Text('Відновити'),
               ),
             ],
           ),
@@ -1156,18 +1296,10 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
     } else if (_product == null) {
       body = Row(
         children: [
+          const Expanded(child: Text('Немає інформації про товар')),
           OutlinedButton(
-            onPressed: _queryProduct,
+            onPressed: _queryProductWithRetry,
             child: const Text('Оновити'),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton(
-            onPressed: () async {
-              try {
-                await _iap.restorePurchases();
-              } catch (_) {}
-            },
-            child: const Text('Відновити покупку'),
           ),
         ],
       );
