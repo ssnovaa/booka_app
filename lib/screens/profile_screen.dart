@@ -895,6 +895,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
 
+                if (!userNotifier.isPaidNow)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: SubscriptionSection(),
+                    ),
+                  ),
+
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
