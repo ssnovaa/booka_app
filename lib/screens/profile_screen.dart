@@ -1,12 +1,9 @@
 // lib/screens/profile_screen.dart
 import 'dart:async';
-import 'dart:io' show Platform;
-
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:characters/characters.dart';
-import 'package:flutter/services.dart' show PlatformException; // 👈 добавлено
 
 // app
 import 'package:booka_app/constants.dart';
@@ -27,11 +24,8 @@ import 'package:booka_app/widgets/minutes_badge.dart';
 import 'package:booka_app/core/security/safe_errors.dart';
 /// ✅ єдина точка завантаження профілю (тепер повертає Map)
 import 'package:booka_app/repositories/profile_repository.dart';
-// 🔗 для verify после покупки
-import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/app_exception.dart'; // Для проверки статуса ошибки
-// Billing (встроенный флоу Google Play)
-import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:booka_app/screens/subscriptions_screen.dart';
 
 // ⬇️ для getUserType / UserType
 import 'package:booka_app/models/user.dart' show UserType, getUserType;
@@ -82,6 +76,90 @@ class _EmptySection extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _SubscriptionsLinkCard extends StatelessWidget {
+  final bool isPaid;
+  final DateTime? paidUntil;
+  final VoidCallback onTap;
+
+  const _SubscriptionsLinkCard({
+    required this.isPaid,
+    required this.paidUntil,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusText = isPaid
+        ? (paidUntil != null
+            ? 'Активно до: ${paidUntil!.toLocal().toString().substring(0, 10)}'
+            : 'Преміум активний')
+        : 'Без підписки';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withOpacity(
+                theme.brightness == Brightness.dark ? 0.14 : 0.08,
+              ),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+          border: Border.all(
+            color: theme.dividerColor
+                .withOpacity(theme.brightness == Brightness.dark ? 0.18 : 0.12),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              height: 48,
+              width: 48,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.workspace_premium,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Booka Premium',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    statusText,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
       ),
     );
   }
@@ -642,6 +720,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _openSubscriptions() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SubscriptionsScreen()),
+    );
+  }
+
   void _switchMainTabAndClose(int tab) {
     final ms = MainScreen.of(context);
     if (ms != null) {
@@ -800,12 +884,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
 
-                const SliverToBoxAdapter(
+                SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    child: SubscriptionSection(),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: _SubscriptionsLinkCard(
+                      isPaid: userNotifier.isPaidNow,
+                      paidUntil: userNotifier.user?.paidUntil,
+                      onTap: _openSubscriptions,
+                    ),
                   ),
                 ),
+
+                if (!userNotifier.isPaidNow)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: SubscriptionSection(),
+                    ),
+                  ),
 
                 SliverToBoxAdapter(
                   child: Padding(
@@ -893,482 +989,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-/// ================== SUBSCRIPTION SECTION ==================
-
-class SubscriptionSection extends StatefulWidget {
-  const SubscriptionSection({super.key});
-
-  @override
-  State<SubscriptionSection> createState() => _SubscriptionSectionState();
-}
-
-class _SubscriptionSectionState extends State<SubscriptionSection> {
-  static const String kProductId = 'booka_premium_month'; // ← ID в Play Console
-  final InAppPurchase _iap = InAppPurchase.instance;
-
-  StreamSubscription<List<PurchaseDetails>>? _sub;
-  ProductDetails? _product;
-  bool _isQuerying = false;
-  bool _isBuying = false;
-  String? _error;
-
-  // 👇 новый флаг, чтобы не дёргать реинициализацию параллельно
-  bool _isReconnectingBilling = false;
-
-  @override
-  void initState() {
-    super.initState();
-    debugPrint(
-        'Billing: SubscriptionSection init, product=$kProductId, platform=${Platform.isAndroid ? "android" : "other"}');
-
-    _sub = _iap.purchaseStream.listen(_onPurchases, onError: (e, st) {
-      debugPrint('Billing: stream error: $e');
-      if (mounted) {
-        setState(() => _error = 'Помилка оплати. Спробуйте ще раз.');
-      }
-    });
-
-    // ‼️ Викликаємо ініціалізацію з невеликою затримкою, щоб дати Flutter час стабілізуватися
-    // Це часто вирішує проблему "not found" при швидкому переході
-    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
-  }
-
-  Future<void> _bootstrap() async {
-    // Маленька затримка для Android (InAppPurchasePlugin іноді потребує часу)
-    if (Platform.isAndroid) {
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    // ‼️ Викликаємо обгортку з повторними спробами
-    await _queryProductWithRetry();
-
-    try {
-      debugPrint('Billing: restorePurchases()');
-      await _iap.restorePurchases();
-    } catch (e) {
-      debugPrint('Billing: restorePurchases error: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  /// 🔄 Реинициализация BillingClient при "BillingClient is unset"
-  Future<void> _tryReinitBillingClient() async {
-    if (_isReconnectingBilling) {
-      debugPrint('Billing: [reinit] already in progress, skip');
-      return;
-    }
-
-    _isReconnectingBilling = true;
-    debugPrint('Billing: [reinit] start re-init flow (like on app start)');
-
-    try {
-      if (Platform.isAndroid) {
-        debugPrint(
-            'Billing: [reinit] Android, small delay before restorePurchases');
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-
-      debugPrint('Billing: [reinit] calling restorePurchases()...');
-      await _iap.restorePurchases();
-      debugPrint('Billing: [reinit] restorePurchases() finished');
-    } catch (e, st) {
-      debugPrint('Billing: [reinit] restorePurchases error: $e\n$st');
-    } finally {
-      _isReconnectingBilling = false;
-      debugPrint('Billing: [reinit] done');
-    }
-  }
-
-  // ‼️ ОБГОРТКА: кілька спроб підключення/запиту ‼️
-  Future<void> _queryProductWithRetry() async {
-    const maxRetries = 5; // Збільшено до 5, щоб впоратися з таймаутами
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await _queryProduct();
-        if (_product != null) return; // Успіх
-
-        // Якщо повернувся null без помилки, значить, можливо, ще не підключилися
-        if (attempt < maxRetries) {
-          debugPrint(
-              'Billing: Product not found (Attempt $attempt). Retrying in 1s...');
-          await Future.delayed(const Duration(seconds: 1));
-        }
-      } catch (e) {
-        final errorString = e.toString();
-
-        // Перевіряємо на типові помилки відключення
-        final isBillingClientUnset = errorString.contains('BillingClient is unset') ||
-            errorString.contains('Service is disconnected') ||
-            errorString.contains('not available for purchase');
-
-        if (isBillingClientUnset && attempt < maxRetries) {
-          debugPrint(
-              'Billing: Connection error detected (Attempt $attempt). Retrying in 2s...');
-          // Збільшуємо затримку, щоб дати Play Service час на відновлення
-          await Future.delayed(const Duration(seconds: 2));
-          continue; // Повторити спробу
-        }
-
-        // Якщо це не помилка з'єднання або остання спроба, встановлюємо помилку
-        if (mounted) {
-          setState(() {
-            _error =
-            'Не вдалося завантажити товар: $errorString (Спроба $attempt/$maxRetries)';
-            _isQuerying = false;
-          });
-        }
-        return; // Вихід з циклу
-      }
-    }
-  }
-
-  // ‼️ ЗМІНЕНИЙ МЕТОД: один запит + спец. обробка PlatformException(BillingClient is unset) ‼️
-  Future<void> _queryProduct() async {
-    if (!mounted) return;
-    setState(() {
-      _isQuerying = true;
-      _error = null;
-    });
-
-    debugPrint('Billing: Starting single query for $kProductId...');
-
-    try {
-      final available = await _iap.isAvailable();
-      debugPrint('Billing: isAvailable() = $available');
-      if (!available) {
-        throw Exception(
-            'Оплата недоступна на пристрої (Store unavailable / isAvailable=false)');
-      }
-
-      final resp = await _iap.queryProductDetails({kProductId});
-      debugPrint(
-          'Billing: queryProductDetails -> notFoundIDs=${resp.notFoundIDs}, products=${resp.productDetails.length}');
-
-      if (resp.productDetails.isEmpty) {
-        // Викидаємо помилку, щоб її спіймав _queryProductWithRetry
-        throw Exception(
-            'Товар не знайдено ($kProductId). Перевірте інтернет або ID товару.');
-      }
-
-      if (mounted) {
-        final pd = resp.productDetails.first;
-        setState(() {
-          _product = pd;
-          _isQuerying = false;
-        });
-      }
-    } on PlatformException catch (e, st) {
-      debugPrint(
-          'Billing: _queryProduct PlatformException code=${e.code}, message=${e.message}\n$st');
-
-      // 👇 наш кейс: BillingClient is unset → запускаем реинициализацию, НО не кидаем дальше
-      if (e.code == 'UNAVAILABLE' &&
-          (e.message ?? '').contains('BillingClient is unset')) {
-        debugPrint(
-            'Billing: BillingClient is unset → run _tryReinitBillingClient()');
-        await _tryReinitBillingClient();
-
-        if (!mounted) return;
-        setState(() {
-          _error =
-          'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
-          _isQuerying = false;
-        });
-        // Не кидаем исключение дальше, чтобы _queryProductWithRetry не перезаписывал наше сообщение
-        return;
-      }
-
-      // все остальные PlatformException отдаем наверх в _queryProductWithRetry
-      rethrow;
-    }
-  }
-
-  /// ⚠️ "опитування" статусу ПІСЛЯ покупки
-  Future<void> _pollPaidStatus() async {
-    final userN = context.read<UserNotifier>();
-    for (int i = 0; i < 10; i++) {
-      await Future.delayed(const Duration(seconds: 2));
-      await userN.refreshUserFromMe();
-      debugPrint('Billing: poll paid? -> ${userN.isPaidNow}');
-      if (!mounted) return;
-      if (userN.isPaidNow) {
-        // як тільки сервер сказав, що юзер платний —
-        // синхронізуємо тип користувача в AudioPlayerProvider,
-        // щоб GlobalBannerInjector одразу прибрав рекламу
-        final u = userN.user;
-        if (u != null) {
-          final audio = context.read<AudioPlayerProvider>();
-          audio.userType = getUserType(u);
-          // 👇 важливо: повідомляємо слухачів (в т.ч. GlobalBannerInjector)
-          audio.notifyListeners();
-        }
-
-        setState(() {});
-        return;
-      }
-    }
-  }
-
-  Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
-    for (final p in purchases) {
-      debugPrint(
-          'Billing: purchase event -> id=${p.productID} status=${p.status} pending=${p.pendingCompletePurchase}');
-
-      if (!mounted) return;
-
-      if (p.status == PurchaseStatus.pending) {
-        setState(() => _isBuying = true);
-      } else if (p.status == PurchaseStatus.error) {
-        debugPrint('Billing: purchase error -> ${p.error}');
-        setState(() {
-          _isBuying = false;
-          _error = 'Помилка: ${p.error?.message ?? "Unknown error"}';
-        });
-        if (p.pendingCompletePurchase) {
-          await _iap.completePurchase(p);
-        }
-      } else if (p.status == PurchaseStatus.purchased ||
-          p.status == PurchaseStatus.restored) {
-        final token = p.verificationData.serverVerificationData;
-        final short =
-        token.isNotEmpty ? token.substring(0, token.length.clamp(0, 12)) : '';
-        debugPrint(
-            'Billing: purchased/restored, sending verify token=$short...');
-
-        try {
-          await ApiClient.i().post('/subscriptions/play/verify', data: {
-            'purchaseToken': token,
-            'productId': kProductId,
-          });
-
-          if (mounted) {
-            debugPrint('Billing: refresh user from /auth/me (immediate)');
-            final userN = context.read<UserNotifier>();
-            await userN.refreshUserFromMe();
-
-            // одразу після оновлення профілю синхронізуємо userType в плеєрі
-            final u = userN.user;
-            if (u != null) {
-              final audio = context.read<AudioPlayerProvider>();
-              audio.userType = getUserType(u);
-              // 👇 тут теж оповіщаємо, щоб банер зник одразу
-              audio.notifyListeners();
-            }
-
-            // на випадок, якщо /auth/me затримався
-            unawaited(_pollPaidStatus());
-          }
-
-          if (p.pendingCompletePurchase) {
-            debugPrint('Billing: completing purchase (acknowledge)');
-            await _iap.completePurchase(p);
-          }
-
-          if (mounted) {
-            setState(() {
-              _isBuying = false;
-              _error = null;
-            });
-          }
-        } catch (e, st) {
-          debugPrint('Billing: verify failed -> $e\n$st');
-          if (mounted) {
-            setState(() {
-              _isBuying = false;
-              _error =
-              'Не вдалося підтвердити покупку на сервері. Спробуйте оновити екран.';
-            });
-          }
-        }
-      } else if (p.status == PurchaseStatus.canceled) {
-        debugPrint('Billing: purchase canceled');
-        if (mounted) {
-          setState(() {
-            _isBuying = false;
-            _error = null;
-          });
-        }
-        if (p.pendingCompletePurchase) {
-          await _iap.completePurchase(p);
-        }
-      }
-    }
-  }
-
-  // ✅ Покупка без offerToken/GooglePlayPurchaseParam
-  Future<void> _buy() async {
-    final product = _product;
-    if (product == null) {
-      debugPrint(
-          'Billing: _buy() called but _product is null. Retry querying.');
-      await _queryProductWithRetry(); // 👈 ВИКЛИКАЄМО НОВИЙ МЕТОД
-      if (_product == null) return; // Все ще нуль
-    }
-
-    setState(() {
-      _isBuying = true;
-      _error = null;
-    });
-
-    try {
-      debugPrint('Billing: buy for ${_product!.id}');
-      final param = PurchaseParam(productDetails: _product!);
-      await _iap.buyNonConsumable(purchaseParam: param);
-    } catch (e, st) {
-      debugPrint('Billing: buy error -> $e\n$st');
-      if (mounted) {
-        setState(() {
-          _isBuying = false;
-          _error = 'Не вдалося ініціювати покупку: $e';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final userN = context.watch<UserNotifier>();
-    final isPaidNow = userN.isPaidNow;
-    debugPrint(
-        'Billing: build section, isPaidNow=$isPaidNow, productLoaded=${_product != null}, querying=$_isQuerying, error=$_error');
-
-    if (isPaidNow) {
-      final until = userN.user?.paidUntil;
-      final subtitle = until != null
-          ? 'Активно до: ${until.toLocal().toString().substring(0, 10)}'
-          : 'Преміум активний';
-      return _CardWrap(
-        title: 'Booka Premium',
-        child: Text(
-          subtitle,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    Widget body;
-    if (_isQuerying) {
-      body = const Row(
-        children: [
-          SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-          SizedBox(width: 12),
-          Text('Завантаження підписки…'),
-        ],
-      );
-    } else if (_error != null) {
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _error!,
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.error, fontSize: 13),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: _queryProductWithRetry,
-                child: const Text('Оновити'),
-              ),
-              OutlinedButton(
-                onPressed: () async {
-                  try {
-                    await _iap.restorePurchases();
-                  } catch (_) {}
-                },
-                child: const Text('Відновити'),
-              ),
-            ],
-          ),
-        ],
-      );
-    } else if (_product == null) {
-      body = Row(
-        children: [
-          const Expanded(child: Text('Немає інформації про товар')),
-          OutlinedButton(
-            onPressed: _queryProductWithRetry,
-            child: const Text('Оновити'),
-          ),
-        ],
-      );
-    } else {
-      final price = _product!.price;
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Місячна підписка: $price',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              ElevatedButton(
-                onPressed: _isBuying ? null : _buy,
-                child: Text(_isBuying ? 'Обробка…' : 'Підключити Premium'),
-              ),
-              OutlinedButton(
-                onPressed: () async {
-                  try {
-                    await _iap.restorePurchases();
-                  } catch (_) {}
-                },
-                child: const Text('Відновити покупку'),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
-
-    return _CardWrap(title: 'Booka Premium', child: body);
-  }
-}
-
-class _CardWrap extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _CardWrap({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
-      ),
-    );
-  }
-}
