@@ -73,6 +73,7 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   // 👇 лічильник послідовних невдалих реінітів BillingClient
   int _failedReinitAttempts = 0;
   bool _restoreInFlight = false;
+  bool _restoreSpinner = false;
 
   @override
   void initState() {
@@ -109,6 +110,21 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _restoreFromUi() async {
+    setState(() {
+      _error = null;
+      _restoreSpinner = true;
+    });
+
+    await _restorePurchasesSafely(reason: 'manual');
+
+    if (mounted) {
+      setState(() {
+        _restoreSpinner = false;
+      });
+    }
   }
 
   /// 🔄 Реинициализация BillingClient при "BillingClient is unset"
@@ -459,8 +475,23 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
       await _iap.restorePurchases();
       debugPrint('Billing: [$reason] restorePurchases finished');
       _failedReinitAttempts = 0;
-    } catch (e, st) {
+    } on PlatformException catch (e, st) {
       debugPrint('Billing: [$reason] restorePurchases error: $e\n$st');
+
+      final isUnset =
+          e.code == 'UNAVAILABLE' && (e.message?.contains('BillingClient is unset') ?? false);
+      if (isUnset) {
+        _failedReinitAttempts += 1;
+        _stopRetriesUntilReinitCompletes = true;
+
+        if (mounted) {
+          setState(() {
+            _error = _failedReinitAttempts >= _maxBillingReconnectAttempts
+                ? 'Google Play Billing не відповідає. Повністю закрийте застосунок і відкрийте знову.'
+                : 'Google Play Billing перезапускається. Спробуйте ще раз за кілька секунд.';
+          });
+        }
+      }
     } finally {
       _restoreInFlight = false;
     }
@@ -518,12 +549,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
                 child: const Text('Оновити'),
               ),
               OutlinedButton(
-                onPressed: () async {
-                  try {
-                    await _iap.restorePurchases();
-                  } catch (_) {}
-                },
-                child: const Text('Відновити'),
+                onPressed: _restoreSpinner ? null : _restoreFromUi,
+                child: Text(_restoreSpinner ? 'Відновлення…' : 'Відновити'),
               ),
             ],
           ),
@@ -557,12 +584,8 @@ class _SubscriptionSectionState extends State<SubscriptionSection> {
                 child: Text(_isBuying ? 'Обробка…' : 'Підключити Premium'),
               ),
               OutlinedButton(
-                onPressed: () async {
-                  try {
-                    await _iap.restorePurchases();
-                  } catch (_) {}
-                },
-                child: const Text('Відновити покупку'),
+                onPressed: _restoreSpinner ? null : _restoreFromUi,
+                child: Text(_restoreSpinner ? 'Відновлення…' : 'Відновити покупку'),
               ),
             ],
           ),
