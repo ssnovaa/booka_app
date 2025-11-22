@@ -116,10 +116,6 @@ class AudioPlayerProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get isAdMode => _adMode;      // <-- публичный геттер, удобно в UI
 
-  AudioPlayerProvider() {
-    WidgetsBinding.instance.addObserver(this);
-  }
-
   // ====== СЕКУНДНЫЙ ЛОКАЛЬНЫЙ ТИКЕР ДЛЯ UI
   Timer? _freeSecondsTicker;
   static const Duration _uiSecTick = Duration(seconds: 1);
