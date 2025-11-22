@@ -69,7 +69,13 @@ class BillingService {
 
   Future<void> buy(ProductDetails product) async {
     final param = PurchaseParam(productDetails: product);
-    await _iap.buyNonConsumable(purchaseParam: param);
+    final started = await _iap.buyNonConsumable(purchaseParam: param);
+    if (!started) {
+      throw PlatformException(
+        code: 'BUY_NOT_STARTED',
+        message: 'Не вдалося ініціювати покупку',
+      );
+    }
   }
 
   Future<void> restorePurchases() async {
