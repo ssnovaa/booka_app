@@ -14,6 +14,8 @@ import 'package:booka_app/screens/catalog_screen.dart' show routeObserver;
 
 import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/core/billing/billing_controller.dart';
+import 'package:booka_app/core/billing/billing_service.dart';
 
 // 👇 Глобальный инжектор баннера поверх всех экранов
 import 'package:booka_app/widgets/global_banner_injector.dart';
@@ -125,6 +127,13 @@ Future<void> main() async {
           // ᐊ===== ✅✅✅ ВИПРАВЛЕНО ОДРУК (з ChangeNodeNotifierProvider)
           ChangeNotifierProvider<UserNotifier>.value(value: userNotifier),
           ChangeNotifierProvider<AudioPlayerProvider>.value(value: audioProvider),
+          ChangeNotifierProvider<BillingController>(
+            create: (ctx) => BillingController(
+              BillingService.I,
+              userNotifier: ctx.read<UserNotifier>(),
+              audioPlayerProvider: ctx.read<AudioPlayerProvider>(),
+            )..init(),
+          ),
         ],
         child: const BookaApp(),
       ),

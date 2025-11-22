@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 
 import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
-import 'main_screen.dart';
 import '../core/network/api_client.dart';
 import '../constants.dart';
 import 'series_books_list_screen.dart';
@@ -26,28 +25,6 @@ class _CatalogAndCollectionsScreenState
   // 🔑 ключ к внутреннему GenresScreen (тип не указываем, он приватный в другом файле)
   final GlobalKey _genresKey = GlobalKey(debugLabel: 'GenresScreenKey');
 
-  /// Централізований хук для MainScreen:
-  /// якщо відкрита «Серії» → перемикаємо на «Жанри» і повертаємо true.
-  /// якщо відкрита «Жанри» і є активний жанр → скидаємо вибір і повертаємо true.
-  bool handleBackAtRoot() {
-    if (_tabController.index == 1) {
-      _tabController.animateTo(0);
-      return true;
-    }
-
-    if (_tabController.index == 0) {
-      final st = _genresKey.currentState;
-      if (st != null) {
-        try {
-          final handled = (st as dynamic).handleBackSync?.call(scrollToTop: true) as bool?;
-          if (handled == true) return true;
-        } catch (_) {}
-      }
-    }
-
-    return false;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -60,25 +37,6 @@ class _CatalogAndCollectionsScreenState
     super.dispose();
   }
 
-  /// «Як у профілі»: переключити нижній таб MainScreen.
-  Future<void> _switchMainTab(int tab) async {
-    final ms = MainScreen.of(context);
-    if (ms != null) {
-      ms.setTab(tab);
-      return;
-    }
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
-          (route) => false,
-    );
-  }
-
-  Future<bool> _onWillPop() async {
-    if (handleBackAtRoot()) return false;
-    return true;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -86,36 +44,32 @@ class _CatalogAndCollectionsScreenState
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
     final primary = theme.colorScheme.primary;
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        appBar: bookaAppBar(
-          backgroundColor: appBarBg,
-          actions: const [],
-          bottom: TabBar(
-            controller: _tabController,
-            indicatorColor: primary,
-            labelColor: primary,
-            unselectedLabelColor: onSurfaceVariant,
-            tabs: const [
-              Tab(text: 'Жанри'),
-              Tab(text: 'Серії'),
-            ],
-          ),
-        ),
-        body: TabBarView(
+    return Scaffold(
+      appBar: bookaAppBar(
+        backgroundColor: appBarBg,
+        actions: const [],
+        bottom: TabBar(
           controller: _tabController,
-          children: [
-            KeyedSubtree(
-              key: const PageStorageKey('genres_tab'),
-              child: GenresScreen(
-                key: _genresKey,
-                onReturnToMain: () => _switchMainTab(1),
-              ),
-            ),
-            const _SeriesTab(key: PageStorageKey('series_tab')),
+          indicatorColor: primary,
+          labelColor: primary,
+          unselectedLabelColor: onSurfaceVariant,
+          tabs: const [
+            Tab(text: 'Жанри'),
+            Tab(text: 'Серії'),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          KeyedSubtree(
+            key: const PageStorageKey('genres_tab'),
+            child: GenresScreen(
+              key: _genresKey,
+            ),
+          ),
+          const _SeriesTab(key: PageStorageKey('series_tab')),
+        ],
       ),
     );
   }

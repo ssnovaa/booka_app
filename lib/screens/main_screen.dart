@@ -1,7 +1,5 @@
 // lib/screens/main_screen.dart
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // SystemNavigator.pop
 import 'package:provider/provider.dart';
 
 import '../widgets/custom_bottom_nav_bar.dart';
@@ -40,16 +38,9 @@ class _MainScreenState extends State<MainScreen> {
   /// Його може встановити та частина UI, де рендериться CurrentListenCard.
   VoidCallback? _onContinueFromCard;
 
-  /// Для «подвійного Назад для виходу» (активно ТІЛЬКИ на вкладці Каталог = 1)
-  DateTime? _lastBackTap;
-  final Duration _exitInterval = const Duration(seconds: 2);
-
   /// Ключ для доступу до стану екрану каталогу — потрібен,
   /// щоб скидати фільтри по повторному тапу на іконку «Каталог».
   final GlobalKey<CatalogScreenState> _catalogKey = GlobalKey<CatalogScreenState>();
-
-  /// Ключ для екрану «Каталог/Підбірки», щоб ловити внутрішній Back (Серії → Жанри).
-  final GlobalKey _cacKey = GlobalKey();
 
   /// Лінива ініціалізація вкладок: створюємо екран тільки в момент показу.
   /// Після створення — кешуємо віджет, щоб IndexedStack зберігав стан.
@@ -70,7 +61,7 @@ class _MainScreenState extends State<MainScreen> {
     if (_tabs[i] != null) return _tabs[i]!;
     switch (i) {
       case 0:
-        _tabs[0] = CatalogAndCollectionsScreen(key: _cacKey);
+        _tabs[0] = const CatalogAndCollectionsScreen();
         break;
       case 1:
         _tabs[1] = CatalogScreen(key: _catalogKey);
@@ -146,51 +137,6 @@ class _MainScreenState extends State<MainScreen> {
   /// Відображення індексу для IndexedStack.
   int get _stackIndex => (_selectedIndex == 0) ? 0 : 1;
 
-  /// Централізований перехоплювач апаратної кнопки "Назад".
-  /// Повертає false, щоб не дозволити Navigator.pop() у корені.
-  Future<bool> _onWillPop() async {
-    // Якщо відкрита вкладка «Каталог/Підбірки» (нижній таб 0)
-    if (_selectedIndex == 0) {
-      // Дамо екрану шанс «з'їсти» Back (Серії -> Жанри), якщо він вміє.
-      final st = _cacKey.currentState;
-      final handled = (st as dynamic?)?.handleBackAtRoot?.call() == true;
-      if (handled) return false;
-
-      // Інакше ми вже на «Жанрах»: просто переключимо нижній таб на «Каталог»
-      setState(() => _selectedIndex = 1);
-      return false;
-    }
-
-    // Логіка «подвійний Назад — вийти» ТІЛЬКИ на табі Каталог (1)
-    final now = DateTime.now();
-    if (_lastBackTap == null || now.difference(_lastBackTap!) > _exitInterval) {
-      _lastBackTap = now;
-      final cs = Theme.of(context).colorScheme;
-      ScaffoldMessenger.of(context)
-        ..removeCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              'Натисніть ще раз, щоб вийти',
-              style: TextStyle(color: cs.onInverseSurface),
-            ),
-            backgroundColor: cs.inverseSurface,
-            duration: _exitInterval,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(12),
-          ),
-        );
-      return false; // чекаємо другого натискання
-    }
-
-    if (Platform.isAndroid) {
-      await SystemNavigator.pop();
-      return false;
-    } else {
-      return false;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // Гарантуємо, що видима вкладка створена (інша — тільки при зверненні).
@@ -199,25 +145,22 @@ class _MainScreenState extends State<MainScreen> {
     final Widget tab1 =
     (_stackIndex == 1) ? _ensureTab(1) : (_tabs[1] ?? const SizedBox.shrink());
 
-    return WillPopScope(
-      onWillPop: _onWillPop, // перехоплюємо Back на рівні головного контейнера
-      child: Consumer<UserNotifier>(
-        builder: (context, userNotifier, _) {
-          return Scaffold(
-            body: IndexedStack(
-              index: _stackIndex,
-              children: <Widget>[tab0, tab1],
-            ),
-            bottomNavigationBar: CustomBottomNavBar(
-              currentIndex: _selectedIndex,
-              onTap: _onTabSelected,
-              onPlayerTap: _onPlayerTap,   // коротке натискання по центру
-              onOpenPlayer: _onPlayerTap,  // якщо в виджеті є окремий колбек — туди ж
-              onContinue: _onContinueFromCard,
-            ),
-          );
-        },
-      ),
+    return Consumer<UserNotifier>(
+      builder: (context, userNotifier, _) {
+        return Scaffold(
+          body: IndexedStack(
+            index: _stackIndex,
+            children: <Widget>[tab0, tab1],
+          ),
+          bottomNavigationBar: CustomBottomNavBar(
+            currentIndex: _selectedIndex,
+            onTap: _onTabSelected,
+            onPlayerTap: _onPlayerTap,   // коротке натискання по центру
+            onOpenPlayer: _onPlayerTap,  // якщо в виджеті є окремий колбек — туди ж
+            onContinue: _onContinueFromCard,
+          ),
+        );
+      },
     );
   }
 }
