@@ -14,6 +14,8 @@ class BillingService {
 
   final InAppPurchase _iap = InAppPurchase.instance;
 
+  static bool _pendingPurchasesEnabled = false;
+
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
   bool _initialized = false;
 
@@ -24,6 +26,8 @@ class BillingService {
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
+
+    _enablePendingPurchasesIfNeeded();
 
     final available = await _iap.isAvailable();
     if (!available) {
@@ -132,6 +136,16 @@ class BillingService {
           debugPrint('Billing: completePurchase error: $e');
         }
       }
+    }
+  }
+
+  void _enablePendingPurchasesIfNeeded() {
+    if (_pendingPurchasesEnabled) return;
+    try {
+      _iap.enablePendingPurchases();
+      _pendingPurchasesEnabled = true;
+    } catch (e) {
+      debugPrint('Billing: enablePendingPurchases failed: $e');
     }
   }
 }

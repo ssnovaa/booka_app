@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import 'package:booka_app/core/billing/billing_models.dart';
@@ -92,7 +93,10 @@ class BillingController extends ChangeNotifier {
       await _service.buy(_productDetails!);
     } catch (e) {
       purchaseState = BillingPurchaseState.error;
-      error = BillingError(message: 'Не вдалося ініціювати покупку', raw: e);
+      final message = e is PlatformException && e.message != null
+          ? 'Не вдалося ініціювати покупку: ${e.message}'
+          : 'Не вдалося ініціювати покупку';
+      error = BillingError(message: message, raw: e);
       notifyListeners();
     }
   }
