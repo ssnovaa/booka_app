@@ -82,7 +82,7 @@ class _LocalCL {
   });
 }
 
-class AudioPlayerProvider extends ChangeNotifier {
+class AudioPlayerProvider extends ChangeNotifier with WidgetsBindingObserver {
   final AudioPlayer player = AudioPlayer();
 
   // ====== Интеграция списания секунд (CreditsConsumer)
@@ -130,6 +130,8 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+
+  bool _appActive = true;
 
   // ===== UI throttle и drag override для слайдера
   bool _isUserSeeking = false;
@@ -195,7 +197,20 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? get currentUrl => currentChapter?.audioUrl;
   bool get _hasSequence => (player.sequenceState?.sequence.isNotEmpty ?? false);
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    if (!_appActive) {
+      _serverPushTimer?.cancel();
+      _pushProgressToServer(force: true, allowZero: false);
+    } else {
+      _scheduleServerPush();
+    }
+  }
+
   AudioPlayerProvider() {
+    WidgetsBinding.instance.addObserver(this);
+
     // Позиция
     player.positionStream.listen((pos) {
       if (!_hasSequence) return;
@@ -628,6 +643,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (currentBook == null || currentChapter == null) return;
     if (!player.playing) return;
     if (_position.inSeconds < _minAutoPushSec) return;
+    if (!_appActive) return;
 
     _serverPushTimer?.cancel();
     _serverPushTimer = Timer(_pushDelay, () => _pushProgressToServer());
@@ -644,6 +660,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final ch = currentChapter;
     if (b == null || ch == null) return;
     if (_userType == UserType.guest) return;
+    if (!_appActive && !force) return;
 
     final pos = _position.inSeconds;
 
@@ -1599,6 +1616,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _creditsConsumer?.stop();
     _stopFreeSecondsTicker();
     _stopAdTimer();
+    WidgetsBinding.instance.removeObserver(this);
     player.dispose();
     super.dispose();
   }
