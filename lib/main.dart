@@ -1,10 +1,10 @@
-// lib/main.dart (С ИСПРАВЛЕНИЯМИ)
+// lib/main.dart (С ИСПРАВЛЕНИЯМИ ПОД НОВЫЙ БИЛЛИНГ)
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // ᐊ===== 1. ДОБАВЛЕН ИМПОРТ PUSH
+import 'package:firebase_messaging/firebase_messaging.dart'; // ᐊ===== PUSH
 
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/theme_notifier.dart';
@@ -12,40 +12,44 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/screens/entry_screen.dart';
 import 'package:booka_app/screens/catalog_screen.dart' show routeObserver;
 
+// 👇 Экран согласия / режима с рекламой (рабочий, не тестовый)
+import 'package:booka_app/screens/reward_test_screen.dart';
+
 import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
 
 // 👇 Глобальный инжектор баннера поверх всех экранов
 import 'package:booka_app/widgets/global_banner_injector.dart';
 
+// 👇 НОВЫЙ БИЛЛИНГ
+import 'package:booka_app/core/billing/billing_service.dart';
+import 'package:booka_app/core/billing/billing_controller.dart';
+
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
 
 /// Реактор на изменение жизненного цикла приложения
 class _LifecycleReactor with WidgetsBindingObserver {
   final AudioPlayerProvider audio;
-  // ᐊ===== 1. ДОДАЄМО UserNotifier
+  // ᐊ===== UserNotifier
   final UserNotifier userNotifier;
 
-  // ᐊ===== 2. ОНОВЛЮЄМО КОНСТРУКТОР
   _LifecycleReactor(this.audio, this.userNotifier) {
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       unawaited(audio.flushProgress());
     }
 
-    // ᐊ===== 3. ДОДАЄМО БЛОК ДЛЯ ОНОВЛЕННЯ СТАТУСУ
-    // Цей код спрацює, коли користувач повернеться в додаток
+    // При возврате в приложение — обновляем пользователя
     if (state == AppLifecycleState.resumed) {
       try {
-        // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
-        //    (Цей метод існує у lib/user_notifier.dart [lib/user_notifier.dart:115])
         userNotifier.fetchCurrentUser();
       } catch (e) {
-        // ігноруємо помилку, якщо запит не вдався (напр. немає мережі)
+        // игнорируем ошибку (нет сети и т.п.)
       }
     }
   }
@@ -82,9 +86,8 @@ Future<void> main() async {
     final userNotifier = UserNotifier();
     final audioProvider = AudioPlayerProvider();
 
-    // ‼️‼️‼️ БЛОК СЛУШАТЕЛЯ PUSH УДАЛЕН ОТСЮДА (строки 81-93) ‼️‼️‼️
-    // Он будет обрабатываться только в PushService
-
+    // 👇 СОЗДАЁМ ЕКЗЕМПЛЯР НОВОГО СЕРВИСА БИЛЛИНГА (core/billing)
+    final billingService = BillingService();
 
     // Связка секунд с UserNotifier
     audioProvider.getFreeSeconds = () => userNotifier.freeSeconds;
@@ -115,16 +118,33 @@ Future<void> main() async {
       await _showInterstitialAd(audioProvider);
     };
 
-    // (Удалены старые колбэки, как и в вашем файле)
-
     // Запуск приложения
     runApp(
       MultiProvider(
         providers: [
           ChangeNotifierProvider<ThemeNotifier>.value(value: themeNotifier),
-          // ᐊ===== ✅✅✅ ВИПРАВЛЕНО ОДРУК (з ChangeNodeNotifierProvider)
           ChangeNotifierProvider<UserNotifier>.value(value: userNotifier),
-          ChangeNotifierProvider<AudioPlayerProvider>.value(value: audioProvider),
+          ChangeNotifierProvider<AudioPlayerProvider>.value(
+            value: audioProvider,
+          ),
+
+          // 👇 НОВЫЙ БИЛЛИНГ В ДЕРЕВЕ
+          // Сервис — НЕ ChangeNotifier, поэтому используется обычный Provider.
+          // Использование .value, так как экземпляр уже создан выше.
+          Provider<BillingService>.value(
+            value: billingService,
+          ),
+
+          // Контроллер — ChangeNotifier, работает с UI
+          ChangeNotifierProvider<BillingController>(
+            // Используем 'create' и 'context.read' для получения
+            // BillingService, который уже есть в дереве
+            create: (context) => BillingController(
+              service: context.read<BillingService>(), // ⬅️ ИСПРАВЛЕНО
+              userNotifier: userNotifier,
+              audioPlayerProvider: audioProvider,
+            ),
+          ),
         ],
         child: const BookaApp(),
       ),
@@ -133,8 +153,6 @@ Future<void> main() async {
     // Отложённые инициализации
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        // ‼️‼️‼️ ИЗМЕНЕНИЕ ЗДЕСЬ ‼️‼️‼️
-        // Передаем userNotifier, который создали на строке 78
         await PushService.instance.init(
           navigatorKey: _navKey,
           userNotifier: userNotifier,
@@ -144,31 +162,34 @@ Future<void> main() async {
       try {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
-          final audio = Provider.of<AudioPlayerProvider>(ctx, listen: false);
-          // ᐊ===== 4. ОТРИМУЄМО UserNotifier З КОНТЕКТУ
+          final audio =
+          Provider.of<AudioPlayerProvider>(ctx, listen: false);
           final user = Provider.of<UserNotifier>(ctx, listen: false);
+
+          // ⛔ РАНЬШЕ ТУТ БЫЛО billingService.attachContext(ctx);
+          // Для новой структуры биллинга это больше не нужно.
 
           final hasLocal = await audio.hasSavedSession();
           if (!hasLocal) {
-            // ᐊ===== 5. ДОДАЄМО ПЕРВИННЕ ЗАВАНТАЖЕННЯ СТАТУСУ
             try {
-              // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
-              await user.fetchCurrentUser(); // [lib/user_notifier.dart:115]
+              await user.fetchCurrentUser();
             } catch (e) {
-              // ігноруємо, якщо немає мережі
+              // игнорируем, если нет сети
+              // debugPrint('main: fetchCurrentUser error: $e');
             }
             await audio.hydrateFromServerIfAvailable();
           }
 
           await audio.ensurePrepared();
 
-          // ᐊ===== 6. ОНОВЛЮЄМО СТВОРЕННЯ РЕАКТОРА
           _reactor ??= _LifecycleReactor(audio, user);
         }
       } catch (_) {}
     });
   }, (Object error, StackTrace stack) {
-    FlutterError.presentError(FlutterErrorDetails(exception: error, stack: stack));
+    FlutterError.presentError(
+      FlutterErrorDetails(exception: error, stack: stack),
+    );
   });
 }
 
@@ -197,9 +218,12 @@ class BookaApp extends StatelessWidget {
           navigatorObservers: [routeObserver],
           navigatorKey: _navKey,
 
-          // (Удалены старые роуты, как и в вашем файле)
+          // 👇 РЕГИСТРАЦИЯ ИМЕНОВАННОГО МАРШРУТА ДЛЯ РАБОЧЕГО ЭКРАНА НАГРАДЫ
+          routes: <String, WidgetBuilder>{
+            '/rewarded': (_) => const RewardTestScreen(),
+          },
 
-          // Единый хост баннера
+          // Единый хост баннера (без глобального WillPopScope)
           builder: (context, child) {
             final Widget safeChild = child ?? const SizedBox.shrink();
             return GlobalBannerInjector(

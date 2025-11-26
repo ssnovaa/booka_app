@@ -540,10 +540,10 @@ packages:
     dependency: "direct main"
     description:
       name: in_app_purchase_android
-      sha256: "2a66b8a15f4547dd2ac7f4095dcec4a8912e38647a8ef7d26b3c596361a18675"
+      sha256: abb254ae159a5a9d4f867795ecb076864faeba59ce015ab81d4cca380f23df45
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.0+7"
+    version: "0.4.0+8"
   in_app_purchase_platform_interface:
     dependency: transitive
     description:

@@ -1,7 +1,10 @@
 // lib/screens/entry_screen.dart
+import 'dart:io'; // 🚨 ДОБАВЛЕН ИМПОРТ ДЛЯ exit(0)
+
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode; // 👈 только для debug-кнопки
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:provider/provider.dart';
 
 // app
@@ -9,12 +12,13 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/models/user.dart'; // getUserType, UserType
-import 'package:booka_app/screens/reward_test_screen.dart'; // 👈 экран теста рекламы
+import 'package:booka_app/screens/reward_test_screen.dart'; // 👈 екран теста рекламы
 
 // core
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth_interceptor.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
+import 'package:booka_app/core/billing/billing_controller.dart';
 
 // ui
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← єдина точка Lottie-лоадера
@@ -37,7 +41,7 @@ class _EntryScreenState extends State<EntryScreen> {
   void initState() {
     super.initState();
 
-    // 🔁 На повернення у фокус — тримаємо просту локал-first стратегію
+    // 🔁 На возврат в фокус — простая local-first стратегия
     _life = AppLifecycleListener(
       onResume: () async {
         final audio = context.read<AudioPlayerProvider>();
@@ -46,7 +50,7 @@ class _EntryScreenState extends State<EntryScreen> {
         // 1) Обновляем тип пользователя для поведения плеера из локального состояния
         audio.userType = getUserType(userN.user);
 
-        // 2) 🔁 Дотягиваем приватный статус подписки (is_paid/paid_until) и оновлюємо тип
+        // 2) 🔁 Дотягиваем приватный статус подписки (is_paid/paid_until) и обновляем тип
         try {
           await userN.refreshUserFromMe();
           audio.userType = getUserType(userN.user);
@@ -54,7 +58,7 @@ class _EntryScreenState extends State<EntryScreen> {
           // не критично: если сеть недоступна, остаёмся на локальном статусе
         }
 
-        // 3) Локал-first для плеера
+        // 3) Local-first для плеера
         try {
           final hasLocal = await audio.hasSavedSession();
           if (!hasLocal) {
@@ -120,19 +124,66 @@ class _EntryScreenState extends State<EntryScreen> {
         _didPostFrameHeavy = true;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           try {
-            // ✅ Локал-first старт:
-            await audio.restoreProgress();                // 1) підняти локаль
+            // ✅ Local-first старт:
+            await audio.restoreProgress(); // 1) поднять локаль
             final hasLocal = await audio.hasSavedSession();
             if (!hasLocal) {
-              await audio.hydrateFromServerIfAvailable(); // 2) тягнути сервер ТІЛЬКИ якщо локалі немає
+              // 2) тянуть с сервера ТОЛЬКО если локали нет
+              await audio.hydrateFromServerIfAvailable();
             }
-            await audio.ensurePrepared();                 // 3) швидко підготувати плеєр
+            await audio.ensurePrepared(); // 3) быстро подготовить плеер
           } catch (_) {
-            // не критично для першого екрана
+            // не критично для первого экрана
           }
         });
       }
     }
+  }
+
+  /// Диалог подтверждения выхода
+  Future<bool> _showExitDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Вийти з додатку'),
+          content: const Text('Ви дійсно хочете закрити додаток?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Скасувати'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Вийти'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result == true;
+  }
+
+  /// Реальный выход из приложения:
+  /// 1) показать короткое "спасибо"
+  /// 2) вызвать dart:io.exit(0) для немедленного уничтожения процесса
+  Future<void> _performExit() async {
+
+    // Пытаемся показать snackbar с благодарностью
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('Дякуємо, що були з Booka 💛'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    // Даём 1 секунду на отображение и завершение фоновых задач
+    await Future.delayed(const Duration(seconds: 1));
+
+    // 🚨 Немедленное и принудительное завершение процесса
+    exit(0);
   }
 
   @override
@@ -160,31 +211,44 @@ class _EntryScreenState extends State<EntryScreen> {
       );
     }
 
-    // ✅ Повертаємо основний екран.
-    // Кнопка теста наградной рекламы залишена в коді, але повністю закоментована,
-    // щоб її можна було легко повернути при налагодженні.
-    return Stack(
-      children: [
-        const MainScreen(),
+    // ✅ Возвращаем основной экран + перехват системной кнопки "Назад" через PopScope.
+    return PopScope(
+      // Это корневой экран: сами решаем, можно ли "выйти" из приложения
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        // didPop == true → Flutter уже сделал pop, нам ничего не надо
+        if (didPop) return;
 
-        // DEBUG Reward-test FAB (зараз вимкнено):
-        // if (kDebugMode)
-        //   Positioned(
-        //     right: 16,
-        //     bottom: 16,
-        //     child: FloatingActionButton.extended(
-        //       // Комментарий: кнопка видна только в debug-сборках
-        //       heroTag: 'reward_test_fab',
-        //       icon: const Icon(Icons.ondemand_video),
-        //       label: const Text('Reward test'),
-        //       onPressed: () {
-        //         Navigator.of(context).push(
-        //           MaterialPageRoute(builder: (_) => const RewardTestScreen()),
-        //         );
-        //       },
-        //     ),
-        //   ),
-      ],
+        // Показываем диалог подтверждения
+        final shouldExit = await _showExitDialog();
+        if (!shouldExit) return;
+
+        // Пользователь нажал "Выйти" → выполняем сценарий полного выхода
+        await _performExit();
+      },
+      child: Stack(
+        children: [
+          const MainScreen(),
+
+          // DEBUG Reward-test FAB (сейчас выключен, но легко включить при отладке):
+          // if (kDebugMode)
+          //   Positioned(
+          //     right: 16,
+          //     bottom: 16,
+          //     child: FloatingActionButton.extended(
+          //       // Кнопка видна только в debug-сборках
+          //       heroTag: 'reward_test_fab',
+          //       icon: const Icon(Icons.ondemand_video),
+          //       label: const Text('Reward test'),
+          //       onPressed: () {
+          //         Navigator.of(context).push(
+          //           MaterialPageRoute(builder: (_) => const RewardTestScreen()),
+          //         );
+          //       },
+          //     ),
+          //   ),
+        ],
+      ),
     );
   }
 }

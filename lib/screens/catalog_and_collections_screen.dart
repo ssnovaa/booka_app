@@ -26,28 +26,6 @@ class _CatalogAndCollectionsScreenState
   // 🔑 ключ к внутреннему GenresScreen (тип не указываем, он приватный в другом файле)
   final GlobalKey _genresKey = GlobalKey(debugLabel: 'GenresScreenKey');
 
-  /// Централізований хук для MainScreen:
-  /// якщо відкрита «Серії» → перемикаємо на «Жанри» і повертаємо true.
-  /// якщо відкрита «Жанри» і є активний жанр → скидаємо вибір і повертаємо true.
-  bool handleBackAtRoot() {
-    if (_tabController.index == 1) {
-      _tabController.animateTo(0);
-      return true;
-    }
-
-    if (_tabController.index == 0) {
-      final st = _genresKey.currentState;
-      if (st != null) {
-        try {
-          final handled = (st as dynamic).handleBackSync?.call(scrollToTop: true) as bool?;
-          if (handled == true) return true;
-        } catch (_) {}
-      }
-    }
-
-    return false;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -74,11 +52,6 @@ class _CatalogAndCollectionsScreenState
     );
   }
 
-  Future<bool> _onWillPop() async {
-    if (handleBackAtRoot()) return false;
-    return true;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -86,36 +59,33 @@ class _CatalogAndCollectionsScreenState
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
     final primary = theme.colorScheme.primary;
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        appBar: bookaAppBar(
-          backgroundColor: appBarBg,
-          actions: const [],
-          bottom: TabBar(
-            controller: _tabController,
-            indicatorColor: primary,
-            labelColor: primary,
-            unselectedLabelColor: onSurfaceVariant,
-            tabs: const [
-              Tab(text: 'Жанри'),
-              Tab(text: 'Серії'),
-            ],
-          ),
-        ),
-        body: TabBarView(
+    return Scaffold(
+      appBar: bookaAppBar(
+        backgroundColor: appBarBg,
+        actions: const [],
+        bottom: TabBar(
           controller: _tabController,
-          children: [
-            KeyedSubtree(
-              key: const PageStorageKey('genres_tab'),
-              child: GenresScreen(
-                key: _genresKey,
-                onReturnToMain: () => _switchMainTab(1),
-              ),
-            ),
-            const _SeriesTab(key: PageStorageKey('series_tab')),
+          indicatorColor: primary,
+          labelColor: primary,
+          unselectedLabelColor: onSurfaceVariant,
+          tabs: const [
+            Tab(text: 'Жанри'),
+            Tab(text: 'Серії'),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          KeyedSubtree(
+            key: const PageStorageKey('genres_tab'),
+            child: GenresScreen(
+              key: _genresKey,
+              onReturnToMain: () => _switchMainTab(1),
+            ),
+          ),
+          const _SeriesTab(key: PageStorageKey('series_tab')),
+        ],
       ),
     );
   }
@@ -158,7 +128,9 @@ class _SeriesTabState extends State<_SeriesTab> {
 
       return raw
           .whereType<dynamic>()
-          .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+          .map((e) => e is Map<String, dynamic>
+          ? e
+          : Map<String, dynamic>.from(e as Map))
           .toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
@@ -174,24 +146,30 @@ class _SeriesTabState extends State<_SeriesTab> {
   String? _abs(String? url) => ensureAbsoluteImageUrl(url);
 
   String? _seriesCover(Map<String, dynamic> series) {
-    final firstCover = (series['first_cover'] ?? series['firstCover'])?.toString();
+    final firstCover =
+    (series['first_cover'] ?? series['firstCover'])?.toString();
     if (firstCover != null && firstCover.isNotEmpty) return _abs(firstCover);
 
     final booksRaw = series['books'];
     if (booksRaw is List && booksRaw.isNotEmpty) {
-      final Map<String, dynamic> b = Map<String, dynamic>.from(booksRaw.first);
+      final Map<String, dynamic> b =
+      Map<String, dynamic>.from(booksRaw.first);
       final thumb = b['thumb_url']?.toString() ?? b['thumbUrl']?.toString();
       final cover = b['cover_url']?.toString() ?? b['coverUrl']?.toString();
       return _abs(thumb ?? cover);
     }
 
-    final thumb = series['thumb_url']?.toString() ?? series['thumbUrl']?.toString();
-    final cover = series['cover_url']?.toString() ?? series['coverUrl']?.toString();
+    final thumb =
+        series['thumb_url']?.toString() ?? series['thumbUrl']?.toString();
+    final cover =
+        series['cover_url']?.toString() ?? series['coverUrl']?.toString();
     return _abs(thumb ?? cover);
   }
 
   String _seriesTitle(Map<String, dynamic> series) {
-    return (series['title'] ?? series['name'] ?? 'Серія').toString().trim();
+    return (series['title'] ?? series['name'] ?? 'Серія')
+        .toString()
+        .trim();
   }
 
   String? _seriesDescription(Map<String, dynamic> series) {
@@ -207,7 +185,8 @@ class _SeriesTabState extends State<_SeriesTab> {
     return n.toString();
   }
 
-  Future<void> _openSeries(BuildContext context, Map<String, dynamic> series) async {
+  Future<void> _openSeries(
+      BuildContext context, Map<String, dynamic> series) async {
     final id = (series['id'] ?? series['series_id'])?.toString();
     final title = _seriesTitle(series);
     if (id == null || id.isEmpty) return;
@@ -220,7 +199,9 @@ class _SeriesTabState extends State<_SeriesTab> {
       );
       if (r.statusCode == 200 && r.data is List) {
         prefetched = (r.data as List)
-            .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .map((e) => e is Map<String, dynamic>
+            ? e
+            : Map<String, dynamic>.from(e as Map))
             .toList();
       }
     } catch (_) {}
@@ -280,12 +261,14 @@ class _SeriesTabState extends State<_SeriesTab> {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: t.colorScheme.surfaceVariant.withOpacity(isDark ? 0.20 : 0.35),
+                      color: t.colorScheme.surfaceVariant
+                          .withOpacity(isDark ? 0.20 : 0.35),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       'Серій поки немає',
-                      style: t.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: t.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -298,7 +281,8 @@ class _SeriesTabState extends State<_SeriesTab> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 sliver: SliverList.separated(
                   itemCount: data.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -337,17 +321,17 @@ Size _adaptiveCoverSize(double screenW) {
 
   double factor;
   if (screenW >= 900) {
-    factor = 1.5;   // большие планшеты/десктоп
+    factor = 1.5; // большие планшеты/десктоп
   } else if (screenW >= 720) {
-    factor = 1.35;  // планшеты 8–10"
+    factor = 1.35; // планшеты 8–10"
   } else if (screenW >= 600) {
-    factor = 1.25;  // большие телефоны / маленькие планшеты
+    factor = 1.25; // большие телефоны / маленькие планшеты
   } else if (screenW >= 480) {
-    factor = 1.15;  // широкие телефоны
+    factor = 1.15; // широкие телефоны
   } else if (screenW >= 360) {
-    factor = 1.0;   // типичные телефоны
+    factor = 1.0; // типичные телефоны
   } else {
-    factor = 0.92;  // сверхузкие (малые) устройства
+    factor = 0.92; // сверхузкие (малые) устройства
   }
 
   return Size(baseW * factor, baseH * factor);
@@ -403,7 +387,8 @@ class _SeriesRowCard extends StatelessWidget {
                       : Image.network(
                     coverUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => placeholderBuilder(coverW, coverH),
+                    errorBuilder: (_, __, ___) =>
+                        placeholderBuilder(coverW, coverH),
                     loadingBuilder: (context, child, progress) {
                       if (progress == null) return child;
                       return const Center(
@@ -432,7 +417,8 @@ class _SeriesRowCard extends StatelessWidget {
                         title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                        style: t.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                     ),
 
@@ -445,7 +431,8 @@ class _SeriesRowCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         softWrap: true,
                         style: t.textTheme.bodyMedium?.copyWith(
-                          color: t.colorScheme.onSurface.withOpacity(0.85),
+                          color:
+                          t.colorScheme.onSurface.withOpacity(0.85),
                           height: 1.28,
                         ),
                       ),
@@ -455,15 +442,21 @@ class _SeriesRowCard extends StatelessWidget {
 
                     // Книг в серии
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: t.colorScheme.primary.withOpacity(
-                          Theme.of(context).brightness == Brightness.dark ? 0.20 : 0.10,
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 0.20
+                              : 0.10,
                         ),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
                           color: t.colorScheme.primary.withOpacity(
-                            Theme.of(context).brightness == Brightness.dark ? 0.40 : 0.25,
+                            Theme.of(context).brightness ==
+                                Brightness.dark
+                                ? 0.40
+                                : 0.25,
                           ),
                           width: 1,
                         ),
@@ -471,7 +464,8 @@ class _SeriesRowCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.library_books_rounded, size: 16, color: t.colorScheme.primary),
+                          Icon(Icons.library_books_rounded,
+                              size: 16, color: t.colorScheme.primary),
                           const SizedBox(width: 6),
                           Text(
                             'Книг в серії: $booksCount',
@@ -501,8 +495,8 @@ class _SeriesSkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final base =
-    t.colorScheme.surfaceVariant.withOpacity(t.brightness == Brightness.dark ? 0.24 : 0.35);
+    final base = t.colorScheme.surfaceVariant
+        .withOpacity(t.brightness == Brightness.dark ? 0.24 : 0.35);
 
     final screenW = MediaQuery.of(context).size.width;
     final coverSize = _adaptiveCoverSize(screenW);
@@ -510,14 +504,18 @@ class _SeriesSkeletonList extends StatelessWidget {
     Widget block({double w = 100, double h = 16, double r = 8}) => Container(
       width: w,
       height: h,
-      decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(r)),
+      decoration: BoxDecoration(
+        color: base,
+        borderRadius: BorderRadius.circular(r),
+      ),
     );
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           sliver: SliverList.separated(
             itemCount: 6,
             separatorBuilder: (_, __) => const SizedBox(height: 10),

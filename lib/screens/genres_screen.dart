@@ -146,16 +146,6 @@ class _GenresScreenState extends State<GenresScreen> {
     }
   }
 
-  // Back внутри самого экрана (если открыт отдельно, без MainScreen)
-  Future<bool> _onWillPop() async {
-    if (handleBackSync()) return false;
-    if (widget.onReturnToMain != null) {
-      widget.onReturnToMain!();
-      return false;
-    }
-    return true;
-  }
-
   Future<void> _onPullToRefresh() async {
     if (selectedGenre == null) {
       await fetchGenres();
@@ -171,124 +161,121 @@ class _GenresScreenState extends State<GenresScreen> {
   Widget build(BuildContext context) {
     // final cs = Theme.of(context).colorScheme; // не используется — можно оставить закомментированным
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        body: Builder(
-          builder: (context) {
-            if (isLoadingGenres && genres.isEmpty) {
-              return const Center(child: LoadingIndicator());
-            }
+    return Scaffold(
+      body: Builder(
+        builder: (context) {
+          if (isLoadingGenres && genres.isEmpty) {
+            return const Center(child: LoadingIndicator());
+          }
 
-            if (error != null && genres.isEmpty) {
-              return _ErrorPanel(
-                message: error!,
-                onRetry: fetchGenres,
-              );
-            }
+          if (error != null && genres.isEmpty) {
+            return _ErrorPanel(
+              message: error!,
+              onRetry: fetchGenres,
+            );
+          }
 
-            if (genres.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: _onPullToRefresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 80),
-                    Center(child: Text('Жанрів не знайдено')),
-                    SizedBox(height: 80),
-                  ],
-                ),
-              );
-            }
-
-            // --- плитка жанров с картинками (исходный экран выбора)
-            if (selectedGenre == null) {
-              return RefreshIndicator(
-                onRefresh: _onPullToRefresh,
-                child: SingleChildScrollView(
-                  controller: _tilesScrollCtrl,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: Padding(
-                    padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: genres.length,
-                      gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 1.05,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                      ),
-                      itemBuilder: (context, index) {
-                        final genre = genres[index];
-                        return _GenreTile(
-                          genre: genre,
-                          onTap: () async {
-                            setState(() {
-                              selectedGenre = genre;
-                              books = [];
-                            });
-                            await fetchBooksForGenre(genre, refresh: true);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            // --- выбранный жанр: ТОЛЬКО список книг (без «складывания жанров», без закреплённой плитки)
+          if (genres.isEmpty) {
             return RefreshIndicator(
               onRefresh: _onPullToRefresh,
-              child: isLoadingBooks
-                  ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 120),
-                  Center(child: LoadingIndicator()),
-                ],
-              )
-                  : (error != null && books.isEmpty)
-                  ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: [
-                  _ErrorPanel(
-                    message: error ?? 'Помилка завантаження книг',
-                    onRetry: () => fetchBooksForGenre(
-                        selectedGenre!, refresh: true),
-                  ),
-                ],
-              )
-                  : (books.isEmpty)
-                  ? ListView(
+              child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: const [
                   SizedBox(height: 80),
-                  Center(
-                      child:
-                      Text('Книги не знайдено для цього жанру')),
+                  Center(child: Text('Жанрів не знайдено')),
+                  SizedBox(height: 80),
                 ],
-              )
-                  : ListView.builder(
-                controller: _booksScrollCtrl,
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: books.length,
-                itemBuilder: (context, index) {
-                  final book = books[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: BookCardWidget(book: book),
-                  );
-                },
               ),
             );
-          },
-        ),
+          }
+
+          // --- плитка жанров с картинками (исходный экран выбора)
+          if (selectedGenre == null) {
+            return RefreshIndicator(
+              onRefresh: _onPullToRefresh,
+              child: SingleChildScrollView(
+                controller: _tilesScrollCtrl,
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Padding(
+                  padding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: genres.length,
+                    gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 1.05,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
+                    itemBuilder: (context, index) {
+                      final genre = genres[index];
+                      return _GenreTile(
+                        genre: genre,
+                        onTap: () async {
+                          setState(() {
+                            selectedGenre = genre;
+                            books = [];
+                          });
+                          await fetchBooksForGenre(genre, refresh: true);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          }
+
+          // --- выбранный жанр: ТОЛЬКО список книг
+          return RefreshIndicator(
+            onRefresh: _onPullToRefresh,
+            child: isLoadingBooks
+                ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 120),
+                Center(child: LoadingIndicator()),
+              ],
+            )
+                : (error != null && books.isEmpty)
+                ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                _ErrorPanel(
+                  message: error ?? 'Помилка завантаження книг',
+                  onRetry: () =>
+                      fetchBooksForGenre(selectedGenre!, refresh: true),
+                ),
+              ],
+            )
+                : (books.isEmpty)
+                ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 80),
+                Center(
+                    child: Text(
+                        'Книги не знайдено для цього жанру')),
+              ],
+            )
+                : ListView.builder(
+              controller: _booksScrollCtrl,
+              padding:
+              const EdgeInsets.symmetric(horizontal: 8),
+              itemCount: books.length,
+              itemBuilder: (context, index) {
+                final book = books[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: BookCardWidget(book: book),
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }
