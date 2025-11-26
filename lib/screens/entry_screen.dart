@@ -1,5 +1,5 @@
-// lib/screens/entry_screen.dart
-import 'dart:io'; // 🚨 ДОБАВЛЕН ИМПОРТ ДЛЯ exit(0)
+import 'dart:io';
+import 'dart:async'; // 🚨 Добавлен импорт для Future.delayed
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -132,6 +132,18 @@ class _EntryScreenState extends State<EntryScreen> {
               await audio.hydrateFromServerIfAvailable();
             }
             await audio.ensurePrepared(); // 3) быстро подготовить плеер
+
+            // 🚨 УСИЛЕНИЕ ИСПРАВЛЕНИЯ: Добавляем небольшую задержку (0 мс),
+            // чтобы фантомный маршрут успел быть создан системой,
+            // прежде чем мы его удалим. Это повышает надежность popUntil.
+            await Future.delayed(Duration.zero);
+
+            // 4. Удаляем любые фантомные маршруты, гарантируя, что EntryScreen является корнем стека.
+            if (mounted && Navigator.of(context).canPop()) {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+              debugPrint('EntryScreen: Cleared navigation stack to first route.'); // 🚨 DEBUG
+            }
+
           } catch (_) {
             // не критично для первого экрана
           }
