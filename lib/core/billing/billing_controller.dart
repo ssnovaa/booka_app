@@ -1,6 +1,7 @@
 // ПУТЬ: lib/core/billing/billing_controller.dart
+import 'dart:async'; // ❗️ Добавлен для Future.delayed в restore()
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart'; // Добавлен import для PlatformException
+import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import 'package:booka_app/core/billing/billing_models.dart';
@@ -100,9 +101,18 @@ class BillingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 🟢 ИСПРАВЛЕНИЕ 1: Добавляем автоматический сброс ошибки после успешной загрузки.
   Future<void> reloadProducts() async {
     await _ensureInitialized();
     await _reloadProductsInternal();
+
+    // Сбрасываем ошибку, если она висит, и мы успешно загрузили продукты.
+    // Это автоматически "чистит" UI после ошибки оплаты, если пользователь нажимает "Оновити".
+    if (_purchaseState == BillingPurchaseState.error && _status == BillingStatus.ready) {
+      _purchaseState = BillingPurchaseState.none;
+      _lastError = null;
+    }
+
     notifyListeners();
   }
 
@@ -157,8 +167,15 @@ class BillingController extends ChangeNotifier {
   Future<void> buySubscription({bool isRetry = false}) async { // Добавляем флаг isRetry
     await _ensureInitialized();
 
+    // ❗️ Сбрасываем ошибку перед новой попыткой, если она висела
+    if (_purchaseState == BillingPurchaseState.error) {
+      _purchaseState = BillingPurchaseState.none;
+      _lastError = null;
+    }
+
+
     if (_subscriptionProductDetails == null) {
-      await reloadProducts();
+      await _reloadProductsInternal();
     }
 
     final product = _subscriptionProductDetails;
@@ -233,7 +250,20 @@ class BillingController extends ChangeNotifier {
 
     try {
       await _service.restorePurchases();
-      // Результат восстановления тоже придёт через _handlePurchaseStateChange.
+
+      // 🟢 ИСПРАВЛЕНИЕ 2: Сброс состояния, если процесс восстановления не вернул покупок.
+      // Даем потоку покупок время на обработку.
+      await Future<void>.delayed(const Duration(milliseconds: 750));
+
+      // Если статус все еще 'restoring' (т.е. _handlePurchaseStateChange не был вызван), сбрасываем.
+      if (_purchaseState == BillingPurchaseState.restoring) {
+        _purchaseState = BillingPurchaseState.none;
+        _lastError = null; // Сброс, на всякий случай
+        notifyListeners();
+        debugPrint('BillingController: Restore completed with 0 results. State reset to none.');
+      }
+      // ---------------------------------------------------------------------
+
     } catch (e, st) {
       debugPrint('BillingController: Error caught during restore initiation: $e\n$st'); // ⬅️ NEW DEBUG
       _purchaseState = BillingPurchaseState.error;
@@ -282,11 +312,13 @@ class BillingController extends ChangeNotifier {
     switch (state) {
       case BillingPurchaseState.purchased:
       // На этом этапе:
-      //  - Google Play завершил транзакцию;
+      //  - Google Play завершил транзакцию ИЛИ успешно завершилось восстановление;
       //  - BillingService уже дернул бекенд verify + acknowledge;
       //  - нам осталось обновить пользователя и вернуть UI в норму.
         await refreshUser();
+        // 🟢 ЯВНЫЙ СБРОС: Сбрасываем состояние после успешного обновления пользователя.
         _purchaseState = BillingPurchaseState.none;
+        _lastError = null;
         notifyListeners();
         break;
 

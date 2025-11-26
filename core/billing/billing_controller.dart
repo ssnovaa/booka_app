@@ -1,3 +1,4 @@
+import 'dart:async'; // Добавлен import для Future.delayed
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -55,6 +56,14 @@ class BillingController extends ChangeNotifier {
       notifyListeners();
 
       final products = await _service.queryProducts({_productId});
+
+      // 🟢 ИСПРАВЛЕНИЕ 1: Сбрасываем состояние ошибки покупки,
+      // так как успешный запрос продуктов показывает, что соединение восстановлено.
+      if (purchaseState == BillingPurchaseState.error) {
+        purchaseState = BillingPurchaseState.none;
+      }
+      // --------------------------------------------------------------------
+
       if (products.isNotEmpty) {
         _productDetails = products.first;
         product = BillingProduct(
@@ -104,6 +113,18 @@ class BillingController extends ChangeNotifier {
       notifyListeners();
 
       await _service.restorePurchases();
+
+      // 🟢 ИСПРАВЛЕНИЕ 2: Сброс состояния, если стрим покупок не вернул ничего.
+      // Даем потоку покупок 500мс на обработку, если покупка найдена.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+
+      // Если состояние все еще "restoring", значит, покупок не найдено, и оно зависло.
+      if (purchaseState == BillingPurchaseState.restoring) {
+        purchaseState = BillingPurchaseState.none;
+        notifyListeners();
+      }
+      // ---------------------------------------------------------------------
+
     } catch (e) {
       purchaseState = BillingPurchaseState.error;
       error = BillingError(message: 'Не вдалося відновити покупку', raw: e);
@@ -121,7 +142,12 @@ class BillingController extends ChangeNotifier {
   void _handlePurchaseStateChange(BillingPurchaseState state,
       {BillingError? error}) {
     purchaseState = state;
-    this.error = error ?? this.error;
+    // this.error = error ?? this.error; // Исходная логика.
+    // Заменяем на явное обновление, чтобы избежать конфликтов.
+    if (error != null) {
+      this.error = error;
+    }
+
     if (state == BillingPurchaseState.error && error != null) {
       debugPrint('Billing: error ${error.message}');
     }

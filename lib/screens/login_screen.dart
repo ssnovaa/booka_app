@@ -1,4 +1,3 @@
-// lib/screens/login_screen.dart
 import 'dart:ui'; // для BackdropFilter (легкий блюр на оверлеї)
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +14,7 @@ import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/core/auth/google_oauth.dart'; // kGoogleWebClientId (Web Client ID)
 import 'package:booka_app/widgets/loading_indicator.dart'; // Lottie-лоадер
 import 'package:booka_app/core/security/safe_errors.dart'; // санітизатор повідомлень
+import 'package:booka_app/screens/entry_screen.dart'; // 🚨 НОВЫЙ ИМПОРТ ДЛЯ EntryScreen
 
 // ⬇️ Запит дозволу лише після РЕЄСТРАЦІЇ
 import 'package:booka_app/screens/notification_permission_screen.dart';
@@ -40,6 +40,19 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isRegisterMode = false; // false — вхід, true — реєстрація
   bool _obscure = true;         // показ/приховати пароль
 
+  // 🚨 Функция перехода на главный экран (EntryScreen)
+  void _navigateToHome() {
+    // 🚨 ИСПРАВЛЕНИЕ: Гарантируем, что стек очищен до корня,
+    // где EntryScreen (с PopScope) будет восстановлен.
+    Navigator.of(context).pushAndRemoveUntil(
+      // Переходим на EntryScreen, который является корневым виджетом
+      MaterialPageRoute(builder: (_) => const EntryScreen()),
+      // Удаляем все предыдущие маршруты (Login, Register, и т.д.)
+          (route) => false,
+    );
+  }
+
+
   // 🔐 Вхід по email/пароль
   Future<void> _doLogin() async {
     setState(() {
@@ -56,14 +69,12 @@ class _LoginScreenState extends State<LoginScreen> {
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
 
-      // 🎧 Підготуємо плеєр у фоновому режимі
-      ap.ensurePrepared();
+      // 🚨 ИСПРАВЛЕНО: Удален не определенный метод initializeCreditsConsumer()
+      // ap.initializeCreditsConsumer(); 
 
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-            (route) => false,
-      );
+      _navigateToHome(); // Используем новую функцию навигации
+
     } on AppNetworkException catch (e) {
       setState(() => _error = safeErrorMessage(e));
     } catch (e) {
@@ -117,11 +128,13 @@ class _LoginScreenState extends State<LoginScreen> {
       // 4) Оновити користувача та підготувати плеєр
       setState(() => _progressText = 'Оновлюємо дані акаунту…');
       final userN = Provider.of<UserNotifier>(context, listen: false);
+
+      // 🚨 userN.fetchCurrentUser запустит инициализацию CTA после загрузки
       await userN.fetchCurrentUser();
 
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
-      ap.ensurePrepared();
+      // ap.ensurePrepared(); // 🚨 Удален лишний вызов prepare
 
       if (!mounted) return;
 
@@ -137,10 +150,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // 6) На головний екран
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-            (route) => false,
-      );
+      _navigateToHome(); // Используем новую функцию навигации
+
     } catch (e) {
       setState(() => _error = safeErrorMessage(e));
     } finally {
@@ -161,11 +172,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
     audio.userType = UserType.guest;
 
+    // 🚨 ИСПРАВЛЕНО: Удален не определенный метод initializeCreditsConsumer()
+    // audio.initializeCreditsConsumer(); 
+
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainScreen()),
-          (route) => false,
-    );
+    _navigateToHome(); // Используем новую функцию навигации
   }
 
   // 🟦 Вхід через Google: показуємо чітку індикацію на КОЖНОМУ кроці (вікно Google → отримання токена → бекенд)
@@ -224,11 +235,11 @@ class _LoginScreenState extends State<LoginScreen> {
       // Оновити користувача та плеєр
       setState(() => _progressText = 'Оновлюємо дані акаунту…');
       final userN = Provider.of<UserNotifier>(context, listen: false);
-      await userN.fetchCurrentUser();
+      await userN.fetchCurrentUser(); // 🚨 Запустить инициализацию CTA
 
       final ap = Provider.of<AudioPlayerProvider>(context, listen: false);
       ap.userType = getUserType(userN.user);
-      ap.ensurePrepared();
+      // ap.ensurePrepared(); // 🚨 Удален лишний вызов prepare
 
       if (!mounted) return;
 
@@ -254,10 +265,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // На головний екран
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-            (route) => false,
-      );
+      _navigateToHome(); // Используем новую функцию навигации
+
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -298,6 +307,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (остальной build метод)
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
 
@@ -387,7 +397,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                               // Основна кнопка: Увійти або Зареєструватися
                               ElevatedButton(
-                                onPressed: _loading ? null : _submit,
+                                onPressed: _loading || _gLoading ? null : _submit,
                                 child: _loading
                                     ? SizedBox(
                                   height: 18,
@@ -400,7 +410,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                               // 🟦 Кнопка входу через Google (використовується і як реєстрація через Google)
                               OutlinedButton.icon(
-                                onPressed: _gLoading ? null : _loginWithGoogle,
+                                onPressed: _gLoading || _loading ? null : _loginWithGoogle,
                                 icon: _gLoading
                                     ? SizedBox(
                                   width: 18,
@@ -471,9 +481,8 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 /// Приватний віджет повноекранного індикатора.
-/// - блокує будь-які торкання під собою;
-/// - має напівпрозорий фон і легкий блюр, щоб було видно контекст;
-/// - відображає Lottie-лоадер + зрозумілий текст етапу.
+// ... (остальной класс _BlockingLoader)
+
 class _BlockingLoader extends StatelessWidget {
   final bool visible;
   final String label;
