@@ -118,6 +118,8 @@ class CreditsConsumer {
     _timer?.cancel();
     _timer = null;
     if (kDebugMode) debugPrint('[CreditsConsumer] TICKER STOP');
+    // FIX: Отправляем оставшееся незасчитанное время при остановке/паузе.
+    _billRemainingSeconds();
   }
 
   Future<void> _forcePauseEverywhere() async {
@@ -126,26 +128,13 @@ class CreditsConsumer {
     } catch (_) {}
   }
 
-  Future<void> _tick() async {
+  // FIX: Новый метод для обработки запроса на списание и ответа от сервера
+  Future<void> _processConsumption(int seconds) async {
+    if (seconds <= 0) return;
+
+    if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
+
     try {
-      if (!_active) return;
-      if (isPaid()) { _ensureStopped(); return; }
-      if (!isFreeUser()) { _ensureStopped(); return; }
-      if (_exhausted) { _ensureStopped(); return; }
-      if (!_isPlayingAudibly()) { _ensureStopped(); return; }
-
-      final current = player.position;
-      var delta = current - _lastPosition;
-      _lastPosition = current;
-
-      if (delta.isNegative || delta > tickInterval * 2) {
-        delta = tickInterval;
-      }
-      final seconds = delta.inSeconds;
-      if (seconds <= 0) return;
-
-      if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
-
       final resp = await dio.post(
         '/api/credits/consume',
         data: {'seconds': seconds, 'context': 'player'},
@@ -176,6 +165,57 @@ class CreditsConsumer {
     }
   }
 
+  Future<void> _tick() async {
+    try {
+      if (!_active) return;
+      if (isPaid()) { _ensureStopped(); return; }
+      if (!isFreeUser()) { _ensureStopped(); return; }
+      if (_exhausted) { _ensureStopped(); return; }
+      if (!_isPlayingAudibly()) { _ensureStopped(); return; }
+
+      final current = player.position;
+      var delta = current - _lastPosition;
+      _lastPosition = current;
+
+      if (delta.isNegative || delta > tickInterval * 2) {
+        delta = tickInterval;
+      }
+      final seconds = delta.inSeconds;
+      if (seconds <= 0) return;
+
+      // FIX: Вызываем новый метод для обработки потребления
+      await _processConsumption(seconds);
+
+    } catch (e, st) {
+      // Catch block оставлен на месте, но логика перемещена в _processConsumption.
+      // Этот catch, по сути, остался для ошибок, не связанных с dio.post.
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] unexpected error in _tick: $e');
+      }
+    }
+  }
+
+  // FIX: Логика списания оставшихся секунд при остановке/паузе
+  void _billRemainingSeconds() {
+    if (isPaid() || !isFreeUser()) return;
+
+    final currentPosition = player.position;
+    final delta = currentPosition - _lastPosition;
+    final secondsToBill = delta.inSeconds;
+
+    if (secondsToBill <= 0) return;
+
+    // Сбрасываем _lastPosition. Это предотвращает двойное списание,
+    // если пользователь возобновит воспроизведение до завершения запроса.
+    _lastPosition = currentPosition;
+
+    if (kDebugMode) debugPrint('[CreditsConsumer] FINAL POST consume (Delta) seconds=$secondsToBill');
+
+    // "Fire-and-forget" call to consume the final delta
+    _processConsumption(secondsToBill);
+  }
+
+
   bool _isPlayingAudibly() {
     if (!player.playing) return false;
     final proc = player.processingState;
@@ -187,25 +227,18 @@ class CreditsConsumer {
     return true;
   }
 
+  // FIX: Обновленный _enforceExhaustionAndSyncZero, который больше не делает лишний 0-sync
   Future<void> _enforceExhaustionAndSyncZero() async {
     _exhausted = true;
 
-    // Немедленно останавливаем тикер и ставим на паузу, чтобы звук не шёл поверх пейволла.
+    // Немедленно останавливаем тикер и ставим на паузу.
+    // _ensureStopped() уже вызвал _billRemainingSeconds() для финального списания.
     _ensureStopped();
     if (!isPaid() && isFreeUser()) {
       await _forcePauseEverywhere();
     }
 
-    try {
-      await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': 0, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
-      );
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync sent after exhaust');
-    } catch (e) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync error: $e');
-    }
+    // Удален блок try-catch с dio.post, так как он избыточен.
 
     _exhaustedCtr.add(null);
     onExhausted?.call();

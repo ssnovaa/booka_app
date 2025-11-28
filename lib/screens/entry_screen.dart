@@ -178,7 +178,7 @@ class _EntryScreenState extends State<EntryScreen> {
                   FlutterAppMinimizerPlus.minimizeApp();
                 }
               },
-              child: const Text('Скасувати'),
+              child: const Text('Згорнути і слухати далі'),
             ),
 
             // 🛑 КНОПКА "Вийти" -> ПОЛНОЕ ЗАКРЫТИЕ
