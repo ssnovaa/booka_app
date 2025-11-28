@@ -55,7 +55,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     }
 
     _svc = RewardedAdService(dio: _dio, userId: _userId);
-    // (опционально) префетч: _svc!.load();
+    // (опціонально) префетч: _svc!.load();
   }
 
   // ====== СТАРЫЙ ФЛОУ (сохранён): +15 хв за винагородну рекламу ======
@@ -137,9 +137,10 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           // Берём секунды из UserNotifier
           int secondsLeft;
           try {
-            secondsLeft = context.read<UserNotifier>().freeSeconds; // если еть поле секунд
+            secondsLeft =
+                context.read<UserNotifier>().freeSeconds; // если есть поле секунд
           } catch (_) {
-            final mins = context.read<UserNotifier>().minutes;      // fallback из минут
+            final mins = context.read<UserNotifier>().minutes; // fallback из минут
             secondsLeft = (mins * 60).clamp(0, 1 << 31);
           }
 
@@ -154,7 +155,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
             app.disableAdsMode();
             debugPrint('[REWARD] balance>0 → disable ad-mode');
           }
-
         } catch (e) {
           debugPrint('[REWARD][WARN] sync freeSeconds to player failed: $e');
         }
@@ -191,35 +191,37 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
       if (!mounted) return;
       setState(() => _loading = false);
-      // (опционально) префетч: _svc!.load();
+      // (опціонально) префетч: _svc!.load();
     }
   }
 
-  // ====== НОВЫЙ ФЛОУ: согласие на ad-mode (реклама каждые ~10 мин, без нарахувань) ======
+  // ====== НОВЫЙ ФЛОУ: согласие на ad-mode (реклама кожні ~10 хв, без нарахувань) ======
   Future<void> _continueWithAds() async {
     if (_enablingAdsMode) return;
+
+    // Берём провайдер ДО pop(), чтобы после закрытия экрана не трогать context
+    final audio = context.read<AudioPlayerProvider>();
+
     setState(() {
       _enablingAdsMode = true;
       _status = 'Увімкнення режиму з рекламою...';
     });
 
+    // 1) Сразу закрываем екран з успішним результатом
+    Navigator.of(context).pop(true);
+
+    // 2) После закриття екрана просто включаем ad-mode.
+    // Воспроизведение контролирует сам AudioPlayerProvider (enableAdsMode).
     try {
-      // Включаем ad-mode в аудиопровайдере:
-      //  - отключает списание секунд
-      //  - даёт плееру играть дальше
-      //  - запускает автоматический показ межстраничной рекламы ~ кожні 10 хв (без нарахувань)
-      await context.read<AudioPlayerProvider>().enableAdsMode();
-
-      if (!mounted) return;
-
+      await audio.enableAdsMode();
       _mc.pulse();
-      // Экран показывается один раз — закрываем с успехом
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _status = 'Не вдалося увімкнути режим із рекламою: $e';
-      });
+    } catch (e, st) {
+      debugPrint('[REWARD][ADS_MODE] enableAdsMode() error: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _status = 'Не вдалося увімкнути режим із рекламою: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _enablingAdsMode = false);

@@ -32,60 +32,68 @@ class _MainScreenState extends State<MainScreen> {
 
   VoidCallback? _onContinueFromCard;
 
+  // Єдиний основний екран каталогу (головна вкладка)
   final GlobalKey<CatalogScreenState> _catalogKey =
   GlobalKey<CatalogScreenState>();
-
-  final GlobalKey _cacKey = GlobalKey();
-
-  final List<Widget?> _tabs = <Widget?>[null, null];
 
   @override
   void initState() {
     super.initState();
     final idx = widget.initialIndex;
     if (idx == 0 || idx == 1) {
-      _selectedIndex = idx!;
+      // 0 — «Жанри/Серії» (теперь отдельный роут), 1 — головна
+      // Для головного екрану просто залишаємо 1 як дефолт
+      _selectedIndex = (idx == 1) ? 1 : 1;
     }
   }
 
-  Widget _ensureTab(int i) {
-    if (_tabs[i] != null) return _tabs[i]!;
-    switch (i) {
-      case 0:
-        _tabs[0] = CatalogAndCollectionsScreen(key: _cacKey);
-        break;
-      case 1:
-        _tabs[1] = CatalogScreen(key: _catalogKey);
-        break;
-    }
-    return _tabs[i]!;
+  /// Открыть экран «Каталог і підбірки / Жанри / Серії» как отдельный route.
+  void _openCatalogAndCollections() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CatalogAndCollectionsScreen(),
+      ),
+    );
   }
 
   void setOnContinue(VoidCallback? cb) {
     _onContinueFromCard = cb;
   }
 
+  /// Переключение вкладок снаружи (через MainScreen.of(context)?.setTab)
   void setTab(int index) {
-    if (index == 0 || index == 1) {
-      setState(() => _selectedIndex = index);
+    if (index == 0) {
+      // Раніше це був таб, тепер — окремий екран
+      _openCatalogAndCollections();
+    } else if (index == 1) {
+      setState(() => _selectedIndex = 1);
     } else if (index == 3) {
       _onTabSelected(3);
     }
   }
 
   void _onTabSelected(int index) {
-    if (index == 0 || index == 1) {
-      if (index == 1 && _selectedIndex == 1) {
+    // 0 — «Жанри/Серії»: теперь отдельный экран поверх MainScreen
+    if (index == 0) {
+      _openCatalogAndCollections();
+      return;
+    }
+
+    // 1 — головна (CatalogScreen)
+    if (index == 1) {
+      // Повторный тап по «Домой»: если активны фильтры — сбросить их
+      if (_selectedIndex == 1) {
         final st = _catalogKey.currentState;
         if (st != null && st.filtersActive) {
           st.resetFilters();
           return;
         }
       }
-      setState(() => _selectedIndex = index);
+      setState(() => _selectedIndex = 1);
       return;
     }
 
+    // 3 — профиль / логин
     if (index == 3) {
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
       if (userNotifier.isAuth) {
@@ -111,22 +119,16 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  int get _stackIndex => (_selectedIndex == 0) ? 0 : 1;
-
   @override
   Widget build(BuildContext context) {
-    final Widget tab0 =
-    (_stackIndex == 0) ? _ensureTab(0) : (_tabs[0] ?? const SizedBox());
-    final Widget tab1 =
-    (_stackIndex == 1) ? _ensureTab(1) : (_tabs[1] ?? const SizedBox());
+    // Основное тело теперь всегда — CatalogScreen (головна),
+    // жанры/серії открываются поверх как отдельный экран.
+    final Widget body = CatalogScreen(key: _catalogKey);
 
     return Consumer<UserNotifier>(
       builder: (context, userNotifier, _) {
         return Scaffold(
-          body: IndexedStack(
-            index: _stackIndex,
-            children: <Widget>[tab0, tab1],
-          ),
+          body: body,
           bottomNavigationBar: CustomBottomNavBar(
             currentIndex: _selectedIndex,
             onTap: _onTabSelected,

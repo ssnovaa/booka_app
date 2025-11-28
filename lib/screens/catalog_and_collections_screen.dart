@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 
 import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
-import 'main_screen.dart';
 import '../core/network/api_client.dart';
 import '../constants.dart';
 import 'series_books_list_screen.dart';
@@ -38,20 +37,6 @@ class _CatalogAndCollectionsScreenState
     super.dispose();
   }
 
-  /// «Як у профілі»: переключити нижній таб MainScreen.
-  Future<void> _switchMainTab(int tab) async {
-    final ms = MainScreen.of(context);
-    if (ms != null) {
-      ms.setTab(tab);
-      return;
-    }
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
-          (route) => false,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -59,33 +44,72 @@ class _CatalogAndCollectionsScreenState
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
     final primary = theme.colorScheme.primary;
 
-    return Scaffold(
-      appBar: bookaAppBar(
-        backgroundColor: appBarBg,
-        actions: const [],
-        bottom: TabBar(
+    return PopScope(
+      canPop: false, // сами решаем, когда делать pop
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+
+        // 1) Если сейчас вкладка «Серії» — просто переключаемся на «Жанри»
+        if (_tabController.index == 1) {
+          _tabController.animateTo(0);
+          return;
+        }
+
+        // 2) Если вкладка «Жанри» — пытаемся сбросить выбранный жанр
+        final state = _genresKey.currentState;
+        if (state != null) {
+          try {
+            // _GenresScreenState має метод handleBackSync({bool scrollToTop = true})
+            final dynamic dyn = state;
+            final bool handled = dyn.handleBackSync(scrollToTop: true);
+            if (handled) {
+              // жанр був обраний — повернулися до сітки жанрів, pop не робимо
+              return;
+            }
+          } catch (_) {
+            // якщо з якоїсь причини методу немає — ігноруємо й ідемо далі
+          }
+        }
+
+        // 3) Жоден жанр не обраний, вкладка вже «Жанри» → просто закриваємо екран
+        // і повертаємось на MainScreen
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: bookaAppBar(
+          backgroundColor: appBarBg,
+          actions: const [],
+          bottom: TabBar(
+            controller: _tabController,
+            indicatorColor: primary,
+            labelColor: primary,
+            unselectedLabelColor: onSurfaceVariant,
+            tabs: const [
+              Tab(text: 'Жанри'),
+              Tab(text: 'Серії'),
+            ],
+          ),
+        ),
+        body: TabBarView(
           controller: _tabController,
-          indicatorColor: primary,
-          labelColor: primary,
-          unselectedLabelColor: onSurfaceVariant,
-          tabs: const [
-            Tab(text: 'Жанри'),
-            Tab(text: 'Серії'),
+          children: [
+            KeyedSubtree(
+              key: const PageStorageKey('genres_tab'),
+              child: GenresScreen(
+                key: _genresKey,
+                // Тепер «повернутись на головну» для жанрів = просто закрити цей роут
+                onReturnToMain: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ),
+            const _SeriesTab(key: PageStorageKey('series_tab')),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          KeyedSubtree(
-            key: const PageStorageKey('genres_tab'),
-            child: GenresScreen(
-              key: _genresKey,
-              onReturnToMain: () => _switchMainTab(1),
-            ),
-          ),
-          const _SeriesTab(key: PageStorageKey('series_tab')),
-        ],
       ),
     );
   }
@@ -128,9 +152,11 @@ class _SeriesTabState extends State<_SeriesTab> {
 
       return raw
           .whereType<dynamic>()
-          .map((e) => e is Map<String, dynamic>
-          ? e
-          : Map<String, dynamic>.from(e as Map))
+          .map(
+            (e) => e is Map<String, dynamic>
+            ? e
+            : Map<String, dynamic>.from(e as Map),
+      )
           .toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
@@ -186,7 +212,9 @@ class _SeriesTabState extends State<_SeriesTab> {
   }
 
   Future<void> _openSeries(
-      BuildContext context, Map<String, dynamic> series) async {
+      BuildContext context,
+      Map<String, dynamic> series,
+      ) async {
     final id = (series['id'] ?? series['series_id'])?.toString();
     final title = _seriesTitle(series);
     if (id == null || id.isEmpty) return;
@@ -199,9 +227,11 @@ class _SeriesTabState extends State<_SeriesTab> {
       );
       if (r.statusCode == 200 && r.data is List) {
         prefetched = (r.data as List)
-            .map((e) => e is Map<String, dynamic>
-            ? e
-            : Map<String, dynamic>.from(e as Map))
+            .map(
+              (e) => e is Map<String, dynamic>
+              ? e
+              : Map<String, dynamic>.from(e as Map),
+        )
             .toList();
       }
     } catch (_) {}
@@ -276,7 +306,7 @@ class _SeriesTabState extends State<_SeriesTab> {
             );
           }
 
-          // 👉 Одна серия = одна строка
+          // 👉 Одна серія = один рядок
           return CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
@@ -464,8 +494,11 @@ class _SeriesRowCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.library_books_rounded,
-                              size: 16, color: t.colorScheme.primary),
+                          Icon(
+                            Icons.library_books_rounded,
+                            size: 16,
+                            color: t.colorScheme.primary,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'Книг в серії: $booksCount',

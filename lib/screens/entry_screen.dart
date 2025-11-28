@@ -1,11 +1,16 @@
+// ПУТЬ: lib/screens/entry_screen.dart
+
 import 'dart:io';
-import 'dart:async'; // 🚨 Добавлен импорт для Future.delayed
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:provider/provider.dart';
+
+// ✅ ИМПОРТ ДЛЯ СВОРАЧИВАНИЯ (МИНИМИЗАЦИИ)
+import 'package:flutter_app_minimizer_plus/flutter_app_minimizer_plus.dart';
 
 // app
 import 'package:booka_app/screens/main_screen.dart';
@@ -161,10 +166,22 @@ class _EntryScreenState extends State<EntryScreen> {
           title: const Text('Вийти з додатку'),
           content: const Text('Ви дійсно хочете закрити додаток?'),
           actions: [
+            // 🔄 КНОПКА "СКАСУВАТИ" -> СВОРАЧИВАНИЕ (МИНИМИЗАЦИЯ)
             TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
+              onPressed: () {
+                // 1. Закрываем диалог (возвращаем false, чтобы PopScope знал, что выход не нужен)
+                Navigator.of(ctx).pop(false);
+
+                // 2. Сворачиваем приложение, если это Android
+                if (Platform.isAndroid) {
+                  // ✅ ИСПОЛЬЗУЕМ КОРРЕКТНЫЙ МЕТОД из FlutterAppMinimizerPlus
+                  FlutterAppMinimizerPlus.minimizeApp();
+                }
+              },
               child: const Text('Скасувати'),
             ),
+
+            // 🛑 КНОПКА "Вийти" -> ПОЛНОЕ ЗАКРЫТИЕ
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               child: const Text('Вийти'),
@@ -174,13 +191,14 @@ class _EntryScreenState extends State<EntryScreen> {
       },
     );
 
+    // Возвращаем true только если была нажата кнопка "Вийти"
     return result == true;
   }
 
   /// Реальный выход из приложения:
   /// 1) показать короткое "спасибо"
   /// 2) вызвать dart:io.exit(0) для немедленного уничтожения процесса
-  Future<void> _performExit() async {
+  Future<void> _performAppExit() async {
 
     // Пытаемся показать snackbar с благодарностью
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -235,8 +253,8 @@ class _EntryScreenState extends State<EntryScreen> {
         final shouldExit = await _showExitDialog();
         if (!shouldExit) return;
 
-        // Пользователь нажал "Выйти" → выполняем сценарий полного выхода
-        await _performExit();
+        // Пользователь нажал "Вийти" (Выход) → выполняем сценарий полного выхода
+        await _performAppExit();
       },
       child: Stack(
         children: [

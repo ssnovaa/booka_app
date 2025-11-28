@@ -67,14 +67,15 @@ class SubscriptionSection extends StatelessWidget {
 
     final bool isPaidNow = userNotifier.isPaidNow || billing.isPaidUser;
 
-    debugPrint(
-      '[SubscriptionsScreen] build: '
-          'isPaidNow=$isPaidNow, '
-          'status=${billing.status}, '
-          'purchaseState=${billing.purchaseState}, '
-          'hasError=${billing.hasError}, '
-          'products=${billing.products.length}',
-    );
+    // // УДАЛЕН/ЗАКОММЕНТИРОВАН БЛОК, ВЫЗЫВАВШИЙ СПАМ В КОНСОЛИ
+    // debugPrint(
+    //   '[SubscriptionsScreen] build: '
+    //       'isPaidNow=$isPaidNow, '
+    //       'status=${billing.status}, '
+    //       'purchaseState=${billing.purchaseState}, '
+    //       'hasError=${billing.hasError}, '
+    //       'products=${billing.products.length}',
+    // );
 
     // ---- 1. Пользователь уже с активной подпиской ----
     if (isPaidNow) {

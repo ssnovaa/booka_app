@@ -1,4 +1,4 @@
-// lib/main.dart (С ИСПРАВЛЕНИЯМИ ПОД НОВЫЙ БИЛЛИНГ)
+// lib/main.dart (РАБОЧИЙ + НАСТРОЙКИ ШТОРКИ И ЛОКСКРИНА)
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -70,11 +70,28 @@ Future<void> main() async {
     };
 
     try {
+      // 👇👇👇 НАСТРОЙКИ ВНЕШНЕГО ВИДА ПЛЕЕРА (ШТОРКА И ЛОК-СКРИН) 👇👇👇
       await JustAudioBackground.init(
         androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
         androidNotificationChannelName: 'Booka — аудіо',
         androidNotificationOngoing: true,
+
+        // 1. Цвет элементов (кнопок, полосы прогресса) в шторке
+        notificationColor: const Color(0xFF6750A4),
+
+        // 2. Иконка уведомления (маленькая в статус-баре)
+        androidNotificationIcon: 'mipmap/ic_launcher',
+
+        // 3. КНОПКИ ПЕРЕМОТКИ!
+        // Добавление этих строк заменяет кнопки "Prev/Next" на "-10" и "+30"
+        // (или добавляет их рядом, в зависимости от версии Android) на локскрине
+        rewindInterval: const Duration(seconds: 10),
+        fastForwardInterval: const Duration(seconds: 30),
+
+        // 4. Предзагрузка обложки
+        preloadArtwork: true,
       );
+      // 👆👆👆 КОНЕЦ НАСТРОЕК 👇👇👇
     } catch (_) {}
 
     // Провайдеры создаём заранее, чтобы связать Audio ↔ User

@@ -2,7 +2,7 @@ name: booka_app
 description: "Booka — аудіокниги українською"
 publish_to: 'none'
 
-version: 1.0.0+29
+version: 1.0.0+30
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -26,6 +26,7 @@ dependencies:
   cached_network_image: ^3.2.3
   google_sign_in: ^6.2.1
   permission_handler: ^12.0.1
+  flutter_app_minimizer_plus: ^1.0.2
 
   # Push / локальні сповіщення (версії не фіксуємо, підтягнуться сумісні)
   firebase_core:

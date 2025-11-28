@@ -1,10 +1,12 @@
-// lib/main.dart (С ИСПРАВЛЕНИЯМИ)
+// lib/main.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ✅ Додано для SystemChrome
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // ᐊ===== 1. ДОБАВЛЕН ИМПОРТ PUSH
+import 'package:firebase_core/firebase_core.dart'; // ✅ Додано для ініціалізації
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/theme_notifier.dart';
@@ -12,43 +14,45 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/screens/entry_screen.dart';
 import 'package:booka_app/screens/catalog_screen.dart' show routeObserver;
 
+// 👇 Екран згоди / режиму з рекламою
+import 'package:booka_app/screens/reward_test_screen.dart';
+
 import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
 
-// 👇 Глобальный инжектор баннера поверх всех экранов
+// 👇 Глобальний інжектор банера
 import 'package:booka_app/widgets/global_banner_injector.dart';
 
-// 👇 НОВЫЙ ИМПОРТ СЕРВИСА БИЛЛИНГА
-import 'package:booka_app/services/billing_service.dart';
+// 👇 Білінг
+import 'package:booka_app/core/billing/billing_service.dart';
+import 'package:booka_app/core/billing/billing_controller.dart';
+
+// Локалізація (обов'язково для Android меню)
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
 
-/// Реактор на изменение жизненного цикла приложения
+/// Реактор на зміну життєвого циклу
 class _LifecycleReactor with WidgetsBindingObserver {
   final AudioPlayerProvider audio;
-  // ᐊ===== 1. ДОДАЄМО UserNotifier
   final UserNotifier userNotifier;
 
-  // ᐊ===== 2. ОНОВЛЮЄМО КОНСТРУКТОР
   _LifecycleReactor(this.audio, this.userNotifier) {
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       unawaited(audio.flushProgress());
     }
 
-    // ᐊ===== 3. ДОДАЄМО БЛОК ДЛЯ ОНОВЛЕННЯ СТАТУСУ
-    // Цей код спрацює, коли користувач повернеться в додаток
     if (state == AppLifecycleState.resumed) {
       try {
-        // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
-        //    (Цей метод існує у lib/user_notifier.dart [lib/user_notifier.dart:115])
         userNotifier.fetchCurrentUser();
       } catch (e) {
-        // ігноруємо помилку, якщо запит не вдався (напр. немає мережі)
+        // ігноруємо
       }
     }
   }
@@ -60,6 +64,12 @@ Future<void> main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
+    // ✅ Фіксація орієнтації (портретна)
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       Zone.current.handleUncaughtError(
@@ -68,15 +78,33 @@ Future<void> main() async {
       );
     };
 
+    // ✅ Ініціалізація Firebase (безпечна, без firebase_options.dart)
+    // На Android воно підтягне google-services.json автоматично.
+    try {
+      await Firebase.initializeApp();
+    } catch (_) {}
+
+    // 🎵 НАЛАШТУВАННЯ ПЛЕЄРА (ШТОРКА ТА ЛОК-СКРІН)
     try {
       await JustAudioBackground.init(
         androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
         androidNotificationChannelName: 'Booka — аудіо',
         androidNotificationOngoing: true,
+
+        // 🎨 Зовнішній вигляд (колір іконок та прогрес-бару)
+        notificationColor: const Color(0xFF6750A4),
+        androidNotificationIcon: 'mipmap/ic_launcher',
+
+        // ⏩ КНОПКИ ПЕРЕМОТКИ (Замість "Prev/Next" на локскріні)
+        rewindInterval: const Duration(seconds: 10),
+        fastForwardInterval: const Duration(seconds: 30),
+
+        // 🖼️ Завантаження обкладинок
+        preloadArtwork: true,
       );
     } catch (_) {}
 
-    // Провайдеры создаём заранее, чтобы связать Audio ↔ User
+    // Провайдери
     final themeNotifier = ThemeNotifier();
     try {
       await themeNotifier.load();
@@ -84,26 +112,21 @@ Future<void> main() async {
 
     final userNotifier = UserNotifier();
     final audioProvider = AudioPlayerProvider();
-
-    // 👇 СОЗДАЁМ ЕКЗЕМПЛЯР НОВОГО СЕРВИСА БИЛЛИНГА
     final billingService = BillingService();
 
-    // ‼️‼️‼️ БЛОК СЛУШАТЕЛЯ PUSH УДАЛЕН ОТСЮДА (строки 81-93) ‼️‼️‼️
-    // Он будет обрабатываться только в PushService
-
-    // Связка секунд с UserNotifier
+    // Зв'язка секунд
     audioProvider.getFreeSeconds = () => userNotifier.freeSeconds;
     audioProvider.setFreeSeconds = (int v) {
       userNotifier.setFreeSeconds(v);
       audioProvider.onExternalFreeSecondsUpdated(v);
     };
 
-    // Инициализация сети
+    // Мережа
     try {
       await ApiClient.init();
     } catch (_) {}
 
-    // Инициализация AdMob
+    // Реклама
     try {
       await MobileAds.instance.updateRequestConfiguration(
         RequestConfiguration(
@@ -113,36 +136,37 @@ Future<void> main() async {
     } catch (_) {}
     await MobileAds.instance.initialize();
 
-    // === ВАЖНО: назначаем колбэки провайдера АУДИО ===
-
-    // 2) Автопоказ межстраничной рекламы раз в 10 минут (ad-mode)
+    // Колбек показу реклами
     audioProvider.onShowIntervalAd = () async {
       await _showInterstitialAd(audioProvider);
     };
 
-    // (Удалены старые колбэки, как и в вашем файле)
-
-    // Запуск приложения
     runApp(
       MultiProvider(
         providers: [
           ChangeNotifierProvider<ThemeNotifier>.value(value: themeNotifier),
-          // ᐊ===== ✅✅✅ ВИПРАВЛЕНО ОДРУК (з ChangeNodeNotifierProvider)
           ChangeNotifierProvider<UserNotifier>.value(value: userNotifier),
-          ChangeNotifierProvider<AudioPlayerProvider>.value(value: audioProvider),
-
-          // 👇 ДОБАВЛЯЕМ BILLINGSERVICE В ДЕРЕВО ПРОВАЙДЕРОВ
-          ChangeNotifierProvider<BillingService>.value(value: billingService),
+          ChangeNotifierProvider<AudioPlayerProvider>.value(
+            value: audioProvider,
+          ),
+          Provider<BillingService>.value(
+            value: billingService,
+          ),
+          ChangeNotifierProvider<BillingController>(
+            create: (context) => BillingController(
+              service: context.read<BillingService>(),
+              userNotifier: userNotifier,
+              audioPlayerProvider: audioProvider,
+            ),
+          ),
         ],
         child: const BookaApp(),
       ),
     );
 
-    // Отложённые инициализации
+    // Відкладена ініціалізація
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        // ‼️‼️‼️ ИЗМЕНЕНИЕ ЗДЕСЬ ‼️‼️‼️
-        // Передаем userNotifier, который создали на строке 78
         await PushService.instance.init(
           navigatorKey: _navKey,
           userNotifier: userNotifier,
@@ -153,34 +177,25 @@ Future<void> main() async {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
           final audio = Provider.of<AudioPlayerProvider>(ctx, listen: false);
-          // ᐊ===== 4. ОТРИМУЄМО UserNotifier З КОНТЕКТУ
           final user = Provider.of<UserNotifier>(ctx, listen: false);
-
-          // 👇 ПРИВЯЗЫВАЕМ КОНТЕКСТ К BILLINGSERVICE,
-          // ЩОБ ВІН МІГ ДОСТУКАТИСЯ ДО UserNotifier/AudioPlayerProvider
-          billingService.attachContext(ctx);
 
           final hasLocal = await audio.hasSavedSession();
           if (!hasLocal) {
-            // ᐊ===== 5. ДОДАЄМО ПЕРВИННЕ ЗАВАНТАЖЕННЯ СТАТУСУ
             try {
-              // ᐊ===== ✅ ВИПРАВЛЕНО: Викликаємо `fetchCurrentUser()` замість `balance(true)`
-              await user.fetchCurrentUser(); // [lib/user_notifier.dart:115]
-            } catch (e) {
-              // ігноруємо, якщо немає мережі
-            }
+              await user.fetchCurrentUser();
+            } catch (e) {}
             await audio.hydrateFromServerIfAvailable();
           }
 
           await audio.ensurePrepared();
-
-          // ᐊ===== 6. ОНОВЛЮЄМО СТВОРЕННЯ РЕАКТОРА
           _reactor ??= _LifecycleReactor(audio, user);
         }
       } catch (_) {}
     });
   }, (Object error, StackTrace stack) {
-    FlutterError.presentError(FlutterErrorDetails(exception: error, stack: stack));
+    FlutterError.presentError(
+      FlutterErrorDetails(exception: error, stack: stack),
+    );
   });
 }
 
@@ -195,6 +210,7 @@ class BookaApp extends StatelessWidget {
           title: 'Booka — аудіокниги українською',
           debugShowCheckedModeBanner: false,
           themeMode: themeNotifier.themeMode,
+
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.light,
@@ -205,18 +221,31 @@ class BookaApp extends StatelessWidget {
             brightness: Brightness.dark,
             colorSchemeSeed: Colors.deepPurple,
           ),
+
+          // Локалізація (стандартна)
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('uk', 'UA'),
+            Locale('en', 'US'),
+          ],
+
           home: const EntryScreen(),
           navigatorObservers: [routeObserver],
           navigatorKey: _navKey,
 
-          // (Удалены старые роуты, как и в вашем файле)
+          routes: <String, WidgetBuilder>{
+            '/rewarded': (_) => const RewardTestScreen(),
+          },
 
-          // Единый хост баннера (без глобального WillPopScope)
           builder: (context, child) {
             final Widget safeChild = child ?? const SizedBox.shrink();
             return GlobalBannerInjector(
               child: safeChild,
-              adUnitId: 'ca-app-pub-3940256099942544/6300978111', // тестовый баннер
+              adUnitId: 'ca-app-pub-3940256099942544/6300978111',
               adSize: AdSize.banner,
               navigatorKey: _navKey,
               ctaRouteName: '/rewarded',
@@ -228,8 +257,6 @@ class BookaApp extends StatelessWidget {
   }
 }
 
-/// Показываем межстраничную рекламу для ad-mode.
-/// На время показа ставим плеер на паузу и затем возвращаем воспроизведение.
 Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   final wasPlaying = audio.isPlaying;
   if (wasPlaying) {
@@ -239,7 +266,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   final completer = Completer<void>();
 
   InterstitialAd.load(
-    adUnitId: 'ca-app-pub-3940256099942544/1033173712', // тестовый interstitial
+    adUnitId: 'ca-app-pub-3940256099942544/1033173712',
     request: const AdRequest(),
     adLoadCallback: InterstitialAdLoadCallback(
       onAdLoaded: (InterstitialAd ad) {
@@ -259,11 +286,9 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
             if (!completer.isCompleted) completer.complete();
           },
         );
-
-        ad.show(); // пользователь закроет — колбэк сработает
+        ad.show();
       },
       onAdFailedToLoad: (LoadAdError error) {
-        // Не критично: просто продолжаем воспроизведение.
         if (wasPlaying) {
           unawaited(audio.play());
         }

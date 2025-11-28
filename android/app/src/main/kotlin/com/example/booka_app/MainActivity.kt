@@ -7,8 +7,8 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    // Канал для общения Dart ↔️ Android
-    private val CHANNEL = "com.example.booka_app/navigation"
+    // 🟢 Имя канала, используемое во Flutter-коде (EntryScreen.dart)
+    private val CHANNEL = "com.booka_app/platform_exit"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -18,14 +18,15 @@ class MainActivity : FlutterActivity() {
             CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                // Опциональный метод: свернуть приложение (если где-то ещё пригодится)
-                "moveTaskToBack" -> {
+                // 🟢 МЕТОД 1: Имитация кнопки "Домой" (сворачивание, не закрытие)
+                "minimizeApp" -> {
+                    // moveTaskToBack(true) — это нативный способ перевести Activity в фон,
+                    // имитируя нажатие Home, что не ломает биллинг.
                     val moved = moveTaskToBack(true)
                     result.success(moved)
                 }
 
-                // Жёсткий выход по запросу Flutter:
-                // finishAffinity() пытается закрыть всю задачу (как свайп из recent apps)
+                // МЕТОД 2: Жёсткий выход по запросу Flutter (для кнопки "Вийти")
                 "exitApp" -> {
                     try {
                         // Закрываем всю задачу (все Activity внутри этой задачи)
