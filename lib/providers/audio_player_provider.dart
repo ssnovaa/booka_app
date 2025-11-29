@@ -469,7 +469,8 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     if (seconds <= 0) {
       _log('external free seconds → exhausted ($seconds)');
-      consumer.stop();
+      unawaited(consumer.flushPendingForExhaustion());
+      consumer.stop(flushPending: false);
       _stopFreeSecondsTicker();
 
       // FIX: Если секунды дошли до нуля, принудительно ставим на паузу.

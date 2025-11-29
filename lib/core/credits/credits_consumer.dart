@@ -72,8 +72,8 @@ class CreditsConsumer {
     _ensureStarted();
   }
 
-  void stop() {
-    _ensureStopped();
+  void stop({bool flushPending = true}) {
+    _ensureStopped(flushPending: flushPending);
   }
 
   /// Сбрасывает флаг «исчерпано», чтобы тикер снова мог стартовать.
@@ -88,6 +88,12 @@ class CreditsConsumer {
   }
 
   bool get isExhausted => _exhausted;
+
+  /// Принудительно дожать накопленное списание перед тем, как внешняя
+  /// логика остановит воспроизведение из‑за обнуления локального таймера.
+  Future<void> flushPendingForExhaustion() async {
+    await _consumePendingIfAny(reason: 'ui-zero');
+  }
 
   // --- внутреннее ---
 
@@ -106,11 +112,14 @@ class CreditsConsumer {
     _timer = Timer.periodic(tickInterval, (_) => _tick());
   }
 
-  void _ensureStopped() {
+  void _ensureStopped({bool flushPending = true}) {
     // Даже если тикер не стартовал (_active == false), попробуем дослать расход,
     // чтобы короткие сессии не терялись.
     final wasActive = _active;
-    unawaited(_consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+    if (flushPending) {
+      unawaited(
+          _consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+    }
 
     if (!wasActive) return;
 
