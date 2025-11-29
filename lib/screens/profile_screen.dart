@@ -809,7 +809,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (!userNotifier.isAuth) return const LoginScreen();
 
-    debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
     return Scaffold(
       appBar: bookaAppBar(actions: const []),
       body: FutureBuilder<Map<String, dynamic>?>(
