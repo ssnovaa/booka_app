@@ -461,6 +461,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (player.playing && _userType == UserType.free && !_adMode) {
         _log('external free seconds hit zero while playing. Forcing pause.');
         player.pause();
+
+        // Отображаем экран награды сразу после паузы, чтобы не ждать
+        // повторного нажатия «play».
+        onCreditsExhausted?.call();
       }
 
       return;

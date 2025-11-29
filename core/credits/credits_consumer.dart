@@ -114,55 +114,18 @@ class CreditsConsumer {
 
   void _ensureStopped() {
     if (!_active) return;
+    // Списываем всё до текущей позиции, даже если не дождались 1-го тика.
+    unawaited(_consumePendingIfAny(reason: 'stop'));
     _active = false;
     _timer?.cancel();
     _timer = null;
     if (kDebugMode) debugPrint('[CreditsConsumer] TICKER STOP');
-    // FIX: Отправляем оставшееся незасчитанное время при остановке/паузе.
-    _billRemainingSeconds();
   }
 
   Future<void> _forcePauseEverywhere() async {
     try {
       await player.pause();
     } catch (_) {}
-  }
-
-  // FIX: Новый метод для обработки запроса на списание и ответа от сервера
-  Future<void> _processConsumption(int seconds) async {
-    if (seconds <= 0) return;
-
-    if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
-
-    try {
-      final resp = await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': seconds, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
-      );
-
-      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-        if (remainSec > 0 && _exhausted) {
-          if (kDebugMode) debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
-          _exhausted = false;
-        }
-
-        onBalanceUpdated?.call(remainSec, remainMin);
-
-        if (remainSec <= 0) {
-          await _enforceExhaustionAndSyncZero();
-        }
-      }
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] consume error: $e');
-        debugPrint('$st');
-      }
-    }
   }
 
   Future<void> _tick() async {
@@ -183,38 +146,15 @@ class CreditsConsumer {
       final seconds = delta.inSeconds;
       if (seconds <= 0) return;
 
-      // FIX: Вызываем новый метод для обработки потребления
-      await _processConsumption(seconds);
-
+      if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
+      await _postConsume(seconds, reason: 'tick');
     } catch (e, st) {
-      // Catch block оставлен на месте, но логика перемещена в _processConsumption.
-      // Этот catch, по сути, остался для ошибок, не связанных с dio.post.
       if (kDebugMode) {
-        debugPrint('[CreditsConsumer] unexpected error in _tick: $e');
+        debugPrint('[CreditsConsumer] consume error: $e');
+        debugPrint('$st');
       }
     }
   }
-
-  // FIX: Логика списания оставшихся секунд при остановке/паузе
-  void _billRemainingSeconds() {
-    if (isPaid() || !isFreeUser()) return;
-
-    final currentPosition = player.position;
-    final delta = currentPosition - _lastPosition;
-    final secondsToBill = delta.inSeconds;
-
-    if (secondsToBill <= 0) return;
-
-    // Сбрасываем _lastPosition. Это предотвращает двойное списание,
-    // если пользователь возобновит воспроизведение до завершения запроса.
-    _lastPosition = currentPosition;
-
-    if (kDebugMode) debugPrint('[CreditsConsumer] FINAL POST consume (Delta) seconds=$secondsToBill');
-
-    // "Fire-and-forget" call to consume the final delta
-    _processConsumption(secondsToBill);
-  }
-
 
   bool _isPlayingAudibly() {
     if (!player.playing) return false;
@@ -227,20 +167,78 @@ class CreditsConsumer {
     return true;
   }
 
-  // FIX: Обновленный _enforceExhaustionAndSyncZero, который больше не делает лишний 0-sync
   Future<void> _enforceExhaustionAndSyncZero() async {
     _exhausted = true;
 
-    // Немедленно останавливаем тикер и ставим на паузу.
-    // _ensureStopped() уже вызвал _billRemainingSeconds() для финального списания.
+    // Немедленно останавливаем тикер и ставим на паузу, чтобы звук не шёл поверх пейволла.
     _ensureStopped();
     if (!isPaid() && isFreeUser()) {
       await _forcePauseEverywhere();
     }
 
-    // Удален блок try-catch с dio.post, так как он избыточен.
+    try {
+      await dio.post(
+        '/api/credits/consume',
+        data: {'seconds': 0, 'context': 'player'},
+        options: Options(headers: {'Accept': 'application/json'}),
+      );
+      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync sent after exhaust');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync error: $e');
+    }
 
     _exhaustedCtr.add(null);
     onExhausted?.call();
+  }
+
+  Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
+    if (isPaid()) return;
+    if (!isFreeUser()) return;
+
+    final current = player.position;
+    var delta = current - _lastPosition;
+    if (delta.isNegative) return;
+    if (delta > tickInterval * 2) {
+      delta = tickInterval;
+    }
+
+    final seconds = delta.inSeconds;
+    if (seconds <= 0) return;
+
+    _lastPosition = current;
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] POST consume seconds=$seconds (reason=$reason)');
+    }
+    await _postConsume(seconds, reason: reason);
+  }
+
+  Future<void> _postConsume(int seconds, {required String reason}) async {
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] -> /consume $seconds sec (reason=$reason)');
+    }
+    final resp = await dio.post(
+      '/api/credits/consume',
+      data: {'seconds': seconds, 'context': 'player'},
+      options: Options(headers: {'Accept': 'application/json'}),
+    );
+
+    if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+      final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+      final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+      // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+      if (remainSec > 0 && _exhausted) {
+        if (kDebugMode) {
+          debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
+        }
+        _exhausted = false;
+      }
+
+      onBalanceUpdated?.call(remainSec, remainMin);
+
+      if (remainSec <= 0) {
+        await _enforceExhaustionAndSyncZero();
+      }
+    }
   }
 }
