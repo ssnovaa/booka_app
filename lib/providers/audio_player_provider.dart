@@ -295,6 +295,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final int next = current - 1;
       setFn(next < 0 ? 0 : next);
+
+      if (next <= 0) {
+        _handleFreeSecondsExhausted(flushConsumer: true);
+      }
     });
   }
 
@@ -468,20 +472,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     if (seconds <= 0) {
       _log('external free seconds → exhausted ($seconds)');
-      unawaited(consumer.flushPendingForExhaustion());
-      consumer.stop(flushPending: false);
-      _stopFreeSecondsTicker();
-
-      // FIX: Если секунды дошли до нуля, принудительно ставим на паузу.
-      if (player.playing && _userType == UserType.free && !_adMode) {
-        _log('external free seconds hit zero while playing. Forcing pause.');
-        player.pause();
-
-        // Отображаем экран награды сразу после паузы, чтобы не ждать
-        // повторного нажатия «play».
-        onCreditsExhausted?.call();
-      }
-
+      _handleFreeSecondsExhausted(flushConsumer: true);
       return;
     }
 
@@ -507,6 +498,24 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     _rearmFreeSecondsTicker();
+  }
+
+  void _handleFreeSecondsExhausted({bool flushConsumer = false}) {
+    final consumer = _creditsConsumer;
+
+    if (consumer != null) {
+      if (flushConsumer) {
+        unawaited(consumer.flushPendingForExhaustion());
+      }
+      consumer.stop(flushPending: !flushConsumer);
+    }
+
+    _stopFreeSecondsTicker();
+
+    if (player.playing && _userType == UserType.free && !_adMode) {
+      player.pause();
+      onCreditsExhausted?.call();
+    }
   }
 
   // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
