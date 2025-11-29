@@ -47,6 +47,12 @@ class RewardedAdService {
     _isShowing = false;
   }
 
+  /// Прерывает текущую загрузку/показ и очищает ресурс.
+  void cancel({String reason = 'Показ винагородної реклами скасовано.'}) {
+    _setError(reason);
+    _dispose();
+  }
+
   /// Прелоад объявления. Возвращает true, если готово к показу.
   Future<bool> load() async {
     if (_isLoaded && _ad != null) return true;
@@ -114,11 +120,21 @@ class RewardedAdService {
       }
     }
 
+    if (_ad == null) {
+      _setError('Показ отменён: объявление недоступно.');
+      return false;
+    }
+
     // 1) Запрашиваем одноразовый nonce у сервера
     final nonce = await _requestNonce();
     if (nonce == null || nonce.isEmpty) {
       _lastError ??= 'Сервер не выдал одноразовый токен (nonce).';
       _dispose();
+      return false;
+    }
+
+    if (_ad == null) {
+      _setError('Показ отменён до отображения объявления.');
       return false;
     }
 

@@ -35,6 +35,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
   bool _isAuthorized = false;
   int _userId = 0;
+  int _rewardSession = 0; // токен для отмены текущего показа
 
   // Пульс для лічильника хвилин
   final MinutesCounterController _mc = MinutesCounterController();
@@ -55,12 +56,28 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     }
 
     _svc = RewardedAdService(dio: _dio, userId: _userId);
-    // (опционально) префетч: _svc!.load();
+    // (опціонально) префетч: _svc!.load();
+  }
+
+  void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
+    _rewardSession++;
+    _svc?.cancel(reason: reason);
+    if (mounted && _loading) {
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancelRewardFlow();
+    super.dispose();
   }
 
   // ====== СТАРЫЙ ФЛОУ (сохранён): +15 хв за винагородну рекламу ======
   Future<void> _get15() async {
     if (_svc == null || _loading) return;
+
+    final int session = ++_rewardSession;
 
     final app = context.read<AudioPlayerProvider>();
     final bool wasPlayingBeforeAd = app.isPlaying;
@@ -95,6 +112,10 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD] STEP 1: load()');
       final loaded = await _svc!.load();
       debugPrint('[REWARD] loaded=$loaded');
+      if (!mounted || _rewardSession != session) {
+        _svc?.cancel();
+        return;
+      }
       if (!loaded) {
         final err = _svc?.lastError ??
             'Реклама недоступна (load=false). Спробуйте пізніше.';
@@ -111,6 +132,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD] STEP 2: showAndAwaitCredit()');
       final credited = await _svc!.showAndAwaitCredit();
       debugPrint('[REWARD] credited=$credited');
+
+      if (!mounted || _rewardSession != session) return;
 
       if (!mounted) return;
 
@@ -137,9 +160,10 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
           // Берём секунды из UserNotifier
           int secondsLeft;
           try {
-            secondsLeft = context.read<UserNotifier>().freeSeconds; // если еть поле секунд
+            secondsLeft =
+                context.read<UserNotifier>().freeSeconds; // если есть поле секунд
           } catch (_) {
-            final mins = context.read<UserNotifier>().minutes;      // fallback из минут
+            final mins = context.read<UserNotifier>().minutes; // fallback из минут
             secondsLeft = (mins * 60).clamp(0, 1 << 31);
           }
 
@@ -154,7 +178,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
             app.disableAdsMode();
             debugPrint('[REWARD] balance>0 → disable ad-mode');
           }
-
         } catch (e) {
           debugPrint('[REWARD][WARN] sync freeSeconds to player failed: $e');
         }
@@ -181,7 +204,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       // Всегда возобновляем расписание межстраничной рекламы после Rewarded
       app.resumeAdSchedule('rewarded');
 
-      if (wasPlayingBeforeAd && !app.isPlaying) {
+      if (_rewardSession == session && wasPlayingBeforeAd && !app.isPlaying) {
         try {
           await app.play();
         } catch (e) {
@@ -190,36 +213,40 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _loading = false);
-      // (опционально) префетч: _svc!.load();
+      if (_rewardSession == session) {
+        setState(() => _loading = false);
+      }
+      // (опціонально) префетч: _svc!.load();
     }
   }
 
-  // ====== НОВЫЙ ФЛОУ: согласие на ad-mode (реклама каждые ~10 мин, без нарахувань) ======
+  // ====== НОВЫЙ ФЛОУ: согласие на ad-mode (реклама кожні ~10 хв, без нарахувань) ======
   Future<void> _continueWithAds() async {
     if (_enablingAdsMode) return;
+
+    // Берём провайдер ДО pop(), чтобы после закрытия экрана не трогать context
+    final audio = context.read<AudioPlayerProvider>();
+
     setState(() {
       _enablingAdsMode = true;
       _status = 'Увімкнення режиму з рекламою...';
     });
 
+    // 1) Сразу закрываем екран з успішним результатом
+    Navigator.of(context).pop(true);
+
+    // 2) После закриття екрана просто включаем ad-mode.
+    // Воспроизведение контролирует сам AudioPlayerProvider (enableAdsMode).
     try {
-      // Включаем ad-mode в аудиопровайдере:
-      //  - отключает списание секунд
-      //  - даёт плееру играть дальше
-      //  - запускает автоматический показ межстраничной рекламы ~ кожні 10 хв (без нарахувань)
-      await context.read<AudioPlayerProvider>().enableAdsMode();
-
-      if (!mounted) return;
-
+      await audio.enableAdsMode();
       _mc.pulse();
-      // Экран показывается один раз — закрываем с успехом
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _status = 'Не вдалося увімкнути режим із рекламою: $e';
-      });
+    } catch (e, st) {
+      debugPrint('[REWARD][ADS_MODE] enableAdsMode() error: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _status = 'Не вдалося увімкнути режим із рекламою: $e';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _enablingAdsMode = false);
@@ -234,14 +261,19 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     // Глобальный баланс минут
     final minutes = context.watch<UserNotifier>().minutes;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Продовжити прослуховування')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
+    return WillPopScope(
+      onWillPop: () async {
+        _cancelRewardFlow();
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Продовжити прослуховування')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
               // Статус/описание
               Container(
                 width: double.infinity,
