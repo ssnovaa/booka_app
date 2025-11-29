@@ -48,7 +48,6 @@ Future<void> saveCurrentListenToPrefs({
 
   if (book == null || chapter == null) {
     await prefs.remove(_kCurrentListenKey);
-    _log('saveCurrentListen: CLEARED');
     return;
   }
 
