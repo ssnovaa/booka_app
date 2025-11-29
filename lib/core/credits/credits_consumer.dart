@@ -113,9 +113,13 @@ class CreditsConsumer {
   }
 
   void _ensureStopped() {
-    if (!_active) return;
-    // Списываем всё до текущей позиции, даже если не дождались 1-го тика.
-    unawaited(_consumePendingIfAny(reason: 'stop'));
+    // Даже если тикер не стартовал (_active == false), попробуем дослать расход,
+    // чтобы короткие сессии не терялись.
+    final wasActive = _active;
+    unawaited(_consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+
+    if (!wasActive) return;
+
     _active = false;
     _timer?.cancel();
     _timer = null;
