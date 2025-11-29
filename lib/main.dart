@@ -290,8 +290,8 @@ Future<bool> _openRewardScreen() async {
 
   try {
     debugPrint('[REWARD] opening reward screen…');
-    await nav.pushNamed('/rewarded');
-    return true;
+    final result = await nav.pushNamed('/rewarded');
+    return result == true;
   } catch (e, st) {
     debugPrint('[REWARD][ERR] open reward failed: $e\n$st');
     return false;

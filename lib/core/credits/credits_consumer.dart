@@ -16,6 +16,7 @@ class CreditsConsumer {
 
   Timer? _timer;
   Duration _lastPosition = Duration.zero;
+  bool _hasBaseline = false;
   bool _active = false;
   bool _exhausted = false;
 
@@ -108,6 +109,7 @@ class CreditsConsumer {
 
     _active = true;
     _lastPosition = player.position;
+    _hasBaseline = true;
     _timer?.cancel();
     _timer = Timer.periodic(tickInterval, (_) => _tick());
   }
@@ -193,6 +195,12 @@ class CreditsConsumer {
   Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
     if (isPaid()) return;
     if (!isFreeUser()) return;
+
+    if (!_hasBaseline) {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+      return;
+    }
 
     final current = player.position;
     var delta = current - _lastPosition;
