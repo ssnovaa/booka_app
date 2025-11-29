@@ -1,8 +1,9 @@
 // lib/providers/audio_player_provider.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -47,7 +48,6 @@ Future<void> saveCurrentListenToPrefs({
 
   if (book == null || chapter == null) {
     await prefs.remove(_kCurrentListenKey);
-    if (kDebugMode) debugPrint('saveCurrentListen: CLEARED');
     return;
   }
 
@@ -344,7 +344,21 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void _log(String msg) {
-    if (kDebugMode) debugPrint('[AUDIO] $msg');
+    final line = '[AUDIO] $msg';
+    debugPrint(line);
+    unawaited(_appendAudioLog(line));
+  }
+
+  Future<void> _appendAudioLog(String line) async {
+    try {
+      final file = File('/storage/logs/booka.log');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        '${DateTime.now().toIso8601String()} $line\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    } catch (_) {}
   }
 
   void _pullDurationFromPlayer() {
@@ -395,7 +409,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         },
         tickInterval: const Duration(seconds: 20),
       );
-      if (kDebugMode) _log('CreditsConsumer создан');
+      _log('CreditsConsumer создан');
     }
   }
 
@@ -431,7 +445,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Сбрасывает внутренний флаг «исчерпано», чтобы после пополнения секунд
   /// `CreditsConsumer` снова позволял запускать воспроизведение.
   void resetCreditsExhaustion() {
-    if (kDebugMode) _log('resetCreditsExhaustion()');
+    _log('resetCreditsExhaustion()');
     final consumer = _creditsConsumer;
     consumer?.resetExhaustion();
     if (player.playing) {
@@ -453,8 +467,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     if (seconds <= 0) {
-      if (kDebugMode) _log('external free seconds → exhausted ($seconds)');
-      consumer.stop();
+      _log('external free seconds → exhausted ($seconds)');
+      unawaited(consumer.flushPendingForExhaustion());
+      consumer.stop(flushPending: false);
       _stopFreeSecondsTicker();
 
       // FIX: Если секунды дошли до нуля, принудительно ставим на паузу.
@@ -473,15 +488,13 @@ class AudioPlayerProvider extends ChangeNotifier {
     // FIX: Если мы получаем положительный баланс извне, и Ad Mode активен,
     // это означает, что Ad Mode должен быть отключен.
     if (seconds > 0 && _adMode) {
-      if (kDebugMode) _log('external free seconds > 0 → disable ad-mode');
+      _log('external free seconds > 0 → disable ad-mode');
       _disableAdMode();
       _syncAdScheduleWithPlayback(); // Re-sync scheduler after ad mode disabled
     }
 
     if (consumer.isExhausted) {
-      if (kDebugMode) {
-        _log('external free seconds → reset exhaustion ($seconds)');
-      }
+      _log('external free seconds → reset exhaustion ($seconds)');
       consumer.resetExhaustion();
     }
 
