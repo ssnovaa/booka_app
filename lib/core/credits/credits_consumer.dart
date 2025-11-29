@@ -101,9 +101,7 @@ class CreditsConsumer {
   /// логика остановит воспроизведение из‑за обнуления локального таймера.
   Future<void> flushPendingForExhaustion() async {
     await _consumePendingIfAny(reason: 'ui-zero');
-    if (!_exhausted) {
-      await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
-    }
+    await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
   }
 
   // --- внутреннее ---
