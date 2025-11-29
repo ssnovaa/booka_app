@@ -31,6 +31,7 @@ import 'package:booka_app/core/billing/billing_controller.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+Completer<void>? _interstitialInProgress; // защита от параллельных interstitial
 
 /// Реактор на зміну життєвого циклу
 class _LifecycleReactor with WidgetsBindingObserver {
@@ -258,12 +259,23 @@ class BookaApp extends StatelessWidget {
 }
 
 Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
+  if (_interstitialInProgress != null && !_interstitialInProgress!.isCompleted) {
+    return _interstitialInProgress!.future; // уже показываем, не запускаем вторую
+  }
+
   final wasPlaying = audio.isPlaying;
   if (wasPlaying) {
     await audio.pause();
   }
 
-  final completer = Completer<void>();
+  final completer = _interstitialInProgress = Completer<void>();
+
+  void completeOnce() {
+    if (!completer.isCompleted) {
+      completer.complete();
+    }
+    _interstitialInProgress = null;
+  }
 
   InterstitialAd.load(
     adUnitId: 'ca-app-pub-3940256099942544/1033173712',
@@ -276,14 +288,14 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
             if (wasPlaying) {
               unawaited(audio.play());
             }
-            if (!completer.isCompleted) completer.complete();
+            completeOnce();
           },
           onAdFailedToShowFullScreenContent: (ad, err) {
             ad.dispose();
             if (wasPlaying) {
               unawaited(audio.play());
             }
-            if (!completer.isCompleted) completer.complete();
+            completeOnce();
           },
         );
         ad.show();
@@ -292,7 +304,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
         if (wasPlaying) {
           unawaited(audio.play());
         }
-        if (!completer.isCompleted) completer.complete();
+        completeOnce();
       },
     ),
   );
