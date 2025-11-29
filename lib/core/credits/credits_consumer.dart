@@ -201,17 +201,30 @@ class CreditsConsumer {
 
     final current = player.position;
     var delta = current - _lastPosition;
-    if (delta.isNegative) return;
+    if (delta.isNegative) {
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] skip consume (negative delta: last=$_lastPosition current=$current reason=$reason)');
+      }
+      return;
+    }
     if (delta > tickInterval * 2) {
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] clamp delta $delta to $tickInterval*2');
+      }
       delta = tickInterval;
     }
 
     final seconds = delta.inSeconds;
-    if (seconds <= 0) return;
+    if (seconds <= 0) {
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] skip consume (zero delta) last=$_lastPosition current=$current reason=$reason');
+      }
+      return;
+    }
 
     _lastPosition = current;
     if (kDebugMode) {
-      debugPrint('[CreditsConsumer] POST consume seconds=$seconds (reason=$reason)');
+      debugPrint('[CreditsConsumer] POST consume seconds=$seconds (reason=$reason, last=$_lastPosition, current=$current)');
     }
     await _postConsume(seconds, reason: reason);
   }
@@ -220,28 +233,39 @@ class CreditsConsumer {
     if (kDebugMode) {
       debugPrint('[CreditsConsumer] -> /consume $seconds sec (reason=$reason)');
     }
-    final resp = await dio.post(
-      '/api/credits/consume',
-      data: {'seconds': seconds, 'context': 'player'},
-      options: Options(headers: {'Accept': 'application/json'}),
-    );
+    try {
+      final resp = await dio.post(
+        '/api/credits/consume',
+        data: {'seconds': seconds, 'context': 'player'},
+        options: Options(headers: {'Accept': 'application/json'}),
+      );
 
-    if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-      final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-      final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-      // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-      if (remainSec > 0 && _exhausted) {
-        if (kDebugMode) {
-          debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
-        }
-        _exhausted = false;
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] /consume resp status=${resp.statusCode} data=${resp.data}');
       }
 
-      onBalanceUpdated?.call(remainSec, remainMin);
+      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
 
-      if (remainSec <= 0) {
-        await _enforceExhaustionAndSyncZero();
+        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+        if (remainSec > 0 && _exhausted) {
+          if (kDebugMode) {
+            debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
+          }
+          _exhausted = false;
+        }
+
+        onBalanceUpdated?.call(remainSec, remainMin);
+
+        if (remainSec <= 0) {
+          await _enforceExhaustionAndSyncZero();
+        }
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[CreditsConsumer] /consume error: $e');
+        debugPrint('$st');
       }
     }
   }
