@@ -228,6 +228,10 @@ class CreditsConsumer {
     final seconds = delta.inSeconds;
     final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
     if (clampedSeconds <= 0) {
+      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
       return;
     }
 
