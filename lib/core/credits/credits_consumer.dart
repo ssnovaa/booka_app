@@ -90,6 +90,13 @@ class CreditsConsumer {
 
   bool get isExhausted => _exhausted;
 
+  /// Обновляет базовую позицию для расчёта дельты, чтобы после пополнения
+  /// баланса не было ложного списания старой дельты.
+  void resetBaseline({Duration? position}) {
+    _lastPosition = position ?? player.position;
+    _hasBaseline = true;
+  }
+
   /// Принудительно дожать накопленное списание перед тем, как внешняя
   /// логика остановит воспроизведение из‑за обнуления локального таймера.
   Future<void> flushPendingForExhaustion() async {

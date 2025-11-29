@@ -493,6 +493,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       _syncAdScheduleWithPlayback(); // Re-sync scheduler after ad mode disabled
     }
 
+    if (seconds > 0) {
+      consumer.resetBaseline(position: player.position);
+    }
+
     if (consumer.isExhausted) {
       _log('external free seconds → reset exhaustion ($seconds)');
       consumer.resetExhaustion();
@@ -1235,6 +1239,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       // отключаем Ad Mode, если он был активен, и сбрасываем флаг "исчерпано".
       if (secondsLeft > 0) {
         consumer?.resetExhaustion();
+        consumer?.resetBaseline(position: player.position);
         if (_adMode) {
           _log('secondsLeft > 0 detected on play: disabling ad-mode.');
           _disableAdMode();
