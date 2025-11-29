@@ -26,6 +26,7 @@ import 'package:booka_app/core/billing/billing_service.dart';
 import 'package:booka_app/core/billing/billing_controller.dart';
 
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+bool _rewardScreenOpen = false; // защита от дублирующихся пушей
 
 /// Реактор на изменение жизненного цикла приложения
 class _LifecycleReactor with WidgetsBindingObserver {
@@ -134,6 +135,14 @@ Future<void> main() async {
     audioProvider.onShowIntervalAd = () async {
       await _showInterstitialAd(audioProvider);
     };
+
+    // 3) Открываем экран продолжения, когда секунды исчерпаны
+    audioProvider.onCreditsExhausted = () {
+      unawaited(_openRewardScreen());
+    };
+
+    // 4) Запрос согласия на ad-mode, когда секунд нет
+    audioProvider.onNeedAdConsent = () => _openRewardScreen();
 
     // Запуск приложения
     runApp(
@@ -254,6 +263,23 @@ class BookaApp extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+Future<bool> _openRewardScreen() async {
+  final nav = _navKey.currentState;
+  if (nav == null) return false;
+
+  if (_rewardScreenOpen) return false;
+  _rewardScreenOpen = true;
+
+  try {
+    final res = await nav.pushNamed<bool>('/rewarded');
+    return res == true;
+  } catch (_) {
+    return false;
+  } finally {
+    _rewardScreenOpen = false;
   }
 }
 
