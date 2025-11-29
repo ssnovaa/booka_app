@@ -194,7 +194,6 @@ class CreditsConsumer {
   Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
     if (isPaid()) return;
     if (!isFreeUser()) return;
-    if (_exhausted) return;
 
     final current = player.position;
     var delta = current - _lastPosition;
