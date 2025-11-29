@@ -114,6 +114,8 @@ class CreditsConsumer {
 
   void _ensureStopped() {
     if (!_active) return;
+    // Списываем всё до текущей позиции, даже если не дождались 1-го тика.
+    unawaited(_consumePendingIfAny(reason: 'stop'));
     _active = false;
     _timer?.cancel();
     _timer = null;
@@ -145,29 +147,7 @@ class CreditsConsumer {
       if (seconds <= 0) return;
 
       if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
-
-      final resp = await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': seconds, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
-      );
-
-      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-        if (remainSec > 0 && _exhausted) {
-          if (kDebugMode) debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
-          _exhausted = false;
-        }
-
-        onBalanceUpdated?.call(remainSec, remainMin);
-
-        if (remainSec <= 0) {
-          await _enforceExhaustionAndSyncZero();
-        }
-      }
+      await _postConsume(seconds, reason: 'tick');
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[CreditsConsumer] consume error: $e');
@@ -209,5 +189,56 @@ class CreditsConsumer {
 
     _exhaustedCtr.add(null);
     onExhausted?.call();
+  }
+
+  Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
+    if (isPaid()) return;
+    if (!isFreeUser()) return;
+
+    final current = player.position;
+    var delta = current - _lastPosition;
+    if (delta.isNegative) return;
+    if (delta > tickInterval * 2) {
+      delta = tickInterval;
+    }
+
+    final seconds = delta.inSeconds;
+    if (seconds <= 0) return;
+
+    _lastPosition = current;
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] POST consume seconds=$seconds (reason=$reason)');
+    }
+    await _postConsume(seconds, reason: reason);
+  }
+
+  Future<void> _postConsume(int seconds, {required String reason}) async {
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] -> /consume $seconds sec (reason=$reason)');
+    }
+    final resp = await dio.post(
+      '/api/credits/consume',
+      data: {'seconds': seconds, 'context': 'player'},
+      options: Options(headers: {'Accept': 'application/json'}),
+    );
+
+    if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+      final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+      final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+      // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+      if (remainSec > 0 && _exhausted) {
+        if (kDebugMode) {
+          debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
+        }
+        _exhausted = false;
+      }
+
+      onBalanceUpdated?.call(remainSec, remainMin);
+
+      if (remainSec <= 0) {
+        await _enforceExhaustionAndSyncZero();
+      }
+    }
   }
 }

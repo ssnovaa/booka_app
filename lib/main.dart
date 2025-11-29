@@ -1,5 +1,6 @@
 // lib/main.dart (РАБОЧИЙ + НАСТРОЙКИ ШТОРКИ И ЛОКСКРИНА)
 import 'dart:async';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -26,6 +27,7 @@ import 'package:booka_app/core/billing/billing_service.dart';
 import 'package:booka_app/core/billing/billing_controller.dart';
 
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+bool _rewardScreenOpen = false; // защита от дублирующихся пушей
 
 /// Реактор на изменение жизненного цикла приложения
 class _LifecycleReactor with WidgetsBindingObserver {
@@ -134,6 +136,14 @@ Future<void> main() async {
     audioProvider.onShowIntervalAd = () async {
       await _showInterstitialAd(audioProvider);
     };
+
+    // 3) Открываем экран продолжения, когда секунды исчерпаны
+    audioProvider.onCreditsExhausted = () {
+      unawaited(_openRewardScreen());
+    };
+
+    // 4) Запрос согласия на ad-mode, когда секунд нет
+    audioProvider.onNeedAdConsent = () => _openRewardScreen();
 
     // Запуск приложения
     runApp(
@@ -254,6 +264,39 @@ class BookaApp extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+Future<bool> _openRewardScreen() async {
+  NavigatorState? nav = _navKey.currentState;
+
+  // 🔄 Навигатор может быть недоступен в момент вызова (например, сразу после
+  // старта приложения или во время горячей навигации). Пробуем получить его
+  // несколько раз с небольшими задержками, прежде чем сдаться.
+  if (nav == null) {
+    for (var i = 0; i < 5 && nav == null; i++) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      nav = _navKey.currentState;
+    }
+  }
+
+  if (nav == null) {
+    debugPrint('[REWARD][ERR] navigator not ready → skip open');
+    return false;
+  }
+
+  if (_rewardScreenOpen) return false;
+  _rewardScreenOpen = true;
+
+  try {
+    debugPrint('[REWARD] opening reward screen…');
+    await nav.pushNamed('/rewarded');
+    return true;
+  } catch (e, st) {
+    debugPrint('[REWARD][ERR] open reward failed: $e\n$st');
+    return false;
+  } finally {
+    _rewardScreenOpen = false;
   }
 }
 
