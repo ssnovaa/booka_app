@@ -1,5 +1,7 @@
 // lib/core/credits/credits_consumer.dart
 import 'dart:async';
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -35,10 +37,10 @@ class CreditsConsumer {
     this.tickInterval = const Duration(seconds: 20),
   }) {
     _playingSub = player.playingStream.listen((playing) async {
-      if (kDebugMode) debugPrint('[CreditsConsumer] playing=$playing');
+      _log('playing=$playing');
       // Блокировать можно ТОЛЬКО для free без ad-mode.
       if (playing && _exhausted && !isPaid() && isFreeUser()) {
-        if (kDebugMode) debugPrint('[CreditsConsumer] BLOCK play (exhausted) -> pause()');
+        _log('BLOCK play (exhausted) -> pause()');
         await _forcePauseEverywhere();
         return;
       }
@@ -50,7 +52,7 @@ class CreditsConsumer {
     });
 
     _procSub = player.processingStateStream.listen((state) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] processing=$state');
+      _log('processing=$state');
       if (_exhausted && !isPaid() && isFreeUser()) {
         _ensureStopped();
         return;
@@ -82,7 +84,7 @@ class CreditsConsumer {
   /// Сбрасывает флаг «исчерпано», чтобы тикер снова мог стартовать.
   void resetExhaustion() {
     if (_exhausted) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] resetExhaustion()');
+      _log('resetExhaustion()');
       _exhausted = false;
       // Если прямо сейчас идёт воспроизведение — запустим тикер.
       if (_isPlayingAudibly() && !isPaid() && isFreeUser()) {
@@ -100,7 +102,7 @@ class CreditsConsumer {
     if (isPaid()) return;
     if (!isFreeUser()) return;     // в ad-mode не считаем секунды
     if (_exhausted) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] not starting (exhausted)');
+      _log('not starting (exhausted)');
       return;
     }
     if (!_isPlayingAudibly()) return;
@@ -109,7 +111,7 @@ class CreditsConsumer {
     _lastPosition = player.position;
     _timer?.cancel();
     _timer = Timer.periodic(tickInterval, (_) => _tick());
-    if (kDebugMode) debugPrint('[CreditsConsumer] TICKER START');
+    _log('TICKER START');
   }
 
   void _ensureStopped() {
@@ -123,7 +125,7 @@ class CreditsConsumer {
     _active = false;
     _timer?.cancel();
     _timer = null;
-    if (kDebugMode) debugPrint('[CreditsConsumer] TICKER STOP');
+    _log('TICKER STOP');
   }
 
   Future<void> _forcePauseEverywhere() async {
@@ -150,13 +152,11 @@ class CreditsConsumer {
       final seconds = delta.inSeconds;
       if (seconds <= 0) return;
 
-      if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
+      _log('POST consume seconds=$seconds');
       await _postConsume(seconds, reason: 'tick');
     } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] consume error: $e');
-        debugPrint('$st');
-      }
+      _log('consume error: $e');
+      _log('$st');
     }
   }
 
@@ -186,9 +186,9 @@ class CreditsConsumer {
         data: {'seconds': 0, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync sent after exhaust');
+      _log('zero-sync sent after exhaust');
     } catch (e) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync error: $e');
+      _log('zero-sync error: $e');
     }
 
     _exhaustedCtr.add(null);
@@ -202,37 +202,27 @@ class CreditsConsumer {
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] skip consume (negative delta: last=$_lastPosition current=$current reason=$reason)');
-      }
+      _log('skip consume (negative delta: last=$_lastPosition current=$current reason=$reason)');
       return;
     }
     if (delta > tickInterval * 2) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] clamp delta $delta to $tickInterval*2');
-      }
+      _log('clamp delta $delta to $tickInterval*2');
       delta = tickInterval;
     }
 
     final seconds = delta.inSeconds;
     if (seconds <= 0) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] skip consume (zero delta) last=$_lastPosition current=$current reason=$reason');
-      }
+      _log('skip consume (zero delta) last=$_lastPosition current=$current reason=$reason');
       return;
     }
 
     _lastPosition = current;
-    if (kDebugMode) {
-      debugPrint('[CreditsConsumer] POST consume seconds=$seconds (reason=$reason, last=$_lastPosition, current=$current)');
-    }
+    _log('POST consume seconds=$seconds (reason=$reason, last=$_lastPosition, current=$current)');
     await _postConsume(seconds, reason: reason);
   }
 
   Future<void> _postConsume(int seconds, {required String reason}) async {
-    if (kDebugMode) {
-      debugPrint('[CreditsConsumer] -> /consume $seconds sec (reason=$reason)');
-    }
+    _log('-> /consume $seconds sec (reason=$reason)');
     try {
       final resp = await dio.post(
         '/api/credits/consume',
@@ -240,9 +230,7 @@ class CreditsConsumer {
         options: Options(headers: {'Accept': 'application/json'}),
       );
 
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] /consume resp status=${resp.statusCode} data=${resp.data}');
-      }
+      _log('/consume resp status=${resp.statusCode} data=${resp.data}');
 
       if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
         final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
@@ -250,9 +238,7 @@ class CreditsConsumer {
 
         // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
         if (remainSec > 0 && _exhausted) {
-          if (kDebugMode) {
-            debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
-          }
+          _log('remaining>0 -> clear exhausted');
           _exhausted = false;
         }
 
@@ -263,10 +249,28 @@ class CreditsConsumer {
         }
       }
     } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] /consume error: $e');
-        debugPrint('$st');
-      }
+      _log('/consume error: $e');
+      _log('$st');
+    }
+  }
+
+  void _log(String message) {
+    final line = '[CreditsConsumer] $message';
+    debugPrint(line);
+    unawaited(_appendToFile(line));
+  }
+
+  Future<void> _appendToFile(String line) async {
+    try {
+      final file = File('/storage/logs/booka.log');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        '${DateTime.now().toIso8601String()} $line\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    } catch (_) {
+      // Игнорируем ошибки записи логов, чтобы не ломать основную логику.
     }
   }
 }
