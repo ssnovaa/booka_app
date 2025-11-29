@@ -283,7 +283,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void _startFreeSecondsTicker() {
     if (_freeSecondsTicker != null) return;
     _log('freeSecondsTicker: START');
-    _freeSecondsTicker = Timer.periodic(_uiSecTick, (_) {
+    _freeSecondsTicker = Timer.periodic(_uiSecTick, (_) async {
       if (!_isPlayingAudibly() || _userType != UserType.free) return;
 
       final getFn = getFreeSeconds;
@@ -297,7 +297,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       setFn(next < 0 ? 0 : next);
 
       if (next <= 0) {
-        _handleFreeSecondsExhausted(flushConsumer: true);
+        await _handleFreeSecondsExhausted(flushConsumer: true);
       }
     });
   }
@@ -460,7 +460,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   /// Сообщает провайдеру о внешнем обновлении баланса секунд.
   /// Используется, когда UserNotifier получает свежие данные с сервера.
-  void onExternalFreeSecondsUpdated(int seconds) {
+  Future<void> onExternalFreeSecondsUpdated(int seconds) async {
     final consumer = _creditsConsumer;
 
     if (consumer == null) {
@@ -472,7 +472,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     if (seconds <= 0) {
       _log('external free seconds → exhausted ($seconds)');
-      _handleFreeSecondsExhausted(flushConsumer: true);
+      await _handleFreeSecondsExhausted(flushConsumer: true);
       return;
     }
 
@@ -500,12 +500,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     _rearmFreeSecondsTicker();
   }
 
-  void _handleFreeSecondsExhausted({bool flushConsumer = false}) {
+  Future<void> _handleFreeSecondsExhausted({bool flushConsumer = false}) async {
     final consumer = _creditsConsumer;
 
     if (consumer != null) {
       if (flushConsumer) {
-        unawaited(consumer.flushPendingForExhaustion());
+        await consumer.flushPendingForExhaustion();
       }
       consumer.stop(flushPending: !flushConsumer);
     }
@@ -513,7 +513,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _stopFreeSecondsTicker();
 
     if (player.playing && _userType == UserType.free && !_adMode) {
-      player.pause();
+      await player.pause();
       onCreditsExhausted?.call();
     }
   }

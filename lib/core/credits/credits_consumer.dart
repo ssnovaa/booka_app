@@ -101,6 +101,9 @@ class CreditsConsumer {
   /// логика остановит воспроизведение из‑за обнуления локального таймера.
   Future<void> flushPendingForExhaustion() async {
     await _consumePendingIfAny(reason: 'ui-zero');
+    if (!_exhausted) {
+      await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
+    }
   }
 
   // --- внутреннее ---
@@ -177,11 +180,11 @@ class CreditsConsumer {
     return true;
   }
 
-  Future<void> _enforceExhaustionAndSyncZero() async {
+  Future<void> _enforceExhaustionAndSyncZero({bool flushPendingOnStop = false}) async {
     _exhausted = true;
 
     // Немедленно останавливаем тикер и ставим на паузу, чтобы звук не шёл поверх пейволла.
-    _ensureStopped();
+    _ensureStopped(flushPending: flushPendingOnStop);
     if (!isPaid() && isFreeUser()) {
       await _forcePauseEverywhere();
     }
