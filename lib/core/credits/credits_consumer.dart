@@ -206,6 +206,13 @@ class CreditsConsumer {
     if (!_hasBaseline) {
       _lastPosition = player.position;
       _hasBaseline = true;
+
+      // Если UI уже достиг нуля, а базовая позиция ещё не установлена (например,
+      // сразу после старта приложения с пустым балансом), синхронизируем ноль
+      // с сервером напрямую, не полагаясь на расчёт дельты.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
       return;
     }
 
