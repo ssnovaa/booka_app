@@ -219,12 +219,13 @@ class CreditsConsumer {
     }
 
     final seconds = delta.inSeconds;
-    if (seconds <= 0) {
+    final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
+    if (clampedSeconds <= 0) {
       return;
     }
 
     _lastPosition = current;
-    await _postConsume(seconds, reason: reason);
+    await _postConsume(clampedSeconds, reason: reason);
   }
 
   Future<void> _postConsume(int seconds, {required String reason}) async {
