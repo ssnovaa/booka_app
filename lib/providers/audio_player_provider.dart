@@ -1203,7 +1203,8 @@ class AudioPlayerProvider extends ChangeNotifier {
           if (ok) {
             _enableAdMode(); // включает расписание рекламы и отключает списание секунд
           } else {
-            onCreditsExhausted?.call(); // можно показать пейволл/магазин
+            // Пользователь уже увидел экран выбора (reward/ads-mode) и отменил.
+            // Не показываем второй раз подряд, просто выходим из play().
             return;
           }
         } else {
