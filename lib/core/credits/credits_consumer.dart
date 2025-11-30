@@ -269,33 +269,65 @@ class CreditsConsumer {
     }
 
     _lastPosition = current;
-    await _postConsume(clampedSeconds, reason: reason);
+    await _postConsume(
+      clampedSeconds,
+      reason: reason,
+      drainRemainderOnUiZero: reason == 'ui-zero',
+    );
   }
 
-  Future<void> _postConsume(int seconds, {required String reason}) async {
+  Future<void> _postConsume(
+    int seconds, {
+    required String reason,
+    bool drainRemainderOnUiZero = false,
+  }) async {
     try {
-      final resp = await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': seconds, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
+      await _postConsumeInternal(
+        seconds,
+        reason: reason,
+        drainRemainderOnUiZero: drainRemainderOnUiZero,
       );
-
-      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-        if (remainSec > 0 && _exhausted) {
-          _exhausted = false;
-        }
-
-        onBalanceUpdated?.call(remainSec, remainMin);
-
-        if (remainSec <= 0) {
-          await _enforceExhaustionAndSyncZero();
-        }
-      }
     } catch (e, st) {
+    }
+  }
+
+  Future<void> _postConsumeInternal(
+    int seconds, {
+    required String reason,
+    bool drainRemainderOnUiZero = false,
+  }) async {
+    final resp = await dio.post(
+      '/api/credits/consume',
+      data: {'seconds': seconds, 'context': 'player'},
+      options: Options(headers: {'Accept': 'application/json'}),
+    );
+
+    if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+      final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+      final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+      // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+      if (remainSec > 0 && _exhausted) {
+        _exhausted = false;
+      }
+
+      onBalanceUpdated?.call(remainSec, remainMin);
+
+      if (remainSec <= 0) {
+        await _enforceExhaustionAndSyncZero();
+        return;
+      }
+
+      if (drainRemainderOnUiZero) {
+        // UI уже достиг нуля, но сервер отдал остаток (например, из-за округления
+        // дельты). Чтобы не показывать «5с» после локального нуля, дожмём
+        // остаток единоразово тем значением, которое вернул сервер.
+        await _postConsumeInternal(
+          remainSec,
+          reason: '$reason-drain',
+          drainRemainderOnUiZero: false,
+        );
+      }
     }
   }
 }
