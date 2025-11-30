@@ -209,6 +209,16 @@ class CreditsConsumer {
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
+    // Если тикер сейчас неактивен (например, зашли на экран профиля или
+    // плеер был на паузе), не пытаемся дослать расход: просто обновим
+    // базовую позицию и выйдем. Иначе можно сжечь целый интервал «вхолостую»
+    // за счёт старой дельты.
+    if (reason == 'stop-inactive') {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+      return;
+    }
+
     if (!_hasBaseline) {
       _lastPosition = player.position;
       _hasBaseline = true;
