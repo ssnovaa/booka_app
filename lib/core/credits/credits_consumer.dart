@@ -97,11 +97,9 @@ class CreditsConsumer {
     _hasBaseline = true;
   }
 
-  /// «Дожим» расхода = дослать весь накопленный дебет секунд перед тем,
-  /// как внешняя логика остановит воспроизведение из‑за обнуления локального
-  /// таймера.
+  /// Синхронизация нулевого баланса без досылки накопленного дебета секунд,
+  /// когда внешний слой сообщает, что локальный таймер уже обнулился.
   Future<void> flushPendingForExhaustion() async {
-    await _consumePendingIfAny(reason: 'ui-zero');
     await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
   }
 
