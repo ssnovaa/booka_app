@@ -503,6 +503,15 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _handleFreeSecondsExhausted({bool flushConsumer = false}) async {
+    // Что происходит, когда локальный таймер дошёл до нуля (простая схема):
+    // 1) Сразу ставим в UI 0 секунд, чтобы счётчик не подпрыгивал на возможные
+    //    серверные «хвосты».
+    // 2) Останавливаем тикер и (опционально) отправляем накопленное списание
+    //    в CreditsConsumer.
+    // 3) Паузим плеер и вызываем onCreditsExhausted(), чтобы показать paywall/
+    //    reward-скрин.
+    // 4) После завершения обработки применяем любой отложенный остаток,
+    //    который мог прийти с сервера.
     _suppressBalanceUpdates = true;
     try {
       final consumer = _creditsConsumer;
