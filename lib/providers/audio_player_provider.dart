@@ -1694,6 +1694,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     _adMode = false;
     _stopAdTimer();
     _ensureCreditsConsumer(); // вернёмся к consumer при необходимости
+    if (player.playing) {
+      _creditsConsumer?.start(); // возобновим периодическое списание/синхронизацию
+    }
     notifyListeners();
   }
 
