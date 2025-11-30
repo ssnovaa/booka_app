@@ -456,6 +456,14 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (kDebugMode) _log('external free seconds → exhausted ($seconds)');
       consumer.stop();
       _stopFreeSecondsTicker();
+
+      // FIX: Если секунды закончились (например, локальный тикер дошел до 0)
+      // и плеер активно играет (и не в ad-mode), то нужно принудительно остановить воспроизведение.
+      if (player.playing && _userType == UserType.free && !_adMode) {
+        _log('external free seconds hit zero while playing. Forcing pause.');
+        player.pause();
+      }
+
       return;
     }
 
@@ -746,13 +754,16 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<Chapter?> _fetchChapterById(int bookId, int chapterId) async {
+  // ---------- HELPERS: API access / Chapters fetching (FIX: Добавлен _retrieveAllChaptersForBook) ----------
+
+  // Новый вспомогательный метод для получения полного списка глав для книги.
+  Future<List<Chapter>> _retrieveAllChaptersForBook(int bookId) async {
     try {
       final resp = await ApiClient.i().get(
         '/abooks/$bookId/chapters',
         options: Options(validateStatus: (s) => s != null && s < 500),
       );
-      if (resp.statusCode != 200) return null;
+      if (resp.statusCode != 200) return [];
 
       final raw = resp.data;
       final List<dynamic> items = (raw is List)
@@ -761,16 +772,26 @@ class AudioPlayerProvider extends ChangeNotifier {
           ? (raw['data'] ?? raw['items'] ?? [])
           : [];
 
-      for (final it in items) {
-        final ch = Chapter.fromJson(
-          Map<String, dynamic>.from(it as Map),
-          book: {'id': bookId},
-        );
-        if (ch.id == chapterId) return ch;
-      }
-    } catch (_) {}
+      return items.map((it) => Chapter.fromJson(
+        Map<String, dynamic>.from(it as Map),
+        book: {'id': bookId},
+      )).toList();
+    } catch (e) {
+      _log('retrieveAllChaptersForBook error: $e');
+      return [];
+    }
+  }
+
+  Future<Chapter?> _fetchChapterById(int bookId, int chapterId) async {
+    final chapters = await _retrieveAllChaptersForBook(bookId);
+
+    for (final ch in chapters) {
+      if (ch.id == chapterId) return ch;
+    }
     return null;
   }
+
+  // ------------------------------------------------------------------------------------------------------
 
   AudioSource _sourceForChapter(
       Chapter chapter, {
@@ -1336,7 +1357,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ ----------
+  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ (FIX: Загрузка полного плейлиста для авторизованных) ----------
   Future<bool> _prepareFromSavedIfNeeded() async {
     if (_hasSequence) return true;
     if (_isPreparing) {
@@ -1361,8 +1382,15 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final ch = currentChapter;
       final b = currentBook;
-      if (ch == null) return false;
+      if (ch == null || b == null) return false;
 
+      // ====================================================================
+      // FIX: Загружаем полный плейлист, если пользователь авторизован.
+      List<Chapter> chaptersToLoad;
+      int startIndex = 0;
+      final restoredPosition = _position; // Сохраняем точную позицию
+
+      // Логика гостя (только первая глава)
       if (_userType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
@@ -1371,17 +1399,48 @@ class AudioPlayerProvider extends ChangeNotifier {
           _resetState();
           return false;
         }
-      }
+        chaptersToLoad = [ch];
+        startIndex = 0;
+      } else {
+        // Для авторизованных: загружаем полный список.
+        final fullList = await _retrieveAllChaptersForBook(b.id);
 
-      final cover = _absImageUrl(b?.coverUrl);
+        if (fullList.isEmpty) {
+          _log('_prepare: failed to fetch full chapter list for book ${b.id}, defaulting to single saved chapter');
+          chaptersToLoad = [ch];
+          startIndex = 0;
+        } else {
+          chaptersToLoad = fullList;
+          // Находим индекс главы, с которой остановились, в полном списке.
+          startIndex = fullList.indexWhere((c) => c.id == ch.id);
+          if (startIndex < 0) {
+            _log('_prepare: last listened chapter not found in full list, starting at first chapter');
+            startIndex = 0;
+          }
+        }
+      }
+      // ====================================================================
+
+      final cover = _absImageUrl(b.coverUrl);
+
+      // Устанавливаем плейлист (полный для авторизованных, одну главу для гостей).
       await setChapters(
-        [ch],
-        startIndex: 0,
+        chaptersToLoad,
+        startIndex: startIndex,
         book: b,
-        bookTitle: b?.title,
-        artist: b?.author,
+        bookTitle: b.title,
+        artist: b.author,
         coverUrl: cover,
       );
+
+      // Восстанавливаем точную позицию, если она была сохранена.
+      if (_hasSequence && restoredPosition.inSeconds > 0) {
+        // seek(..., index) обновит _position, _currentChapterIndex уже обновлен в setChapters.
+        await player.seek(restoredPosition, index: _currentChapterIndex);
+        _position = restoredPosition;
+        _pullDurationFromPlayer();
+      }
+
       return true;
     } finally {
       _isPreparing = false;
