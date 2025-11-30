@@ -424,26 +424,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     const SizedBox(height: 8),
                   ],
 
-                  // Кнопка 2 — СТАРЫЙ флоу: получить +15 хв за рекламу (rewarded)
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: _loading ? null : _get15,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Отримати ще 15 хв',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
                   // Отмена
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
