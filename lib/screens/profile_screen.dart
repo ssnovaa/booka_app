@@ -251,6 +251,7 @@ class _ProfileHeader extends StatelessWidget {
   final String email;
   final bool isPaid;
   final VoidCallback onLogout;
+  final VoidCallback onRequestMoreMinutes;
 
   const _ProfileHeader({
     super.key,
@@ -258,6 +259,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.email,
     required this.isPaid,
     required this.onLogout,
+    required this.onRequestMoreMinutes,
   });
 
   @override
@@ -365,7 +367,21 @@ class _ProfileHeader extends StatelessWidget {
           // бейдж минут показываем только для free
           if (!isPaid) ...[
             const SizedBox(height: 6),
-            const MinutesBadge(),
+            Row(
+              children: [
+                const MinutesBadge(),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  onPressed: onRequestMoreMinutes,
+                  icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent),
+                  label: const Text('Больше минут'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
           ],
         ],
@@ -719,6 +735,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _openRewardTestScreen() {
+    Navigator.of(context).pushNamed('/rewarded');
+  }
+
   void _switchMainTabAndClose(int tab) {
     final ms = MainScreen.of(context);
     if (ms != null) {
@@ -872,6 +892,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       email: email.isNotEmpty ? email : '—',
                       isPaid: userNotifier.isPaidNow,
                       onLogout: () => logout(context),
+                      onRequestMoreMinutes: _openRewardTestScreen,
                     ),
                   ),
                 ),
