@@ -27,6 +27,17 @@ import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/models/user.dart' show getUserType;
 
+bool _isSubscriptionUpdate(Map<String, dynamic> data) {
+  final type = data['type'];
+  if (type == 'subscription_update') return true;
+
+  // Деякі бекенди шлють без type, але з явним статусом підписки.
+  final hasSubscriptionFields =
+      data.containsKey('subscription_status') ||
+          data.containsKey('subscription_state');
+  return hasSubscriptionFields;
+}
+
 // ‼️‼️‼️ ЗМІНА 4: Додаємо логіку у фоновий обробник ‼️‼️‼️
 // Цей обробник запускається в окремому ізоляті (isolate)
 @pragma('vm:entry-point')
@@ -37,7 +48,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   } catch (_) {}
 
   // Перевіряємо, чи це наш "тихий" push про оновлення статусу
-  if (message.data['type'] == 'subscription_update') {
+  final data = message.data;
+  if (_isSubscriptionUpdate(data)) {
     if (kDebugMode) {
       print('[PUSH_BG] Отримано фонове сповіщення про оновлення підписки!');
     }
@@ -201,7 +213,7 @@ class PushService {
 
     // 1) Реакція на зміну статусу підписки
     //    👇 Бек шле type = 'subscription_update'
-    if (data['type'] == 'subscription_update') {
+    if (_isSubscriptionUpdate(data)) {
       // Більше не залежимо від `context` для *оновлення* статусу.
       if (_userNotifier != null) {
         try {
@@ -243,6 +255,9 @@ class PushService {
 
       // ❗ Для цього сервісного пуша НЕ показуємо локальну нотифікацію
       // і не робимо диплінк.
+      if (kDebugMode && msg.notification != null) {
+        print('[PUSH] subscription_update містить notification — ігноруємо для користувача');
+      }
       return;
     }
 

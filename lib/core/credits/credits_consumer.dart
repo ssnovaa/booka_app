@@ -127,8 +127,15 @@ class CreditsConsumer {
     // чтобы короткие сессии не терялись.
     final wasActive = _active;
     if (flushPending) {
-      unawaited(
-          _consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+      if (wasActive) {
+        unawaited(_consumePendingIfAny(reason: 'stop'));
+      } else {
+        // Если тикер так и не стартовал, просто обновляем базовую позицию
+        // без отправки дельты, чтобы восстановление прогресса не приводило
+        // к ложному списанию и старт не списывал 20 секунд.
+        _lastPosition = player.position;
+        _hasBaseline = true;
+      }
     }
 
     if (!wasActive) return;
@@ -152,6 +159,8 @@ class CreditsConsumer {
       if (_exhausted) { _ensureStopped(); return; }
       if (!_isPlayingAudibly()) { _ensureStopped(); return; }
 
+      // Штатное списание во время воспроизведения: каждые tickInterval секунд
+      // считаем прирост позиции и отправляем его на бэкенд.
       final current = player.position;
       var delta = current - _lastPosition;
       _lastPosition = current;
@@ -164,6 +173,12 @@ class CreditsConsumer {
 
       await _postConsume(seconds, reason: 'tick');
     } catch (e, st) {
+    }
+  }
+
+  void _log(String msg) {
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] $msg');
     }
   }
 
@@ -189,7 +204,7 @@ class CreditsConsumer {
 
     try {
       await dio.post(
-        '/api/credits/consume',
+        '/credits/consume',
         data: {'seconds': 0, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );
@@ -201,6 +216,10 @@ class CreditsConsumer {
   }
 
   Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
+    // Дожимает накопленный расход, если тикер не успел отправить дельту
+    // перед внешней остановкой (обычный стоп или ui-zero), ограничивая
+    // аномально большую дельту длиной одного тика. Штатное списание идёт
+    // в _tick(), это лишь запасной канал для коротких сессий.
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
@@ -220,6 +239,7 @@ class CreditsConsumer {
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
+      _lastPosition = current;
       return;
     }
     if (delta > tickInterval * 2) {
@@ -229,21 +249,26 @@ class CreditsConsumer {
     final seconds = delta.inSeconds;
     final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
     if (clampedSeconds <= 0) {
-      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
+      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер
+      // и обновляем базовую позицию, чтобы не копить «пустую» дельту, которая потом
+      // превратится в принудительные 20 секунд.
       if (reason == 'ui-zero') {
         await _enforceExhaustionAndSyncZero();
       }
+      _lastPosition = current;
       return;
     }
 
     _lastPosition = current;
+    _log('consume $clampedSeconds sec ($reason), pos=${current.inSeconds}s');
     await _postConsume(clampedSeconds, reason: reason);
   }
 
   Future<void> _postConsume(int seconds, {required String reason}) async {
     try {
+      _log('POST /credits/consume → $seconds sec ($reason)');
       final resp = await dio.post(
-        '/api/credits/consume',
+        '/credits/consume',
         data: {'seconds': seconds, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );
@@ -251,6 +276,8 @@ class CreditsConsumer {
       if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
         final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
         final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+        _log('consume ok: left=${remainSec}s (${remainMin}m)');
 
         // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
         if (remainSec > 0 && _exhausted) {
