@@ -176,6 +176,12 @@ class CreditsConsumer {
     }
   }
 
+  void _log(String msg) {
+    if (kDebugMode) {
+      debugPrint('[CreditsConsumer] $msg');
+    }
+  }
+
   bool _isPlayingAudibly() {
     if (!player.playing) return false;
     final proc = player.processingState;
@@ -254,11 +260,13 @@ class CreditsConsumer {
     }
 
     _lastPosition = current;
+    _log('consume $clampedSeconds sec ($reason), pos=${current.inSeconds}s');
     await _postConsume(clampedSeconds, reason: reason);
   }
 
   Future<void> _postConsume(int seconds, {required String reason}) async {
     try {
+      _log('POST /api/credits/consume → $seconds sec ($reason)');
       final resp = await dio.post(
         '/api/credits/consume',
         data: {'seconds': seconds, 'context': 'player'},
@@ -268,6 +276,8 @@ class CreditsConsumer {
       if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
         final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
         final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+        _log('consume ok: left=${remainSec}s (${remainMin}m)');
 
         // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
         if (remainSec > 0 && _exhausted) {
