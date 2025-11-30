@@ -143,8 +143,11 @@ class _EntryScreenState extends State<EntryScreen> {
             // прежде чем мы его удалим. Это повышает надежность popUntil.
             await Future.delayed(Duration.zero);
 
-            // 4. Удаляем любые фантомные маршруты, гарантируя, что EntryScreen является корнем стека.
-            if (mounted && Navigator.of(context).canPop()) {
+            // 4. Удаляем любые фантомные маршруты, гарантируя, что EntryScreen
+            //    является корнем стека, но только если сам EntryScreen ещё на вершине.
+            final route = ModalRoute.of(context);
+            final isCurrentEntry = route?.isCurrent == true;
+            if (mounted && isCurrentEntry && Navigator.of(context).canPop()) {
               Navigator.of(context).popUntil((route) => route.isFirst);
               debugPrint('EntryScreen: Cleared navigation stack to first route.'); // 🚨 DEBUG
             }
