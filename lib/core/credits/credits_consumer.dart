@@ -116,8 +116,10 @@ class CreditsConsumer {
     if (!_isPlayingAudibly()) return;
 
     _active = true;
-    _lastPosition = player.position;
-    _hasBaseline = true;
+    if (!_hasBaseline) {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+    }
     _timer?.cancel();
     _timer = Timer.periodic(tickInterval, (_) => _tick());
   }
