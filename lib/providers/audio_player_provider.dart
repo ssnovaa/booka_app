@@ -123,6 +123,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   // Блокировка обновлений баланса в момент исчерпания, чтобы UI не прыгал
   // на остатки с сервера перед показом paywall/reward-скрина.
   bool _suppressBalanceUpdates = false;
+  int? _pendingBalanceUpdate;
 
   // Повторный «дожим» реарма, если плеер ещё не готов
   Timer? _pendingRearmTimer;
@@ -402,17 +403,12 @@ class AudioPlayerProvider extends ChangeNotifier {
         // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
         isFreeUser: () => _userType == UserType.free && !_adMode,
         onBalanceUpdated: (secLeft, minLeft) {
-          if (_suppressBalanceUpdates) return;
-
-          // Сервер — истина. Жёстко выставляем остаток.
-          setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
-
-          // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
-          if (secLeft > 0 && _adMode) {
-            _log('balance>0 → disable ad-mode');
-            _disableAdMode();
-            _syncAdScheduleWithPlayback();
+          if (_suppressBalanceUpdates) {
+            _pendingBalanceUpdate = secLeft;
+            return;
           }
+
+          _applyServerBalance(secLeft);
         },
         onExhausted: () async {
           onCreditsExhausted?.call();
@@ -534,6 +530,23 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     } finally {
       _suppressBalanceUpdates = false;
+      final pending = _pendingBalanceUpdate;
+      _pendingBalanceUpdate = null;
+      if (pending != null) {
+        _applyServerBalance(pending);
+      }
+    }
+  }
+
+  void _applyServerBalance(int secLeft) {
+    // Сервер — истина. Жёстко выставляем остаток.
+    setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
+
+    // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
+    if (secLeft > 0 && _adMode) {
+      _log('balance>0 → disable ad-mode');
+      _disableAdMode();
+      _syncAdScheduleWithPlayback();
     }
   }
 
