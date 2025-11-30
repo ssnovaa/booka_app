@@ -1571,6 +1571,14 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // === AD-MODE: внутренние вспомогательные ===
   void _enableAdMode() {
+    // Не включаем режим рекламы, если у пользователя ещё есть свободные секунды
+    // — в этом состоянии должно продолжаться обычное списание.
+    final secondsLeft = getFreeSeconds?.call() ?? 0;
+    if (secondsLeft > 0) {
+      _log('skip ad-mode: balance=${secondsLeft}s');
+      return;
+    }
+
     if (_adMode) return;
     _log('enable ad-mode');
     _adMode = true;
