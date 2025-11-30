@@ -116,8 +116,10 @@ class CreditsConsumer {
     if (!_isPlayingAudibly()) return;
 
     _active = true;
-    _lastPosition = player.position;
-    _hasBaseline = true;
+    if (!_hasBaseline) {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+    }
     _timer?.cancel();
     _timer = Timer.periodic(tickInterval, (_) => _tick());
   }
@@ -156,7 +158,13 @@ class CreditsConsumer {
       var delta = current - _lastPosition;
       _lastPosition = current;
 
-      if (delta.isNegative || delta > tickInterval * 2) {
+      // Якщо позиція скинулась назад (пауза/перезапуск/інша глава) —
+      // не списуємо «штрафні» 20 секунд, а просто оновлюємо базову точку.
+      if (delta.isNegative) {
+        return;
+      }
+
+      if (delta > tickInterval * 2) {
         delta = tickInterval;
       }
       final seconds = delta.inSeconds;
