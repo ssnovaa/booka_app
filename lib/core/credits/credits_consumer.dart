@@ -156,7 +156,12 @@ class CreditsConsumer {
       var delta = current - _lastPosition;
       _lastPosition = current;
 
-      if (delta.isNegative || delta > tickInterval * 2) {
+      if (delta.isNegative) {
+        // Позиция могла «откатиться» из‑за смены главы/прыжка назад —
+        // такое движение не должно списывать секунды.
+        return;
+      }
+      if (delta > tickInterval * 2) {
         delta = tickInterval;
       }
       final seconds = delta.inSeconds;
@@ -220,6 +225,9 @@ class CreditsConsumer {
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
+      // База устарела или произошёл откат позиции (seek назад) — обновим
+      // базовую точку и не будем списывать.
+      _lastPosition = current;
       return;
     }
     if (delta > tickInterval * 2) {
