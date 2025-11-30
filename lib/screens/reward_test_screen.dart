@@ -66,7 +66,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     try {
       _videoController = VideoPlayerController.asset('assets/logo_ped.mp4');
       _videoInit = _videoController!.initialize().then((_) {
-        _videoController!.setLooping(true);
+        _videoController!.setLooping(false);
         _videoController!.setVolume(0);
         _videoController!.play();
         if (mounted) setState(() {});
@@ -302,54 +302,71 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       future: _videoInit,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
-                          return Container(
-                            height: 180,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: cs.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: cs.outlineVariant),
+                          return FractionallySizedBox(
+                            widthFactor: 0.85,
+                            child: Container(
+                              height: 180,
+                              decoration: BoxDecoration(
+                                color: cs.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: cs.outlineVariant),
+                              ),
+                              child:
+                                  const Center(child: CircularProgressIndicator()),
                             ),
-                            child: const Center(child: CircularProgressIndicator()),
                           );
                         }
 
                         if (snapshot.hasError || _videoController == null) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Image.asset(
-                                    'assets/splash/logo.jpg',
-                                    fit: BoxFit.cover,
-                                  ),
-                                  Container(
-                                    color: Colors.black45,
-                                    alignment: Alignment.center,
-                                    child: const Text(
-                                      'Відео тимчасово недоступне',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      textAlign: TextAlign.center,
+                          return FractionallySizedBox(
+                            widthFactor: 0.85,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: AspectRatio(
+                                aspectRatio: 16 / 9,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Image.asset(
+                                      'assets/splash/logo.jpg',
+                                      fit: BoxFit.cover,
                                     ),
-                                  ),
-                                ],
+                                    Container(
+                                      color: Colors.black45,
+                                      alignment: Alignment.center,
+                                      child: const Text(
+                                        'Відео тимчасово недоступне',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
                         }
 
                         final ratio = _videoController!.value.aspectRatio;
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: AspectRatio(
-                            aspectRatio: ratio == 0 ? 16 / 9 : ratio,
-                            child: VideoPlayer(_videoController!),
+                        return FractionallySizedBox(
+                          widthFactor: 0.85,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: AspectRatio(
+                              aspectRatio: ratio == 0 ? 16 / 9 : ratio,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  if (_videoController == null) return;
+                                  _videoController!.seekTo(Duration.zero);
+                                  _videoController!.play();
+                                },
+                                child: VideoPlayer(_videoController!),
+                              ),
+                            ),
                           ),
                         );
                       },
