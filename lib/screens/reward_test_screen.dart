@@ -35,6 +35,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
   bool _isAuthorized = false;
   int _userId = 0;
+  int _rewardSession = 0; // токен для отмены текущего показа
 
   // Пульс для лічильника хвилин
   final MinutesCounterController _mc = MinutesCounterController();
@@ -58,9 +59,25 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     // (опціонально) префетч: _svc!.load();
   }
 
+  void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
+    _rewardSession++;
+    _svc?.cancel(reason: reason);
+    if (mounted && _loading) {
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancelRewardFlow();
+    super.dispose();
+  }
+
   // ====== СТАРЫЙ ФЛОУ (сохранён): +15 хв за винагородну рекламу ======
   Future<void> _get15() async {
     if (_svc == null || _loading) return;
+
+    final int session = ++_rewardSession;
 
     final app = context.read<AudioPlayerProvider>();
     final bool wasPlayingBeforeAd = app.isPlaying;
@@ -95,6 +112,10 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD] STEP 1: load()');
       final loaded = await _svc!.load();
       debugPrint('[REWARD] loaded=$loaded');
+      if (!mounted || _rewardSession != session) {
+        _svc?.cancel();
+        return;
+      }
       if (!loaded) {
         final err = _svc?.lastError ??
             'Реклама недоступна (load=false). Спробуйте пізніше.';
@@ -111,6 +132,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD] STEP 2: showAndAwaitCredit()');
       final credited = await _svc!.showAndAwaitCredit();
       debugPrint('[REWARD] credited=$credited');
+
+      if (!mounted || _rewardSession != session) return;
 
       if (!mounted) return;
 
@@ -181,7 +204,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       // Всегда возобновляем расписание межстраничной рекламы после Rewarded
       app.resumeAdSchedule('rewarded');
 
-      if (wasPlayingBeforeAd && !app.isPlaying) {
+      if (_rewardSession == session && wasPlayingBeforeAd && !app.isPlaying) {
         try {
           await app.play();
         } catch (e) {
@@ -190,7 +213,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _loading = false);
+      if (_rewardSession == session) {
+        setState(() => _loading = false);
+      }
       // (опціонально) префетч: _svc!.load();
     }
   }
@@ -236,96 +261,107 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     // Глобальный баланс минут
     final minutes = context.watch<UserNotifier>().minutes;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Продовжити прослуховування')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              // Статус/описание
-              Container(
-                width: double.infinity,
-                padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: Text(_status, textAlign: TextAlign.center),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Баланс хвилин с «пульсом»
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return WillPopScope(
+      onWillPop: () async {
+        _cancelRewardFlow();
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Продовжити прослуховування')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Баланс: ', style: TextStyle(fontSize: 16)),
-                  MinutesCounter(minutes: minutes, controller: _mc),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _enablingAdsMode ? null : _continueWithAds,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      'Продовжити з рекламою (без нарахувань)',
-                      style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  // Статус/описание
+                  Container(
+                    width: double.infinity,
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cs.outlineVariant),
                     ),
+                    child: Text(_status, textAlign: TextAlign.center),
                   ),
-                ),
-              ),
 
-              const SizedBox(height: 8),
+                  const SizedBox(height: 12),
 
-              // Кнопка 2 — СТАРЫЙ флоу: получить +15 хв за рекламу (rewarded)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _loading ? null : _get15,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      _isAuthorized
-                          ? 'Отримати +15 хв за рекламу'
-                          : 'Подивитись винагородну рекламу (без нарахувань для гостя)',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                  // Баланс хвилин с «пульсом»
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Баланс: ', style: TextStyle(fontSize: 16)),
+                      MinutesCounter(minutes: minutes, controller: _mc),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _enablingAdsMode ? null : _continueWithAds,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Продовжити з рекламою (без нарахувань)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
 
-              const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
-              // Отмена
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Скасувати'),
-              ),
+                  // Кнопка 2 — СТАРЫЙ флоу: получить +15 хв за рекламу (rewarded)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _loading ? null : _get15,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          _isAuthorized
+                              ? 'Отримати +15 хв за рекламу'
+                              : 'Подивитись винагородну рекламу (без нарахувань для гостя)',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
 
-              const SizedBox(height: 8),
-              Opacity(
-                opacity: 0.7,
-                child: Text(
-                  'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                  const SizedBox(height: 8),
+
+                  // Отмена
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Скасувати'),
+                  ),
+
+                  const SizedBox(height: 8),
+                  Opacity(
+                    opacity: 0.7,
+                    child: Text(
+                      'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
               ),
-            ]),
+            ),
           ),
         ),
       ),

@@ -16,6 +16,7 @@ class CreditsConsumer {
 
   Timer? _timer;
   Duration _lastPosition = Duration.zero;
+  bool _hasBaseline = false;
   bool _active = false;
   bool _exhausted = false;
 
@@ -35,10 +36,8 @@ class CreditsConsumer {
     this.tickInterval = const Duration(seconds: 20),
   }) {
     _playingSub = player.playingStream.listen((playing) async {
-      if (kDebugMode) debugPrint('[CreditsConsumer] playing=$playing');
       // Блокировать можно ТОЛЬКО для free без ad-mode.
       if (playing && _exhausted && !isPaid() && isFreeUser()) {
-        if (kDebugMode) debugPrint('[CreditsConsumer] BLOCK play (exhausted) -> pause()');
         await _forcePauseEverywhere();
         return;
       }
@@ -50,7 +49,6 @@ class CreditsConsumer {
     });
 
     _procSub = player.processingStateStream.listen((state) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] processing=$state');
       if (_exhausted && !isPaid() && isFreeUser()) {
         _ensureStopped();
         return;
@@ -75,14 +73,13 @@ class CreditsConsumer {
     _ensureStarted();
   }
 
-  void stop() {
-    _ensureStopped();
+  void stop({bool flushPending = true}) {
+    _ensureStopped(flushPending: flushPending);
   }
 
   /// Сбрасывает флаг «исчерпано», чтобы тикер снова мог стартовать.
   void resetExhaustion() {
     if (_exhausted) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] resetExhaustion()');
       _exhausted = false;
       // Если прямо сейчас идёт воспроизведение — запустим тикер.
       if (_isPlayingAudibly() && !isPaid() && isFreeUser()) {
@@ -93,6 +90,20 @@ class CreditsConsumer {
 
   bool get isExhausted => _exhausted;
 
+  /// Обновляет базовую позицию для расчёта дельты, чтобы после пополнения
+  /// баланса не было ложного списания старой дельты.
+  void resetBaseline({Duration? position}) {
+    _lastPosition = position ?? player.position;
+    _hasBaseline = true;
+  }
+
+  /// Принудительно дожать накопленное списание перед тем, как внешняя
+  /// логика остановит воспроизведение из‑за обнуления локального таймера.
+  Future<void> flushPendingForExhaustion() async {
+    await _consumePendingIfAny(reason: 'ui-zero');
+    await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
+  }
+
   // --- внутреннее ---
 
   void _ensureStarted() {
@@ -100,24 +111,31 @@ class CreditsConsumer {
     if (isPaid()) return;
     if (!isFreeUser()) return;     // в ad-mode не считаем секунды
     if (_exhausted) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] not starting (exhausted)');
       return;
     }
     if (!_isPlayingAudibly()) return;
 
     _active = true;
     _lastPosition = player.position;
+    _hasBaseline = true;
     _timer?.cancel();
     _timer = Timer.periodic(tickInterval, (_) => _tick());
-    if (kDebugMode) debugPrint('[CreditsConsumer] TICKER START');
   }
 
-  void _ensureStopped() {
-    if (!_active) return;
+  void _ensureStopped({bool flushPending = true}) {
+    // Даже если тикер не стартовал (_active == false), попробуем дослать расход,
+    // чтобы короткие сессии не терялись.
+    final wasActive = _active;
+    if (flushPending) {
+      unawaited(
+          _consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+    }
+
+    if (!wasActive) return;
+
     _active = false;
     _timer?.cancel();
     _timer = null;
-    if (kDebugMode) debugPrint('[CreditsConsumer] TICKER STOP');
   }
 
   Future<void> _forcePauseEverywhere() async {
@@ -144,35 +162,8 @@ class CreditsConsumer {
       final seconds = delta.inSeconds;
       if (seconds <= 0) return;
 
-      if (kDebugMode) debugPrint('[CreditsConsumer] POST consume seconds=$seconds');
-
-      final resp = await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': seconds, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
-      );
-
-      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-        if (remainSec > 0 && _exhausted) {
-          if (kDebugMode) debugPrint('[CreditsConsumer] remaining>0 -> clear exhausted');
-          _exhausted = false;
-        }
-
-        onBalanceUpdated?.call(remainSec, remainMin);
-
-        if (remainSec <= 0) {
-          await _enforceExhaustionAndSyncZero();
-        }
-      }
+      await _postConsume(seconds, reason: 'tick');
     } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('[CreditsConsumer] consume error: $e');
-        debugPrint('$st');
-      }
     }
   }
 
@@ -187,11 +178,11 @@ class CreditsConsumer {
     return true;
   }
 
-  Future<void> _enforceExhaustionAndSyncZero() async {
+  Future<void> _enforceExhaustionAndSyncZero({bool flushPendingOnStop = false}) async {
     _exhausted = true;
 
     // Немедленно останавливаем тикер и ставим на паузу, чтобы звук не шёл поверх пейволла.
-    _ensureStopped();
+    _ensureStopped(flushPending: flushPendingOnStop);
     if (!isPaid() && isFreeUser()) {
       await _forcePauseEverywhere();
     }
@@ -202,12 +193,77 @@ class CreditsConsumer {
         data: {'seconds': 0, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync sent after exhaust');
     } catch (e) {
-      if (kDebugMode) debugPrint('[CreditsConsumer] zero-sync error: $e');
     }
 
     _exhaustedCtr.add(null);
     onExhausted?.call();
+  }
+
+  Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
+    if (isPaid()) return;
+    if (!isFreeUser()) return;
+
+    if (!_hasBaseline) {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+
+      // Если UI уже достиг нуля, а базовая позиция ещё не установлена (например,
+      // сразу после старта приложения с пустым балансом), синхронизируем ноль
+      // с сервером напрямую, не полагаясь на расчёт дельты.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
+      return;
+    }
+
+    final current = player.position;
+    var delta = current - _lastPosition;
+    if (delta.isNegative) {
+      return;
+    }
+    if (delta > tickInterval * 2) {
+      delta = tickInterval;
+    }
+
+    final seconds = delta.inSeconds;
+    final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
+    if (clampedSeconds <= 0) {
+      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
+      return;
+    }
+
+    _lastPosition = current;
+    await _postConsume(clampedSeconds, reason: reason);
+  }
+
+  Future<void> _postConsume(int seconds, {required String reason}) async {
+    try {
+      final resp = await dio.post(
+        '/api/credits/consume',
+        data: {'seconds': seconds, 'context': 'player'},
+        options: Options(headers: {'Accept': 'application/json'}),
+      );
+
+      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+        if (remainSec > 0 && _exhausted) {
+          _exhausted = false;
+        }
+
+        onBalanceUpdated?.call(remainSec, remainMin);
+
+        if (remainSec <= 0) {
+          await _enforceExhaustionAndSyncZero();
+        }
+      }
+    } catch (e, st) {
+    }
   }
 }
