@@ -364,7 +364,7 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          // бейдж минут показываем только для free
+          // бейдж хвилин показуємо лише для користувачів без підписки
           if (!isPaid) ...[
             const SizedBox(height: 6),
             Row(
@@ -377,8 +377,9 @@ class _ProfileHeader extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                   onPressed: onRequestMoreMinutes,
-                  icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent),
-                  label: const Text('Больше минут'),
+                  icon:
+                      const Icon(Icons.favorite_rounded, color: Colors.redAccent),
+                  label: const Text('Більше хвилин'),
                 ),
               ],
             ),
