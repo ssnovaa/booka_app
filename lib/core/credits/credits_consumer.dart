@@ -209,10 +209,6 @@ class CreditsConsumer {
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
-    // Если тикер сейчас неактивен (например, зашли на экран профиля или
-    // плеер был на паузе), не пытаемся дослать расход: просто обновим
-    // базовую позицию и выйдем. Иначе можно сжечь целый интервал «вхолостую»
-    // за счёт старой дельты.
     if (reason == 'stop-inactive') {
       _lastPosition = player.position;
       _hasBaseline = true;
@@ -222,21 +218,12 @@ class CreditsConsumer {
     if (!_hasBaseline) {
       _lastPosition = player.position;
       _hasBaseline = true;
-
-      // Если UI уже достиг нуля, а базовая позиция ещё не установлена (например,
-      // сразу после старта приложения с пустым балансом), синхронизируем ноль
-      // с сервером напрямую, не полагаясь на расчёт дельты.
-      if (reason == 'ui-zero') {
-        await _enforceExhaustionAndSyncZero();
-      }
       return;
     }
 
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
-      // База устарела или произошёл откат позиции (seek назад) — обновим
-      // базовую точку и не будем списывать.
       _lastPosition = current;
       return;
     }
@@ -245,47 +232,24 @@ class CreditsConsumer {
     }
 
     final seconds = delta.inSeconds;
-
-    // Когда UI достиг нуля, серверный остаток может быть меньше tickInterval
-    // (например, 8–15 секунд). Если отправить точную дельту, она может быть
-    // нулевой из‑за округления/отложенного старта, и сервер так и останется с
-    // остатком. Поэтому гарантируем хотя бы 1 секунду списания, но не
-    // форсируем целый tickInterval, чтобы не сжигать 20 секунд в холостую.
-    final clampedSeconds = switch (reason) {
-      // При достижении нуля нам важно гарантированно отправить *хотя бы*
-      // одну секунду (иначе округление может дать ноль и сервер останется с
-      // хвостом), но не форсировать полный tickInterval: это приводило к
-      // мгновенному списанию 20 секунд при любых пустых дельтах (например,
-      // при открытии профиля). Поэтому ограничиваемся минимальным 1s.
-      'ui-zero' => seconds <= 0 ? 1 : seconds,
-      _ => seconds,
-    };
-    if (clampedSeconds <= 0) {
-      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
-      if (reason == 'ui-zero') {
-        await _enforceExhaustionAndSyncZero();
-      }
-      return;
+    if (seconds > 0) {
+      _lastPosition = current;
+      await _postConsume(seconds, reason: reason);
     }
 
-    _lastPosition = current;
-    await _postConsume(
-      clampedSeconds,
-      reason: reason,
-      drainRemainderOnUiZero: reason == 'ui-zero',
-    );
+    if (reason == 'ui-zero') {
+      await _enforceExhaustionAndSyncZero();
+    }
   }
 
   Future<void> _postConsume(
     int seconds, {
     required String reason,
-    bool drainRemainderOnUiZero = false,
   }) async {
     try {
       await _postConsumeInternal(
         seconds,
         reason: reason,
-        drainRemainderOnUiZero: drainRemainderOnUiZero,
       );
     } catch (e, st) {
     }
@@ -294,7 +258,6 @@ class CreditsConsumer {
   Future<void> _postConsumeInternal(
     int seconds, {
     required String reason,
-    bool drainRemainderOnUiZero = false,
   }) async {
     final resp = await dio.post(
       '/api/credits/consume',
@@ -316,17 +279,6 @@ class CreditsConsumer {
       if (remainSec <= 0) {
         await _enforceExhaustionAndSyncZero();
         return;
-      }
-
-      if (drainRemainderOnUiZero) {
-        // UI уже достиг нуля, но сервер отдал остаток (например, из-за округления
-        // дельты). Чтобы не показывать «5с» после локального нуля, дожмём
-        // остаток единоразово тем значением, которое вернул сервер.
-        await _postConsumeInternal(
-          remainSec,
-          reason: '$reason-drain',
-          drainRemainderOnUiZero: false,
-        );
       }
     }
   }
