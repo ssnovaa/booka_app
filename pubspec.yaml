@@ -35,6 +35,7 @@ dependencies:
   package_info_plus:
   lottie: ^3.3.1
   google_mobile_ads: ^6.0.0
+  video_player: ^2.8.6
   in_app_purchase: ^3.2.3
   in_app_purchase_android: ^0.4.0+8
 
@@ -53,6 +54,7 @@ flutter:
     - lib/assets/images/fantasy.png
     - lib/assets/images/detective.png
     # Додаємо те, що реально є у проєкті й може використовуватися всередині застосунку:
+    - assets/logo_ped.mp4
     - assets/splash/logo.jpg
     - assets/splash/logo_full.jpg
     - assets/splash/logo512.jpg

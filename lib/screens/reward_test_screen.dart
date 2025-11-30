@@ -9,6 +9,7 @@ import 'package:booka_app/core/ads/rewarded_ad_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart'; // ⬅️ enableAdsMode()/disableAdsMode()
+import 'package:video_player/video_player.dart';
 
 // UI
 import 'package:booka_app/core/ui/reward_confirm_dialog.dart';
@@ -23,6 +24,8 @@ class RewardTestScreen extends StatefulWidget {
 class _RewardTestScreenState extends State<RewardTestScreen> {
   late final Dio _dio;
   RewardedAdService? _svc;
+  VideoPlayerController? _videoController;
+  Future<void>? _videoInit;
 
   // Общие флаги/состояния
   bool _loading = false; // загрузка rewarded-рекламы
@@ -57,6 +60,21 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     _svc = RewardedAdService(dio: _dio, userId: _userId);
     // (опціонально) префетч: _svc!.load();
+
+    // Банер із відео у шапці екрана
+    try {
+      _videoController = VideoPlayerController.asset('assets/logo_ped.mp4');
+      _videoInit = _videoController!.initialize().then((_) {
+        _videoController!.setLooping(false);
+        _videoController!.setVolume(0);
+        _videoController!.play();
+        if (mounted) setState(() {});
+      });
+    } catch (e) {
+      debugPrint('[REWARD][VIDEO] init error: $e');
+      _videoController = null;
+      _videoInit = Future.error(e);
+    }
   }
 
   void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
@@ -70,6 +88,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   @override
   void dispose() {
     _cancelRewardFlow();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -260,6 +279,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     // Глобальный баланс минут
     final minutes = context.watch<UserNotifier>().minutes;
+    final hasMinutes = minutes > 0;
 
     return WillPopScope(
       onWillPop: () async {
@@ -276,20 +296,99 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Статус/описание
-                  Container(
-                    width: double.infinity,
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: cs.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                    child: Text(_status, textAlign: TextAlign.center),
-                  ),
+                  if (_videoInit != null)
+                    FutureBuilder<void>(
+                      future: _videoInit,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return FractionallySizedBox(
+                            widthFactor: 0.85,
+                            child: Container(
+                              height: 180,
+                              decoration: BoxDecoration(
+                                color: cs.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: cs.outlineVariant),
+                              ),
+                              child:
+                                  const Center(child: CircularProgressIndicator()),
+                            ),
+                          );
+                        }
 
-                  const SizedBox(height: 12),
+                        if (snapshot.hasError || _videoController == null) {
+                          return FractionallySizedBox(
+                            widthFactor: 0.85,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: AspectRatio(
+                                aspectRatio: 16 / 9,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Image.asset(
+                                      'assets/splash/logo.jpg',
+                                      fit: BoxFit.cover,
+                                    ),
+                                    Container(
+                                      color: Colors.black45,
+                                      alignment: Alignment.center,
+                                      child: const Text(
+                                        'Відео тимчасово недоступне',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final ratio = _videoController!.value.aspectRatio;
+                        return FractionallySizedBox(
+                          widthFactor: 0.85,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: AspectRatio(
+                              aspectRatio: ratio == 0 ? 16 / 9 : ratio,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  if (_videoController == null) return;
+                                  _videoController!.seekTo(Duration.zero);
+                                  _videoController!.play();
+                                },
+                                child: VideoPlayer(_videoController!),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                  if (_videoInit != null) const SizedBox(height: 16),
+
+                  if (!hasMinutes) ...[
+                    // Статус/описание
+                    Container(
+                      width: double.infinity,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Text(_status, textAlign: TextAlign.center),
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
 
                   // Баланс хвилин с «пульсом»
                   Row(
@@ -302,40 +401,22 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
+                  // Основна дія під балансом
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: _enablingAdsMode ? null : _continueWithAds,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Продовжити з рекламою (без нарахувань)',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Кнопка 2 — СТАРЫЙ флоу: получить +15 хв за рекламу (rewarded)
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: _loading ? null : _get15,
+                      onPressed: hasMinutes
+                          ? (_loading ? null : _get15)
+                          : (_enablingAdsMode ? null : _continueWithAds),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
-                          _isAuthorized
-                              ? 'Отримати +15 хв за рекламу'
-                              : 'Подивитись винагородну рекламу (без нарахувань для гостя)',
+                          hasMinutes
+                              ? 'Отримати ще 15 хв'
+                              : 'Продовжити з рекламою (без нарахувань)',
                           style: const TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -350,15 +431,17 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     child: const Text('Скасувати'),
                   ),
 
-                  const SizedBox(height: 8),
-                  Opacity(
-                    opacity: 0.7,
-                    child: Text(
-                      'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
+                  if (!hasMinutes) ...[
+                    const SizedBox(height: 8),
+                    Opacity(
+                      opacity: 0.7,
+                      child: Text(
+                        'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
