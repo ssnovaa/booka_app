@@ -227,7 +227,20 @@ class CreditsConsumer {
     }
 
     final seconds = delta.inSeconds;
-    final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
+
+    // Когда UI достиг нуля, серверный остаток может быть меньше tickInterval
+    // (например, 8–15 секунд). Если отправить точную дельту, она может быть
+    // нулевой из‑за округления/отложенного старта, и сервер так и останется с
+    // остатком. Поэтому форсируем списание не меньше длины интервала, а при
+    // совсем нулевой дельте — хотя бы 1 секунда, чтобы добить остаток.
+    final clampedSeconds = switch (reason) {
+      'ui-zero' => (seconds <= 0)
+          ? 1
+          : (seconds < tickInterval.inSeconds
+              ? tickInterval.inSeconds
+              : seconds),
+      _ => seconds,
+    };
     if (clampedSeconds <= 0) {
       // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
       if (reason == 'ui-zero') {
