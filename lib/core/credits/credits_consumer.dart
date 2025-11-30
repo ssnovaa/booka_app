@@ -127,8 +127,15 @@ class CreditsConsumer {
     // чтобы короткие сессии не терялись.
     final wasActive = _active;
     if (flushPending) {
-      unawaited(
-          _consumePendingIfAny(reason: wasActive ? 'stop' : 'stop-inactive'));
+      if (wasActive) {
+        unawaited(_consumePendingIfAny(reason: 'stop'));
+      } else {
+        // Если тикер так и не стартовал, просто обновляем базовую позицию
+        // без отправки дельты, чтобы восстановление прогресса не приводило
+        // к ложному списанию и старт не списывал 20 секунд.
+        _lastPosition = player.position;
+        _hasBaseline = true;
+      }
     }
 
     if (!wasActive) return;
@@ -201,6 +208,9 @@ class CreditsConsumer {
   }
 
   Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
+    // Дожимает накопленный расход, если тикер не успел отправить дельту
+    // перед внешней остановкой (обычный стоп или ui-zero), ограничивая
+    // аномально большую дельту длиной одного тика.
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
