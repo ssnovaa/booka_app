@@ -401,27 +401,29 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  if (!hasMinutes) ...[
-                    // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: _enablingAdsMode ? null : _continueWithAds,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            'Продовжити з рекламою (без нарахувань)',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
+                  // Основна дія під балансом
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: hasMinutes
+                          ? (_loading ? null : _get15)
+                          : (_enablingAdsMode ? null : _continueWithAds),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          hasMinutes
+                              ? 'Отримати ще 15 хв'
+                              : 'Продовжити з рекламою (без нарахувань)',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ),
+                  ),
 
-                    const SizedBox(height: 8),
-                  ],
+                  const SizedBox(height: 8),
 
                   // Отмена
                   TextButton(
