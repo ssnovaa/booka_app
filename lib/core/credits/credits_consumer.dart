@@ -90,10 +90,18 @@ class CreditsConsumer {
 
   bool get isExhausted => _exhausted;
 
+  /// Обновляет базовую позицию для расчёта дельты, чтобы после пополнения
+  /// баланса не было ложного списания старой дельты.
+  void resetBaseline({Duration? position}) {
+    _lastPosition = position ?? player.position;
+    _hasBaseline = true;
+  }
+
   /// Принудительно дожать накопленное списание перед тем, как внешняя
   /// логика остановит воспроизведение из‑за обнуления локального таймера.
   Future<void> flushPendingForExhaustion() async {
     await _consumePendingIfAny(reason: 'ui-zero');
+    await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
   }
 
   // --- внутреннее ---
@@ -170,11 +178,11 @@ class CreditsConsumer {
     return true;
   }
 
-  Future<void> _enforceExhaustionAndSyncZero() async {
+  Future<void> _enforceExhaustionAndSyncZero({bool flushPendingOnStop = false}) async {
     _exhausted = true;
 
     // Немедленно останавливаем тикер и ставим на паузу, чтобы звук не шёл поверх пейволла.
-    _ensureStopped();
+    _ensureStopped(flushPending: flushPendingOnStop);
     if (!isPaid() && isFreeUser()) {
       await _forcePauseEverywhere();
     }
@@ -199,6 +207,13 @@ class CreditsConsumer {
     if (!_hasBaseline) {
       _lastPosition = player.position;
       _hasBaseline = true;
+
+      // Если UI уже достиг нуля, а базовая позиция ещё не установлена (например,
+      // сразу после старта приложения с пустым балансом), синхронизируем ноль
+      // с сервером напрямую, не полагаясь на расчёт дельты.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
       return;
     }
 
@@ -212,12 +227,17 @@ class CreditsConsumer {
     }
 
     final seconds = delta.inSeconds;
-    if (seconds <= 0) {
+    final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
+    if (clampedSeconds <= 0) {
+      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
+      if (reason == 'ui-zero') {
+        await _enforceExhaustionAndSyncZero();
+      }
       return;
     }
 
     _lastPosition = current;
-    await _postConsume(seconds, reason: reason);
+    await _postConsume(clampedSeconds, reason: reason);
   }
 
   Future<void> _postConsume(int seconds, {required String reason}) async {

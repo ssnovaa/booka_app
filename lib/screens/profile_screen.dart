@@ -592,7 +592,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('Profile: initState');
     profileFuture = _fetchUserProfile();
 
     // локал-first: тягнемо сервер лише якщо немає локальної сесії
@@ -600,7 +599,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       final ap = context.read<AudioPlayerProvider>();
       final hasLocal = await ap.hasSavedSession();
-      debugPrint('Profile: postFrame hasLocalSession=$hasLocal');
       if (!hasLocal) {
         await ap.hydrateFromServerIfAvailable();
       }
@@ -609,16 +607,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<Map<String, dynamic>?> _fetchUserProfile({bool force = false}) async {
     try {
-      debugPrint('Profile: load profile (force=$force)');
       return await ProfileRepository.I.loadMap(
         force: force,
         debugTag: 'ProfileScreen.load',
       );
     } catch (e) {
-      debugPrint('Profile: load profile error: $e');
       // ‼️ АВТО-ЛОГАУТ ПРИ 401 (Щоб не зависало на екрані помилки)
       if (e is AppNetworkException && e.statusCode == 401) {
-        debugPrint('Profile: 401 detected -> Auto Logout');
         if (mounted) {
           // Трохи чекаємо, щоб не було бліку
           Future.microtask(() => logout(context));
@@ -629,7 +624,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _refresh() async {
-    debugPrint('Profile: pull-to-refresh');
     final audio = context.read<AudioPlayerProvider>();
 
     final user = context.read<UserNotifier>();
@@ -645,7 +639,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> logout(BuildContext context) async {
-    debugPrint('Profile: logout');
     await Provider.of<UserNotifier>(context, listen: false).logout();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -809,7 +802,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (!userNotifier.isAuth) return const LoginScreen();
 
-    debugPrint('Profile: build, isPaidNow=${userNotifier.isPaidNow}');
     return Scaffold(
       appBar: bookaAppBar(actions: const []),
       body: FutureBuilder<Map<String, dynamic>?>(

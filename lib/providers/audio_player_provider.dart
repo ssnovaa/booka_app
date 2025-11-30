@@ -283,7 +283,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void _startFreeSecondsTicker() {
     if (_freeSecondsTicker != null) return;
     _log('freeSecondsTicker: START');
-    _freeSecondsTicker = Timer.periodic(_uiSecTick, (_) {
+    _freeSecondsTicker = Timer.periodic(_uiSecTick, (_) async {
       if (!_isPlayingAudibly() || _userType != UserType.free) return;
 
       final getFn = getFreeSeconds;
@@ -295,6 +295,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final int next = current - 1;
       setFn(next < 0 ? 0 : next);
+
+      if (next <= 0) {
+        await _handleFreeSecondsExhausted(flushConsumer: true);
+      }
     });
   }
 
@@ -456,7 +460,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   /// Сообщает провайдеру о внешнем обновлении баланса секунд.
   /// Используется, когда UserNotifier получает свежие данные с сервера.
-  void onExternalFreeSecondsUpdated(int seconds) {
+  Future<void> onExternalFreeSecondsUpdated(int seconds) async {
     final consumer = _creditsConsumer;
 
     if (consumer == null) {
@@ -468,20 +472,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     if (seconds <= 0) {
       _log('external free seconds → exhausted ($seconds)');
-      unawaited(consumer.flushPendingForExhaustion());
-      consumer.stop(flushPending: false);
-      _stopFreeSecondsTicker();
-
-      // FIX: Если секунды дошли до нуля, принудительно ставим на паузу.
-      if (player.playing && _userType == UserType.free && !_adMode) {
-        _log('external free seconds hit zero while playing. Forcing pause.');
-        player.pause();
-
-        // Отображаем экран награды сразу после паузы, чтобы не ждать
-        // повторного нажатия «play».
-        onCreditsExhausted?.call();
-      }
-
+      await _handleFreeSecondsExhausted(flushConsumer: true);
       return;
     }
 
@@ -491,6 +482,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       _log('external free seconds > 0 → disable ad-mode');
       _disableAdMode();
       _syncAdScheduleWithPlayback(); // Re-sync scheduler after ad mode disabled
+    }
+
+    if (seconds > 0) {
+      consumer.resetBaseline(position: player.position);
     }
 
     if (consumer.isExhausted) {
@@ -503,6 +498,24 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     _rearmFreeSecondsTicker();
+  }
+
+  Future<void> _handleFreeSecondsExhausted({bool flushConsumer = false}) async {
+    final consumer = _creditsConsumer;
+
+    if (consumer != null) {
+      if (flushConsumer) {
+        await consumer.flushPendingForExhaustion();
+      }
+      consumer.stop(flushPending: !flushConsumer);
+    }
+
+    _stopFreeSecondsTicker();
+
+    if (player.playing && _userType == UserType.free && !_adMode) {
+      await player.pause();
+      onCreditsExhausted?.call();
+    }
   }
 
   // ---------- ХРАНИЛИЩЕ ПРОГРЕССА ПО КНИГАМ ----------
@@ -1235,6 +1248,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       // отключаем Ad Mode, если он был активен, и сбрасываем флаг "исчерпано".
       if (secondsLeft > 0) {
         consumer?.resetExhaustion();
+        consumer?.resetBaseline(position: player.position);
         if (_adMode) {
           _log('secondsLeft > 0 detected on play: disabling ad-mode.');
           _disableAdMode();
@@ -1255,7 +1269,11 @@ class AudioPlayerProvider extends ChangeNotifier {
             if (ok) {
               _enableAdMode(); // Если согласие получено, включаем Ad Mode и продолжаем
             } else {
-              onCreditsExhausted?.call(); // Показываем Paywall (отказался от рекламы)
+              // Пользователь закрыл экран без согласия: оставляем на паузе и не
+              // вызываем paywall повторно, чтобы не получить бесконечный цикл
+              // «Скасувати → окно снова». При следующем нажатии play покажем экран
+              // снова, поэтому сбрасываем флаг показанного согласия.
+              _adConsentShown = false;
               return; // 🛑 БЛОКИРУЕМ проигрывание
             }
           } else {
