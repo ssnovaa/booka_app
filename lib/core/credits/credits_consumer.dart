@@ -97,10 +97,10 @@ class CreditsConsumer {
     _hasBaseline = true;
   }
 
-  /// Синхронизация нулевого баланса без досылки накопленного дебета секунд,
-  /// когда внешний слой сообщает, что локальный таймер уже обнулился.
+  /// При обнулении локального таймера досылает накопленный расход (если он есть)
+  /// и синхронизирует с сервером нулевой баланс.
   Future<void> flushPendingForExhaustion() async {
-    await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
+    await _consumePendingIfAny(reason: 'ui-zero');
   }
 
   // --- внутреннее ---
