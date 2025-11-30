@@ -156,7 +156,13 @@ class CreditsConsumer {
       var delta = current - _lastPosition;
       _lastPosition = current;
 
-      if (delta.isNegative || delta > tickInterval * 2) {
+      // Якщо позиція скинулась назад (пауза/перезапуск/інша глава) —
+      // не списуємо «штрафні» 20 секунд, а просто оновлюємо базову точку.
+      if (delta.isNegative) {
+        return;
+      }
+
+      if (delta > tickInterval * 2) {
         delta = tickInterval;
       }
       final seconds = delta.inSeconds;

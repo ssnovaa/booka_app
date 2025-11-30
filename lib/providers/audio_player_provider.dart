@@ -388,6 +388,9 @@ class AudioPlayerProvider extends ChangeNotifier {
             _log('balance>0 → disable ad-mode');
             _disableAdMode();
             _syncAdScheduleWithPlayback();
+          } else if (secLeft > 0) {
+            // Даже без ad-mode дайте показать согласие снова при следующем исчерпании.
+            _adConsentShown = false;
           }
         },
         onExhausted: () async {
@@ -444,6 +447,10 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Используется, когда UserNotifier получает свежие данные с сервера.
   void onExternalFreeSecondsUpdated(int seconds) {
     final consumer = _creditsConsumer;
+
+    if (seconds > 0) {
+      _adConsentShown = false; // при пополнении позволим снова спросить о рекламе
+    }
 
     if (consumer == null) {
       if (seconds <= 0) {
@@ -1178,6 +1185,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     _pullDurationFromPlayer();
+    // После (пере)подготовки плеера сбрасываем базовую позицию списания,
+    // чтобы CreditsConsumer не считал прыжок к сохранённой точке как «прогресс»
+    // и не отправлял первые 20 секунд сразу при заходе на экран профиля.
+    _creditsConsumer?.resetBaseline(position: initialPos);
     _rearmFreeSecondsTicker();
     notifyListeners();
   }
@@ -1595,6 +1606,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log('disable ad-mode');
     _adMode = false;
     _stopAdTimer();
+    // Даём возможность повторно показать экран согласия,
+    // когда минуты снова закончатся.
+    _adConsentShown = false;
     _ensureCreditsConsumer(); // вернёмся к consumer при необходимости
     notifyListeners();
   }
