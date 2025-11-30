@@ -9,7 +9,6 @@ import 'package:booka_app/core/ads/rewarded_ad_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart'; // ⬅️ enableAdsMode()/disableAdsMode()
-import 'package:booka_app/screens/subscriptions_screen.dart';
 import 'package:video_player/video_player.dart';
 
 // UI
@@ -428,30 +427,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
                     child: const Text('Скасувати'),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.tonal(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const SubscriptionsScreen()),
-                        );
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Купити підписку',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
 
                   if (!hasMinutes) ...[
