@@ -204,7 +204,7 @@ class CreditsConsumer {
 
     try {
       await dio.post(
-        '/api/credits/consume',
+        '/credits/consume',
         data: {'seconds': 0, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );
@@ -266,9 +266,9 @@ class CreditsConsumer {
 
   Future<void> _postConsume(int seconds, {required String reason}) async {
     try {
-      _log('POST /api/credits/consume → $seconds sec ($reason)');
+      _log('POST /credits/consume → $seconds sec ($reason)');
       final resp = await dio.post(
-        '/api/credits/consume',
+        '/credits/consume',
         data: {'seconds': seconds, 'context': 'player'},
         options: Options(headers: {'Accept': 'application/json'}),
       );

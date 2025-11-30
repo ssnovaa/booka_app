@@ -14,7 +14,7 @@ import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/user.dart'; // enum UserType, getUserType
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
-import 'package:booka_app/constants.dart';
+import 'package:booka_app/core/network/api_client.dart';
 
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/credits/credits_consumer.dart'; // списание секунд
@@ -354,16 +354,6 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // ---------- ИНИЦИАЛИЗАЦИЯ CreditsConsumer ----------
 
-  Dio _makeDio() {
-    final d = Dio(BaseOptions(baseUrl: BASE_ORIGIN));
-    final access = AuthStore.I.accessToken;
-    if (access != null && access.isNotEmpty) {
-      d.options.headers['Authorization'] = 'Bearer $access';
-    }
-    d.options.headers['Accept'] = 'application/json';
-    return d;
-  }
-
   void _ensureCreditsConsumer() {
     if (_userType == UserType.paid || _userType == UserType.guest) {
       _creditsConsumer?.stop();
@@ -371,10 +361,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
 
-    final dio = _makeDio();
     if (_creditsConsumer == null) {
       _creditsConsumer = CreditsConsumer(
-        dio: dio,
+        dio: ApiClient.i(),
         player: player,
         isPaid: () => _userType == UserType.paid,
         // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
