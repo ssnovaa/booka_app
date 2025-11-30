@@ -521,6 +521,8 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       if (consumer != null) {
         if (flushConsumer) {
+          // Дожимаем расход: отправляем накопленный дебет секунд,
+          // чтобы сервер сразу увидел ноль.
           await consumer.flushPendingForExhaustion();
         }
         consumer.stop(flushPending: !flushConsumer);

@@ -97,8 +97,9 @@ class CreditsConsumer {
     _hasBaseline = true;
   }
 
-  /// Принудительно дожать накопленное списание перед тем, как внешняя
-  /// логика остановит воспроизведение из‑за обнуления локального таймера.
+  /// «Дожим» расхода = дослать весь накопленный дебет секунд перед тем,
+  /// как внешняя логика остановит воспроизведение из‑за обнуления локального
+  /// таймера.
   Future<void> flushPendingForExhaustion() async {
     await _consumePendingIfAny(reason: 'ui-zero');
     await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
