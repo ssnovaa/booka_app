@@ -230,6 +230,7 @@ class CreditsConsumer {
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
+      _lastPosition = current;
       return;
     }
     if (delta > tickInterval * 2) {
@@ -239,10 +240,13 @@ class CreditsConsumer {
     final seconds = delta.inSeconds;
     final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
     if (clampedSeconds <= 0) {
-      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
+      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер
+      // и обновляем базовую позицию, чтобы не копить «пустую» дельту, которая потом
+      // превратится в принудительные 20 секунд.
       if (reason == 'ui-zero') {
         await _enforceExhaustionAndSyncZero();
       }
+      _lastPosition = current;
       return;
     }
 
