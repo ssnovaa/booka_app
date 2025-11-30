@@ -260,6 +260,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     // Глобальный баланс минут
     final minutes = context.watch<UserNotifier>().minutes;
+    final hasMinutes = minutes > 0;
 
     return WillPopScope(
       onWillPop: () async {
@@ -276,20 +277,22 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Статус/описание
-                  Container(
-                    width: double.infinity,
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: cs.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cs.outlineVariant),
+                  if (!hasMinutes) ...[
+                    // Статус/описание
+                    Container(
+                      width: double.infinity,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Text(_status, textAlign: TextAlign.center),
                     ),
-                    child: Text(_status, textAlign: TextAlign.center),
-                  ),
 
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Баланс хвилин с «пульсом»
                   Row(
@@ -302,25 +305,27 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _enablingAdsMode ? null : _continueWithAds,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Продовжити з рекламою (без нарахувань)',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                  if (!hasMinutes) ...[
+                    // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _enablingAdsMode ? null : _continueWithAds,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Продовжити з рекламою (без нарахувань)',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
 
                   // Кнопка 2 — СТАРЫЙ флоу: получить +15 хв за рекламу (rewarded)
                   SizedBox(
@@ -330,9 +335,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
-                          _isAuthorized
-                              ? 'Отримати +15 хв за рекламу'
-                              : 'Подивитись винагородну рекламу (без нарахувань для гостя)',
+                          'Отримати ще 15 хв',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -350,15 +353,17 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     child: const Text('Скасувати'),
                   ),
 
-                  const SizedBox(height: 8),
-                  Opacity(
-                    opacity: 0.7,
-                    child: Text(
-                      'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
+                  if (!hasMinutes) ...[
+                    const SizedBox(height: 8),
+                    Opacity(
+                      opacity: 0.7,
+                      child: Text(
+                        'У режимі реклами міжсторінкова реклама показуватиметься приблизно кожні 10 хвилин і закриватиметься автоматично.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
