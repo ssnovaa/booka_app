@@ -9,12 +9,12 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 
+import 'package:booka_app/constants.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/user.dart'; // enum UserType, getUserType
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
-import 'package:booka_app/core/network/api_client.dart';
 
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/credits/credits_consumer.dart'; // списание секунд
