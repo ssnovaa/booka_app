@@ -159,6 +159,8 @@ class CreditsConsumer {
       if (_exhausted) { _ensureStopped(); return; }
       if (!_isPlayingAudibly()) { _ensureStopped(); return; }
 
+      // Штатное списание во время воспроизведения: каждые tickInterval секунд
+      // считаем прирост позиции и отправляем его на бэкенд.
       final current = player.position;
       var delta = current - _lastPosition;
       _lastPosition = current;
@@ -210,7 +212,8 @@ class CreditsConsumer {
   Future<void> _consumePendingIfAny({String reason = 'stop'}) async {
     // Дожимает накопленный расход, если тикер не успел отправить дельту
     // перед внешней остановкой (обычный стоп или ui-zero), ограничивая
-    // аномально большую дельту длиной одного тика.
+    // аномально большую дельту длиной одного тика. Штатное списание идёт
+    // в _tick(), это лишь запасной канал для коротких сессий.
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
