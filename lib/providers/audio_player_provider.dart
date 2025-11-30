@@ -120,6 +120,11 @@ class AudioPlayerProvider extends ChangeNotifier {
   Timer? _freeSecondsTicker;
   static const Duration _uiSecTick = Duration(seconds: 1);
 
+  // Блокировка обновлений баланса в момент исчерпания, чтобы UI не прыгал
+  // на остатки с сервера перед показом paywall/reward-скрина.
+  bool _suppressBalanceUpdates = false;
+  int? _pendingBalanceUpdate;
+
   // Повторный «дожим» реарма, если плеер ещё не готов
   Timer? _pendingRearmTimer;
 
@@ -398,15 +403,12 @@ class AudioPlayerProvider extends ChangeNotifier {
         // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
         isFreeUser: () => _userType == UserType.free && !_adMode,
         onBalanceUpdated: (secLeft, minLeft) {
-          // Сервер — истина. Жёстко выставляем остаток.
-          setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
-
-          // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
-          if (secLeft > 0 && _adMode) {
-            _log('balance>0 → disable ad-mode');
-            _disableAdMode();
-            _syncAdScheduleWithPlayback();
+          if (_suppressBalanceUpdates) {
+            _pendingBalanceUpdate = secLeft;
+            return;
           }
+
+          _applyServerBalance(secLeft);
         },
         onExhausted: () async {
           onCreditsExhausted?.call();
@@ -501,20 +503,59 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _handleFreeSecondsExhausted({bool flushConsumer = false}) async {
-    final consumer = _creditsConsumer;
+    // Когда локальный таймер дошёл до нуля:
+    // 1) Сразу ставим в UI 0 секунд, чтобы счётчик не подпрыгивал на возможные
+    //    серверные «хвосты».
+    // 2) Останавливаем тикер, досылаем накопленный расход секунд (если был)
+    //    и синхронизируем с сервером нулевой баланс.
+    // 3) Паузим плеер и вызываем onCreditsExhausted(), чтобы показать paywall/
+    //    reward-скрин.
+    // 4) После завершения обработки применяем любой отложенный остаток,
+    //    который мог прийти с сервера.
+    _suppressBalanceUpdates = true;
+    try {
+      final consumer = _creditsConsumer;
 
-    if (consumer != null) {
-      if (flushConsumer) {
-        await consumer.flushPendingForExhaustion();
+      // Сразу фиксируем ноль, чтобы UI не прыгал на «остатки» с сервера.
+      setFreeSeconds?.call(0);
+
+      if (consumer != null) {
+        if (flushConsumer) {
+          await consumer.flushPendingForExhaustion();
+        }
+        consumer.stop(flushPending: !flushConsumer);
       }
-      consumer.stop(flushPending: !flushConsumer);
+
+      _stopFreeSecondsTicker();
+
+      // Даже если сервер ответил положительным остатком (например, из-за округления
+      // дельты при финальном flush), для UX важно показать ноль до появления
+      // paywall/reward-скрина.
+      setFreeSeconds?.call(0);
+
+      if (player.playing && _userType == UserType.free && !_adMode) {
+        await player.pause();
+        onCreditsExhausted?.call();
+      }
+    } finally {
+      _suppressBalanceUpdates = false;
+      final pending = _pendingBalanceUpdate;
+      _pendingBalanceUpdate = null;
+      if (pending != null) {
+        _applyServerBalance(pending);
+      }
     }
+  }
 
-    _stopFreeSecondsTicker();
+  void _applyServerBalance(int secLeft) {
+    // Сервер — истина. Жёстко выставляем остаток.
+    setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
 
-    if (player.playing && _userType == UserType.free && !_adMode) {
-      await player.pause();
-      onCreditsExhausted?.call();
+    // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
+    if (secLeft > 0 && _adMode) {
+      _log('balance>0 → disable ad-mode');
+      _disableAdMode();
+      _syncAdScheduleWithPlayback();
     }
   }
 
@@ -1653,6 +1694,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     _adMode = false;
     _stopAdTimer();
     _ensureCreditsConsumer(); // вернёмся к consumer при необходимости
+    if (player.playing) {
+      _creditsConsumer?.start(); // возобновим периодическое списание/синхронизацию
+    }
     notifyListeners();
   }
 

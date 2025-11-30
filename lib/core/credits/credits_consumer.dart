@@ -97,11 +97,10 @@ class CreditsConsumer {
     _hasBaseline = true;
   }
 
-  /// Принудительно дожать накопленное списание перед тем, как внешняя
-  /// логика остановит воспроизведение из‑за обнуления локального таймера.
+  /// При обнулении локального таймера досылает накопленный расход (если он есть)
+  /// и синхронизирует с сервером нулевой баланс.
   Future<void> flushPendingForExhaustion() async {
     await _consumePendingIfAny(reason: 'ui-zero');
-    await _enforceExhaustionAndSyncZero(flushPendingOnStop: false);
   }
 
   // --- внутреннее ---
@@ -156,7 +155,12 @@ class CreditsConsumer {
       var delta = current - _lastPosition;
       _lastPosition = current;
 
-      if (delta.isNegative || delta > tickInterval * 2) {
+      if (delta.isNegative) {
+        // Позиция могла «откатиться» из‑за смены главы/прыжка назад —
+        // такое движение не должно списывать секунды.
+        return;
+      }
+      if (delta > tickInterval * 2) {
         delta = tickInterval;
       }
       final seconds = delta.inSeconds;
@@ -204,22 +208,22 @@ class CreditsConsumer {
     if (isPaid()) return;
     if (!isFreeUser()) return;
 
+    if (reason == 'stop-inactive') {
+      _lastPosition = player.position;
+      _hasBaseline = true;
+      return;
+    }
+
     if (!_hasBaseline) {
       _lastPosition = player.position;
       _hasBaseline = true;
-
-      // Если UI уже достиг нуля, а базовая позиция ещё не установлена (например,
-      // сразу после старта приложения с пустым балансом), синхронизируем ноль
-      // с сервером напрямую, не полагаясь на расчёт дельты.
-      if (reason == 'ui-zero') {
-        await _enforceExhaustionAndSyncZero();
-      }
       return;
     }
 
     final current = player.position;
     var delta = current - _lastPosition;
     if (delta.isNegative) {
+      _lastPosition = current;
       return;
     }
     if (delta > tickInterval * 2) {
@@ -227,43 +231,54 @@ class CreditsConsumer {
     }
 
     final seconds = delta.inSeconds;
-    final clampedSeconds = (seconds <= 0 && reason == 'ui-zero') ? 1 : seconds;
-    if (clampedSeconds <= 0) {
-      // При достижении нуля, даже если дельта не набежала, форсируем ноль на сервер.
-      if (reason == 'ui-zero') {
-        await _enforceExhaustionAndSyncZero();
-      }
-      return;
+    if (seconds > 0) {
+      _lastPosition = current;
+      await _postConsume(seconds, reason: reason);
     }
 
-    _lastPosition = current;
-    await _postConsume(clampedSeconds, reason: reason);
+    if (reason == 'ui-zero') {
+      await _enforceExhaustionAndSyncZero();
+    }
   }
 
-  Future<void> _postConsume(int seconds, {required String reason}) async {
+  Future<void> _postConsume(
+    int seconds, {
+    required String reason,
+  }) async {
     try {
-      final resp = await dio.post(
-        '/api/credits/consume',
-        data: {'seconds': seconds, 'context': 'player'},
-        options: Options(headers: {'Accept': 'application/json'}),
+      await _postConsumeInternal(
+        seconds,
+        reason: reason,
       );
-
-      if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
-        final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
-        final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
-
-        // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
-        if (remainSec > 0 && _exhausted) {
-          _exhausted = false;
-        }
-
-        onBalanceUpdated?.call(remainSec, remainMin);
-
-        if (remainSec <= 0) {
-          await _enforceExhaustionAndSyncZero();
-        }
-      }
     } catch (e, st) {
+    }
+  }
+
+  Future<void> _postConsumeInternal(
+    int seconds, {
+    required String reason,
+  }) async {
+    final resp = await dio.post(
+      '/api/credits/consume',
+      data: {'seconds': seconds, 'context': 'player'},
+      options: Options(headers: {'Accept': 'application/json'}),
+    );
+
+    if (resp.statusCode == 200 && resp.data is Map && resp.data['ok'] == true) {
+      final remainSec = (resp.data['remaining_seconds'] ?? 0) as int;
+      final remainMin = (resp.data['remaining_minutes'] ?? 0) as int;
+
+      // ⬇️ если баланс снова > 0 — снимаем блокировку исчерпания
+      if (remainSec > 0 && _exhausted) {
+        _exhausted = false;
+      }
+
+      onBalanceUpdated?.call(remainSec, remainMin);
+
+      if (remainSec <= 0) {
+        await _enforceExhaustionAndSyncZero();
+        return;
+      }
     }
   }
 }
