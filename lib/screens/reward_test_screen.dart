@@ -295,8 +295,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     // Глобальный баланс минут/секунд
     final user = context.watch<UserNotifier>();
-    final minutes = user.minutes;
-    final hasFreeSeconds = user.freeSeconds > 0;
+    final secondsLeft = user.freeSeconds < 0 ? 0 : user.freeSeconds;
+    final hasFreeSeconds = secondsLeft > 0;
     const logoHeight = 153.0; // 15% меньше от старых 180px
 
     return WillPopScope(
@@ -427,7 +427,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text('Баланс: ', style: TextStyle(fontSize: 16)),
-                      MinutesCounter(minutes: minutes, controller: _mc),
+                      MinutesCounter(seconds: secondsLeft, controller: _mc),
                     ],
                   ),
 
