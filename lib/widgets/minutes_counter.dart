@@ -10,16 +10,18 @@ class MinutesCounterController {
 }
 
 class MinutesCounter extends StatefulWidget {
+  // Дозволяємо передавати або секунди, або хвилини (для сумісності).
   final int seconds;
   final MinutesCounterController? controller;
   final TextStyle? style;
 
   const MinutesCounter({
     super.key,
-    required this.seconds,
+    int? seconds,
+    int? minutes,
     this.controller,
     this.style,
-  });
+  }) : seconds = seconds ?? (minutes ?? 0) * 60;
 
   @override
   State<MinutesCounter> createState() => _MinutesCounterState();
