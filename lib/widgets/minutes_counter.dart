@@ -1,6 +1,6 @@
 // lib/widgets/minutes_counter.dart
-// Комментарии — русские; тексты — украинские.
-// Виджет лічильника хвилин с контроллером для «пульса» (подсветка).
+// Коментарі — українською; тексти — українські.
+// Виджет лічильника хвилин з контролером для «пульсу» (підсвітка).
 
 import 'package:flutter/material.dart';
 
@@ -10,18 +10,17 @@ class MinutesCounterController {
 }
 
 class MinutesCounter extends StatefulWidget {
-  // Дозволяємо передавати або секунди, або хвилини (для сумісності).
+  // Приймаємо точну кількість секунд замість додаткових параметрів.
   final int seconds;
   final MinutesCounterController? controller;
   final TextStyle? style;
 
   const MinutesCounter({
     super.key,
-    int? seconds,
-    int? minutes,
+    required this.seconds,
     this.controller,
     this.style,
-  }) : seconds = seconds ?? (minutes ?? 0) * 60;
+  });
 
   @override
   State<MinutesCounter> createState() => _MinutesCounterState();
