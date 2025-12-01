@@ -10,16 +10,18 @@ class MinutesCounterController {
 }
 
 class MinutesCounter extends StatefulWidget {
-  final int minutes;
+  // Дозволяємо передавати або секунди, або хвилини (для сумісності).
+  final int seconds;
   final MinutesCounterController? controller;
   final TextStyle? style;
 
   const MinutesCounter({
     super.key,
-    required this.minutes,
+    int? seconds,
+    int? minutes,
     this.controller,
     this.style,
-  });
+  }) : seconds = seconds ?? (minutes ?? 0) * 60;
 
   @override
   State<MinutesCounter> createState() => _MinutesCounterState();
@@ -55,10 +57,23 @@ class _MinutesCounterState extends State<MinutesCounter>
     final style = widget.style ??
         const TextStyle(fontSize: 20, fontWeight: FontWeight.w800);
 
+    final minutes = widget.seconds ~/ 60;
+    final seconds = widget.seconds % 60;
+
+    // Текст показує хвилини, а за потреби додає секунди (< 1 хвилини)
+    String label;
+    if (minutes > 0 && seconds > 0) {
+      label = '$minutes хв $seconds с';
+    } else if (minutes > 0) {
+      label = '$minutes хв';
+    } else {
+      label = '$seconds с';
+    }
+
     return AnimatedScale(
       scale: _pulse ? 1.15 : 1.0,
       duration: const Duration(milliseconds: 220),
-      child: Text('${widget.minutes} хв', style: style),
+      child: Text(label, style: style),
     );
   }
 }
