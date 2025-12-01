@@ -33,10 +33,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   bool _loading = false; // загрузка rewarded-рекламы
   bool _enablingAdsMode = false; // включение ad-mode
   String _status =
-      'Ваші хвилини прослуховування закінчилися.\n\n'
-      'Можна:\n'
-      '• Отримати +15 хв за перегляд винагородної реклами, або\n'
-      '• Продовжити з періодичною рекламою (без нарахування хвилин).';
+      'Ваші хвилини прослуховування закінчилися, оберіть варіанти продовження.';
 
   bool _isAuthorized = false;
   int _userId = 0;
@@ -293,10 +290,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Глобальный баланс минут
-    final minutes = context.watch<UserNotifier>().minutes;
-    final hasMinutes = minutes > 0;
+    // Глобальний баланс часу
+    final user = context.watch<UserNotifier>();
+    final secondsLeft = user.freeSeconds;
+    final minutes = secondsLeft ~/ 60;
+    final hasFreeTime = secondsLeft > 0;
     const logoHeight = 153.0; // 15% меньше от старых 180px
+    const smallLogoHeight = 56.0;
 
     return WillPopScope(
       onWillPop: () async {
@@ -313,7 +313,19 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (hasMinutes && _videoInit != null)
+                  if (!hasFreeTime) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/splash/logo.jpg',
+                        height: smallLogoHeight,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (hasFreeTime && _videoInit != null)
                     FutureBuilder<void>(
                       future: _videoInit,
                       builder: (context, snapshot) {
@@ -402,20 +414,38 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       },
                     ),
 
-                  if (hasMinutes && _videoInit != null) const SizedBox(height: 16),
+                  if (hasFreeTime && _videoInit != null) const SizedBox(height: 16),
 
-                  if (!hasMinutes) ...[
-                    // Статус/описание
+                  if (_loading || !hasFreeTime) ...[
+                    // Статус/опис з прогресом під час завантаження реклами
                     Container(
                       width: double.infinity,
                       padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       decoration: BoxDecoration(
                         color: cs.surface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: cs.outlineVariant),
                       ),
-                      child: Text(_status, textAlign: TextAlign.center),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_loading) ...[
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2.2),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Flexible(
+                            child: Text(
+                              _status,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
@@ -432,7 +462,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  if (!hasMinutes) ...[
+                  if (!hasFreeTime) ...[
                     // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
                     SizedBox(
                       width: double.infinity,
@@ -441,7 +471,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text(
-                            'Продовжити з рекламою (без нарахувань)',
+                            'Продовжити з рекламою',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -496,7 +526,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     ),
                   ),
 
-                  if (!hasMinutes) ...[
+                  if (!hasFreeTime) ...[
                     const SizedBox(height: 8),
                     Opacity(
                       opacity: 0.7,
