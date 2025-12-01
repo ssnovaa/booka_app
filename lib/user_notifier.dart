@@ -63,9 +63,15 @@ class UserNotifier extends ChangeNotifier {
 
   /// Абсолютно установить секунды (например, после /profile или consume).
   void setFreeSeconds(int seconds) {
+    // Поглинаємо «хвіст» у 1 секунду, щоб інтерфейс гарантовано переходив у нульовий стан
+    // і не зависав на 00:01 після зовнішніх оновлень (наприклад, після consume),
+    // бо бекенд може повернути left=1s, а UI з перевіркою `secondsLeft > 0`
+    // трактує це як наявність часу й не показує нульову плашку.
     final s = seconds.clamp(0, 0x7fffffff);
-    if (s != _freeSeconds) {
-      _freeSeconds = s;
+    final normalized = s <= 1 ? 0 : s;
+
+    if (normalized != _freeSeconds) {
+      _freeSeconds = normalized;
       notifyListeners();
     }
   }
@@ -74,8 +80,10 @@ class UserNotifier extends ChangeNotifier {
   void addFreeSeconds(int delta) {
     final next = _freeSeconds + delta;
     final clamped = next < 0 ? 0 : (next > 0x7fffffff ? 0x7fffffff : next);
-    if (clamped != _freeSeconds) {
-      _freeSeconds = clamped;
+    final normalized = clamped <= 1 ? 0 : clamped;
+
+    if (normalized != _freeSeconds) {
+      _freeSeconds = normalized;
       notifyListeners();
     }
   }
