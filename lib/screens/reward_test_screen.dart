@@ -451,7 +451,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text(
-                            'Продовжити з рекламою (без нарахувань)',
+                            'Продовжити з рекламою',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
