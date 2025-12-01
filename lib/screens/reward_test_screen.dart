@@ -444,14 +444,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 8),
 
-                  // Отмена
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Скасувати'),
-                  ),
-
-                  const SizedBox(height: 8),
-
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonal(
@@ -485,6 +477,14 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 8),
+
+                  // Відміна
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Скасувати'),
+                  ),
                 ],
               ),
             ),
