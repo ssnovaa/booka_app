@@ -33,10 +33,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   bool _loading = false; // загрузка rewarded-рекламы
   bool _enablingAdsMode = false; // включение ad-mode
   String _status =
-      'Ваші хвилини прослуховування закінчилися.\n\n'
-      'Можна:\n'
-      '• Отримати +15 хв за перегляд винагородної реклами, або\n'
-      '• Продовжити з періодичною рекламою (без нарахування хвилин).';
+      'Ваші хвилини прослуховування закінчилися, оберіть варіанти продовження.';
 
   bool _isAuthorized = false;
   int _userId = 0;
