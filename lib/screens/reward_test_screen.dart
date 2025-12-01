@@ -27,6 +27,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   RewardedAdService? _svc;
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
+  bool _videoCompleted = false;
 
   // Общие флаги/состояния
   bool _loading = false; // загрузка rewarded-рекламы
@@ -62,20 +63,34 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     _svc = RewardedAdService(dio: _dio, userId: _userId);
     // (опціонально) префетч: _svc!.load();
 
-    // Банер із відео у шапці екрана
+    // Банер із відео у шапці екрана (грає один раз, потім запускається тапом)
     try {
       _videoController = VideoPlayerController.asset('assets/logo_ped.mp4');
       _videoInit = _videoController!.initialize().then((_) {
-        _videoController!.setLooping(true);
-        _videoController!.setVolume(0);
-        _videoController!.play();
-        if (mounted) setState(() {});
+        _videoController!..setLooping(false)..setVolume(0);
+        _videoController!.addListener(() {
+          final controller = _videoController;
+          if (controller == null) return;
+
+          final isEnded = controller.value.duration != Duration.zero &&
+              controller.value.position >= controller.value.duration;
+
+          if (isEnded && !_videoCompleted) {
+            // Відмічаємо завершення, щоб показати плей-оверлей
+            setState(() => _videoCompleted = true);
+          }
+        });
+
+        _videoController!.play().then((_) {
+          if (mounted) setState(() {});
+        });
       });
     } catch (e) {
       debugPrint('[REWARD][VIDEO] init error: $e');
       _videoController = null;
       _videoInit = Future.error(e);
     }
+
   }
 
   void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
@@ -281,6 +296,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     // Глобальный баланс минут
     final minutes = context.watch<UserNotifier>().minutes;
     final hasMinutes = minutes > 0;
+    const logoHeight = 153.0; // 15% меньше от старых 180px
 
     return WillPopScope(
       onWillPop: () async {
@@ -297,13 +313,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_videoInit != null)
+                  if (hasMinutes && _videoInit != null)
                     FutureBuilder<void>(
                       future: _videoInit,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return Container(
-                            height: 180,
+                            height: logoHeight,
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: cs.surface,
@@ -345,17 +361,48 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         }
 
                         final ratio = _videoController!.value.aspectRatio;
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: AspectRatio(
-                            aspectRatio: ratio == 0 ? 16 / 9 : ratio,
-                            child: VideoPlayer(_videoController!),
+                        final controller = _videoController!;
+
+                        return FractionallySizedBox(
+                          widthFactor: 0.85,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: AspectRatio(
+                              aspectRatio: ratio == 0 ? 16 / 9 : ratio,
+                              child: GestureDetector(
+                                onTap: () async {
+                                  try {
+                                    await controller.seekTo(Duration.zero);
+                                    await controller.play();
+                                    if (mounted) setState(() => _videoCompleted = false);
+                                  } catch (e) {
+                                    debugPrint('[REWARD][VIDEO] replay error: $e');
+                                  }
+                                },
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    VideoPlayer(controller),
+                                    if (_videoCompleted)
+                                      Container(
+                                        color: Colors.black26,
+                                        alignment: Alignment.center,
+                                        child: const Icon(
+                                          Icons.play_circle_fill,
+                                          size: 72,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         );
                       },
                     ),
 
-                  if (_videoInit != null) const SizedBox(height: 16),
+                  if (hasMinutes && _videoInit != null) const SizedBox(height: 16),
 
                   if (!hasMinutes) ...[
                     // Статус/описание
@@ -427,14 +474,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 8),
 
-                  // Отмена
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Скасувати'),
-                  ),
-
-                  const SizedBox(height: 8),
-
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonal(
@@ -468,6 +507,14 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 8),
+
+                  // Відміна
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Скасувати'),
+                  ),
                 ],
               ),
             ),
