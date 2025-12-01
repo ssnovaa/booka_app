@@ -313,15 +313,17 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      'assets/splash/logo.jpg',
-                      height: smallLogoHeight,
+                  if (!hasFreeTime) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/splash/logo.jpg',
+                        height: smallLogoHeight,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
 
                   if (hasFreeTime && _videoInit != null)
                     FutureBuilder<void>(
