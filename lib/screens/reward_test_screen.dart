@@ -293,9 +293,10 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Глобальный баланс минут
-    final minutes = context.watch<UserNotifier>().minutes;
-    final hasMinutes = minutes > 0;
+    // Глобальный баланс минут/секунд
+    final user = context.watch<UserNotifier>();
+    final minutes = user.minutes;
+    final hasFreeSeconds = user.freeSeconds > 0;
     const logoHeight = 153.0; // 15% меньше от старых 180px
 
     return WillPopScope(
@@ -313,7 +314,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (hasMinutes && _videoInit != null)
+                  if (hasFreeSeconds && _videoInit != null)
                     FutureBuilder<void>(
                       future: _videoInit,
                       builder: (context, snapshot) {
@@ -402,9 +403,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       },
                     ),
 
-                  if (hasMinutes && _videoInit != null) const SizedBox(height: 16),
+                  if (hasFreeSeconds && _videoInit != null) const SizedBox(height: 16),
 
-                  if (!hasMinutes) ...[
+                  if (!hasFreeSeconds) ...[
                     // Статус/описание
                     Container(
                       width: double.infinity,
@@ -432,7 +433,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  if (!hasMinutes) ...[
+                  if (!hasFreeSeconds) ...[
                     // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
                     SizedBox(
                       width: double.infinity,
@@ -496,7 +497,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     ),
                   ),
 
-                  if (!hasMinutes) ...[
+                  if (!hasFreeSeconds) ...[
                     const SizedBox(height: 8),
                     Opacity(
                       opacity: 0.7,
