@@ -296,6 +296,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     final minutes = secondsLeft ~/ 60;
     final hasFreeTime = secondsLeft > 0;
     const logoHeight = 153.0; // 15% меньше от старых 180px
+    const smallLogoHeight = 56.0;
 
     return WillPopScope(
       onWillPop: () async {
@@ -312,6 +313,16 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/splash/logo.jpg',
+                      height: smallLogoHeight,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
                   if (hasFreeTime && _videoInit != null)
                     FutureBuilder<void>(
                       future: _videoInit,
