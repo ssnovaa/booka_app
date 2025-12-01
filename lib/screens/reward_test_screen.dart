@@ -414,18 +414,36 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   if (hasFreeTime && _videoInit != null) const SizedBox(height: 16),
 
-                  if (!hasFreeTime) ...[
-                    // Статус/описание
+                  if (_loading || !hasFreeTime) ...[
+                    // Статус/опис з прогресом під час завантаження реклами
                     Container(
                       width: double.infinity,
                       padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       decoration: BoxDecoration(
                         color: cs.surface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: cs.outlineVariant),
                       ),
-                      child: Text(_status, textAlign: TextAlign.center),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_loading) ...[
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2.2),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Flexible(
+                            child: Text(
+                              _status,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
