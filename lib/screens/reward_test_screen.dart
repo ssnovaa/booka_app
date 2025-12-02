@@ -90,9 +90,21 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
   }
 
-  void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
+  void _cancelRewardFlow({
+    String reason = 'Показ скасовано користувачем',
+    bool resumeAdSchedule = false,
+  }) {
     _rewardSession++;
     _svc?.cancel(reason: reason);
+
+    if (resumeAdSchedule) {
+      try {
+        // Повертаємо розклад міжсторінкової реклами, якщо відмінили rewarded-флоу
+        context.read<AudioPlayerProvider>().resumeAdSchedule('rewarded');
+      } catch (e) {
+        debugPrint('[REWARD][WARN] resumeAdSchedule() after cancel failed: $e');
+      }
+    }
     if (mounted && _loading) {
       setState(() => _loading = false);
     }
@@ -300,7 +312,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     return WillPopScope(
       onWillPop: () async {
-        _cancelRewardFlow();
+        _cancelRewardFlow(resumeAdSchedule: true);
         return true;
       },
       child: Scaffold(
