@@ -99,7 +99,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     if (resumeAdSchedule) {
       try {
-        // Повертаємо розклад міжсторінкової реклами, якщо відмінили rewarded-флоу
+        // Повертаємо розклад міжсторінкової реклами, якщо відмінили rewarded-флоу,
+        // щоб інтервали реклами не залишались вимкненими після виходу назад
         context.read<AudioPlayerProvider>().resumeAdSchedule('rewarded');
       } catch (e) {
         debugPrint('[REWARD][WARN] resumeAdSchedule() after cancel failed: $e');
