@@ -404,7 +404,8 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        genres = await compute(_parseGenresOffMain, raw);
+        final parsed = await compute(_parseGenresOffMain, raw);
+        genres = parsed.where((g) => g.hasBooks).toList();
         return genres;
       }
       // Не формуємо «говорящі» Exception з деталями — кидаємо DioException для санітайзера
