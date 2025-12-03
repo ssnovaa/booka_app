@@ -313,7 +313,13 @@ class _GenreTile extends StatelessWidget {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: _buildImage(url, asset),
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.82,
+                      heightFactor: 0.82,
+                      child: _buildImage(url, asset),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -338,18 +344,28 @@ class _GenreTile extends StatelessWidget {
 
   Widget _buildImage(String? url, String asset) {
     if (url == null || url.isEmpty) {
-      return Image.asset(asset, fit: BoxFit.cover, width: double.infinity);
+      return Image.asset(
+        asset,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+      );
     }
     return CachedNetworkImage(
       imageUrl: url,
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       width: double.infinity,
+      height: double.infinity,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (ctx, _) => const Center(
         child: SizedBox(width: 22, height: 22, child: LoadingIndicator(size: 22)),
       ),
-      errorWidget: (ctx, _, __) =>
-          Image.asset(asset, fit: BoxFit.cover, width: double.infinity),
+      errorWidget: (ctx, _, __) => Image.asset(
+        asset,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+      ),
     );
   }
 
