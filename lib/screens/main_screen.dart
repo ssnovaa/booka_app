@@ -97,6 +97,7 @@ class _MainScreenState extends State<MainScreen> {
     if (index == 3) {
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
       // 🧭 Чекаємо результат з профілю, щоб коректно повернутись на вкладку після pop
+      // Використовуємо then без await, щоб onTap залишався синхронним для навбару.
       Navigator.of(context)
           .push<int>(
             MaterialPageRoute(
