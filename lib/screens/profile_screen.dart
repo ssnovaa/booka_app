@@ -741,16 +741,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _switchMainTabAndClose(int tab) {
-    final ms = MainScreen.of(context);
-    if (ms != null) {
-      ms.setTab(tab);
-      Navigator.of(context).pop();
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
-            (route) => false,
-      );
-    }
+    // 🧭 Повертаємо індекс бажаної вкладки назад через Navigator.pop
+    Navigator.of(context).pop(tab);
   }
 
   /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
