@@ -97,18 +97,20 @@ class _MainScreenState extends State<MainScreen> {
     if (index == 3) {
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
       // 🧭 Чекаємо результат з профілю, щоб коректно повернутись на вкладку після pop
-      final result = await Navigator.of(context).push<int>(
-        MaterialPageRoute(
-          builder: (_) => userNotifier.isAuth
-              ? const ProfileScreen()
-              : const LoginScreen(),
-        ),
-      );
-
-      // Якщо профіль повернув індекс вкладки — переключаємося сюди
-      if (result != null) {
-        setTab(result);
-      }
+      Navigator.of(context)
+          .push<int>(
+            MaterialPageRoute(
+              builder: (_) => userNotifier.isAuth
+                  ? const ProfileScreen()
+                  : const LoginScreen(),
+            ),
+          )
+          .then((result) {
+        // Якщо профіль повернув індекс вкладки — переключаємося сюди
+        if (result != null) {
+          setTab(result);
+        }
+      });
       return;
     }
   }
