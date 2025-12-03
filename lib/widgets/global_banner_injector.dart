@@ -441,6 +441,10 @@ class _GlobalBannerInjectorState extends State<GlobalBannerInjector>
         width: double.infinity,
         child: FilledButton(
           onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          ),
           child: const Text('Отримати ще 15 хвилин'),
         ),
       ),
