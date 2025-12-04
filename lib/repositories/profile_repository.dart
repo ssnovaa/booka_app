@@ -1,4 +1,6 @@
 // lib/repositories/profile_repository.dart
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/app_exception.dart';
@@ -88,7 +90,36 @@ class ProfileRepository {
 
   // ---------------- внутрішня логіка ----------------
 
+  static const _retryDelays = <Duration>[
+    Duration(milliseconds: 250),
+    Duration(milliseconds: 650),
+  ];
+
   Future<Map<String, dynamic>> _fetchMapFromApi() async {
+    AppNetworkException? last;
+
+    for (var attempt = 0; attempt <= _retryDelays.length; attempt++) {
+      try {
+        return await _fetchMapFromApiOnce();
+      } on AppNetworkException catch (e) {
+        last = e;
+
+        final sc = e.statusCode ?? 0;
+        final transient = sc == 0 || sc == 401 || sc == 403 || sc == 408 || sc == 429 || sc >= 500;
+
+        if (transient && attempt < _retryDelays.length) {
+          await Future.delayed(_retryDelays[attempt]);
+          continue;
+        }
+
+        rethrow;
+      }
+    }
+
+    throw last ?? AppNetworkException('Невідома помилка під час отримання профілю');
+  }
+
+  Future<Map<String, dynamic>> _fetchMapFromApiOnce() async {
     try {
       // Пробуємо /profile
       Response r = await _dio.get(

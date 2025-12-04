@@ -231,8 +231,11 @@ class UserNotifier extends ChangeNotifier {
       return;
     }
 
+    // Маємо токен — вважаємо користувача авторизованим, навіть якщо мережа лагає
+    _isAuth = true;
+
     try {
-      final u = await ProfileRepository.I.load();
+      final u = await ProfileRepository.I.load(debugTag: 'UserNotifier.fetch');
       _user = u;
       _isAuth = true;
 
@@ -242,10 +245,10 @@ class UserNotifier extends ChangeNotifier {
         _freeSeconds = _clampSeconds(secondsFromCache);
       }
 
-      // Параллельно мягко подтягиваем точный баланс из /profile.
+      // Паралельно м'яко підтягнемо точний баланс із /profile.
       await _refreshBalanceSoft();
 
-      // 🔁 И дотягиваем приватный статус подписки из /auth/me
+      // 🔁 І дотягнемо приватний статус підписки з /auth/me
       await _refreshPaidStatusSoft();
 
       // ‼️‼️‼️ ЗМІНА 4: ПРИМУСОВО РЕЄСТРУЄМО ТОКЕН ПІСЛЯ ВІДНОВЛЕННЯ СЕСІЇ ‼️‼️‼️
@@ -253,28 +256,24 @@ class UserNotifier extends ChangeNotifier {
         unawaited(PushService.instance.registerToken(force: true));
       }
     } on DioException catch (e) {
+      // Залишаємо авторизацію, помилку передаємо у безпечному вигляді
       final sc = e.response?.statusCode ?? 0;
-      if (sc == 401 || sc == 403) {
-        await _clearAuth();
-      } else {
-        // Не пробрасываем «сырые» ошибки наружу
-        throw AppNetworkException(
-          safeErrorMessage(e, fallback: 'Не удалось загрузить профиль'),
-          statusCode: sc,
-        );
-      }
+      throw AppNetworkException(
+        safeErrorMessage(e, fallback: 'Не удалось загрузить профиль'),
+        statusCode: sc,
+      );
     } on AppNetworkException catch (e) {
+      // Не скидаємо токен, навіть якщо бекенд тимчасово відповів 401/403
       if (e.statusCode == 401 || e.statusCode == 403) {
-        await _clearAuth();
-      } else {
-        // Не пробрасываем «сырые» ошибки наружу
-        throw AppNetworkException(
-          e.message,
-          statusCode: e.statusCode,
-        );
+        return;
       }
+
+      throw AppNetworkException(
+        e.message,
+        statusCode: e.statusCode,
+      );
     } catch (_) {
-      await _clearAuth();
+      // Ігноруємо, авторизацію не очищаємо
     }
     notifyListeners();
   }
