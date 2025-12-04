@@ -62,13 +62,19 @@ class ProfileRepository {
 
     _log(force ? 'net-force' : 'net', debugTag);
 
-    _inflight = _fetchMapFromApi().then((map) {
+    _inflight = _fetchMapFromApi(debugTag: debugTag).then((map) {
       _cacheMap = map;
       _ts = DateTime.now();
       _inflight = null;
       return map;
     }).catchError((e) {
       _inflight = null;
+      // Якщо мережа впала, але є валідний кеш — повертаємо його замість помилки
+      if (_cacheMap != null) {
+        _log('net-fallback-cache', debugTag);
+        return _cacheMap!;
+      }
+
       throw e;
     });
 
@@ -95,10 +101,11 @@ class ProfileRepository {
     Duration(milliseconds: 650),
   ];
 
-  Future<Map<String, dynamic>> _fetchMapFromApi() async {
+  Future<Map<String, dynamic>> _fetchMapFromApi({String? debugTag}) async {
     AppNetworkException? last;
 
     for (var attempt = 0; attempt <= _retryDelays.length; attempt++) {
+      _log('net-attempt-${attempt + 1}', debugTag);
       try {
         return await _fetchMapFromApiOnce();
       } on AppNetworkException catch (e) {
@@ -108,6 +115,7 @@ class ProfileRepository {
         final transient = sc == 0 || sc == 401 || sc == 403 || sc == 408 || sc == 429 || sc >= 500;
 
         if (transient && attempt < _retryDelays.length) {
+          _log('retry-wait-${_retryDelays[attempt].inMilliseconds}ms', debugTag);
           await Future.delayed(_retryDelays[attempt]);
           continue;
         }
