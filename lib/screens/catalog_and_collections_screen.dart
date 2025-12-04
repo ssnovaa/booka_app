@@ -173,6 +173,23 @@ class _SeriesTabState extends State<_SeriesTab> {
 
   String? _abs(String? url) => ensureAbsoluteImageUrl(url);
 
+  /// Визначаємо кількість книг у серії (для фільтрації та виводу)
+  int _seriesBooksCountRaw(Map<String, dynamic> series) {
+    final n = series['books_count'] ?? series['booksCount'];
+    if (n is int) return n;
+    if (n is num) return n.toInt();
+
+    final fromStr = int.tryParse(n?.toString() ?? '');
+    if (fromStr != null) return fromStr;
+
+    final books = series['books'];
+    if (books is List) return books.length;
+
+    return 0;
+  }
+
+  bool _hasBooks(Map<String, dynamic> series) => _seriesBooksCountRaw(series) > 0;
+
   String? _seriesCover(Map<String, dynamic> series) {
     final firstCover =
     (series['first_cover'] ?? series['firstCover'])?.toString();
@@ -207,10 +224,7 @@ class _SeriesTabState extends State<_SeriesTab> {
   }
 
   String _seriesBooksCount(Map<String, dynamic> series) {
-    final n = (series['books_count'] ??
-        series['booksCount'] ??
-        (series['books'] is List ? (series['books'] as List).length : 0));
-    return n.toString();
+    return _seriesBooksCountRaw(series).toString();
   }
 
   Future<void> _openSeries(
@@ -281,7 +295,9 @@ class _SeriesTabState extends State<_SeriesTab> {
           if (s.connectionState == ConnectionState.waiting) {
             return const _SeriesSkeletonList();
           }
-          final data = s.data ?? const <Map<String, dynamic>>[];
+          final data = (s.data ?? const <Map<String, dynamic>>[])
+              .where(_hasBooks)
+              .toList();
 
           if (data.isEmpty) {
             return ListView(

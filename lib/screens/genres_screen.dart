@@ -80,7 +80,7 @@ class _GenresScreenState extends State<GenresScreen> {
     try {
       final res = await CatalogService.fetchGenres(); // /genres — кеш на рівні сервісу
       setState(() {
-        genres = res;
+        genres = res.where((g) => g.hasBooks).toList();
         selectedGenre = null;
         books = [];
       });
