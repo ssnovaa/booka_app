@@ -1,6 +1,8 @@
 // lib/repositories/profile_repository.dart
 import 'package:dio/dio.dart';
 import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/core/network/app_exception.dart';
+import 'package:booka_app/core/security/safe_errors.dart';
 import 'package:booka_app/models/user.dart';
 
 /// Єдине джерело профілю:
@@ -87,43 +89,53 @@ class ProfileRepository {
   // ---------------- внутрішня логіка ----------------
 
   Future<Map<String, dynamic>> _fetchMapFromApi() async {
-    // Пробуємо /profile
-    Response r = await _dio.get(
-      '/profile',
-      options: Options(
-        responseType: ResponseType.json,
-        validateStatus: (s) => s != null && s < 500,
-      ),
-    );
-
-    // Якщо /profile відсутній на старому беку — пробуємо /me
-    if (r.statusCode == 404 || r.statusCode == 405) {
-      r = await _dio.get(
-        '/me',
+    try {
+      // Пробуємо /profile
+      Response r = await _dio.get(
+        '/profile',
         options: Options(
           responseType: ResponseType.json,
           validateStatus: (s) => s != null && s < 500,
         ),
       );
-    }
 
-    if (r.statusCode != 200) {
-      throw DioException(
-        requestOptions: r.requestOptions,
-        response: r,
-        message: 'Не вдалося отримати профіль',
-      );
-    }
+      // Якщо /profile відсутній на старому беку — пробуємо /me
+      if (r.statusCode == 404 || r.statusCode == 405) {
+        r = await _dio.get(
+          '/me',
+          options: Options(
+            responseType: ResponseType.json,
+            validateStatus: (s) => s != null && s < 500,
+          ),
+        );
+      }
 
-    final normalized = _normalizeToMap(_unwrapPayload(r.data));
-    if (normalized == null) {
-      throw DioException(
-        requestOptions: r.requestOptions,
-        response: r,
-        message: 'Некоректний payload профілю',
+      if (r.statusCode != 200) {
+        throw DioException(
+          requestOptions: r.requestOptions,
+          response: r,
+          message: 'Не вдалося отримати профіль',
+        );
+      }
+
+      final normalized = _normalizeToMap(_unwrapPayload(r.data));
+      if (normalized == null) {
+        throw DioException(
+          requestOptions: r.requestOptions,
+          response: r,
+          message: 'Некоректний payload профілю',
+        );
+      }
+      return normalized;
+    } on DioException catch (e) {
+      // мʼяка обгортка, щоб екрани могли реагувати на 401/403 без крешів
+      final sc = e.response?.statusCode;
+      final msg = safeErrorMessage(
+        e,
+        fallback: 'Не вдалося отримати профіль',
       );
+      throw AppNetworkException(msg, statusCode: sc);
     }
-    return normalized;
   }
 
   /// Розпакування типових обгорток відповіді.

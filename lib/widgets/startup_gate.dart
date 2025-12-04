@@ -50,7 +50,13 @@ class _StartupGateState extends State<StartupGate> {
         await audio.ensurePrepared();
 
         // сервер — у фоні (статистика/резерв)
-        unawaited(ProfileRepository.I.loadMap(force: false));
+        unawaited(() async {
+          try {
+            await ProfileRepository.I.loadMap(force: false);
+          } catch (_) {
+            // мʼяко ігноруємо 401/403/тайм-аути, щоб не сипати в консоль
+          }
+        }());
         unawaited(audio.hydrateFromServerIfAvailable());
       } else {
         // локалі немає: UI не блокуємо, мережеву гідратацію запускаємо у фоні

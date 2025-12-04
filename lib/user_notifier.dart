@@ -263,6 +263,16 @@ class UserNotifier extends ChangeNotifier {
           statusCode: sc,
         );
       }
+    } on AppNetworkException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        await _clearAuth();
+      } else {
+        // Не пробрасываем «сырые» ошибки наружу
+        throw AppNetworkException(
+          e.message,
+          statusCode: e.statusCode,
+        );
+      }
     } catch (_) {
       await _clearAuth();
     }
