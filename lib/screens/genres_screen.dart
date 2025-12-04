@@ -11,6 +11,7 @@ import '../models/book.dart';
 import '../services/catalog_service.dart';
 import '../widgets/book_card.dart';
 import 'package:booka_app/widgets/loading_indicator.dart';
+import '../core/network/image_cache.dart'; // спільний кешер обкладинок жанрів
 
 // ⛑ Безопасные тексты ошибок
 import 'package:booka_app/core/security/safe_errors.dart';
@@ -353,6 +354,7 @@ class _GenreTile extends StatelessWidget {
     }
     return CachedNetworkImage(
       imageUrl: url,
+      cacheManager: BookaImageCacheManager.instance,
       fit: BoxFit.contain,
       width: double.infinity,
       height: double.infinity,
