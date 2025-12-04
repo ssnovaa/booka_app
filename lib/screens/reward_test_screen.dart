@@ -38,6 +38,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   bool _isAuthorized = false;
   int _userId = 0;
   int _rewardSession = 0; // токен для отмены текущего показа
+  bool _adScheduleSuspended = false; // чи призупиняли інтервали реклами саме з цього флоу
 
   // Пульс для лічильника хвилин
   final MinutesCounterController _mc = MinutesCounterController();
@@ -90,9 +91,24 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
   }
 
-  void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
+  void _cancelRewardFlow({
+    String reason = 'Показ скасовано користувачем',
+    bool resumeAdSchedule = false,
+  }) {
     _rewardSession++;
     _svc?.cancel(reason: reason);
+
+    final shouldResume = resumeAdSchedule || _adScheduleSuspended;
+    if (shouldResume) {
+      try {
+        // Повертаємо розклад міжсторінкової реклами, якщо відмінили rewarded-флоу,
+        // щоб інтервали реклами не залишались вимкненими після виходу назад
+        context.read<AudioPlayerProvider>().resumeAdSchedule('rewarded');
+      } catch (e) {
+        debugPrint('[REWARD][WARN] resumeAdSchedule() after cancel failed: $e');
+      }
+      _adScheduleSuspended = false;
+    }
     if (mounted && _loading) {
       setState(() => _loading = false);
     }
@@ -123,7 +139,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     // ⛔️ ВАЖНО: ставим паузу расписанию межстраничной рекламы на всё время Rewarded
     // чтобы интервальная реклама не «прострелила» параллельно.
-    app.suspendAdSchedule('rewarded');
+    final bool shouldSuspendAdSchedule =
+        app.isAdMode && !app.isAdScheduleSuspended;
+    _adScheduleSuspended = shouldSuspendAdSchedule;
+
+    if (shouldSuspendAdSchedule) {
+      app.suspendAdSchedule('rewarded');
+    }
 
     if (wasPlayingBeforeAd) {
       try {
@@ -233,8 +255,11 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD][ERROR] $e');
       setState(() => _status = 'Помилка показу реклами: $e');
     } finally {
-      // Всегда возобновляем расписание межстраничной рекламы после Rewarded
-      app.resumeAdSchedule('rewarded');
+      // Повертаємо інтервали лише якщо саме ми їх призупинили для rewarded-флоу
+      if (_adScheduleSuspended) {
+        app.resumeAdSchedule('rewarded');
+        _adScheduleSuspended = false;
+      }
 
       if (_rewardSession == session && wasPlayingBeforeAd && !app.isPlaying) {
         try {

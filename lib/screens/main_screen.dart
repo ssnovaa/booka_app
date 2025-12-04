@@ -96,15 +96,21 @@ class _MainScreenState extends State<MainScreen> {
     // 3 — профиль / логин
     if (index == 3) {
       final userNotifier = Provider.of<UserNotifier>(context, listen: false);
-      if (userNotifier.isAuth) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ProfileScreen()),
-        );
-      } else {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-      }
+      // 🧭 Чекаємо результат з профілю, щоб коректно повернутись на вкладку після pop
+      Navigator.of(context)
+          .push<int>(
+        MaterialPageRoute(
+          builder: (_) => userNotifier.isAuth
+              ? const ProfileScreen()
+              : const LoginScreen(),
+        ),
+      )
+          .then((result) {
+        // Якщо профіль повернув індекс вкладки — переключаємося сюди
+        if (result != null) {
+          setTab(result);
+        }
+      });
       return;
     }
   }

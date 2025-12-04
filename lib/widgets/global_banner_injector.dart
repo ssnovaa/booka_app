@@ -69,7 +69,7 @@ class _GlobalBannerInjectorState extends State<GlobalBannerInjector>
   bool _ctaVisible = false;
   Timer? _ctaTick;
   Timer? _ctaAutoHide;
-  final double _ctaHeight = 56;
+  final double _ctaHeight = AdSize.banner.height.toDouble();
 
   // ---- Metrics debounce ----
   Timer? _metricsDebounce;
@@ -435,12 +435,18 @@ class _GlobalBannerInjectorState extends State<GlobalBannerInjector>
 
     // Дефолт: одна кнопка на всю ширину.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
         height: _ctaHeight,
         width: double.infinity,
         child: FilledButton(
           onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            minimumSize: Size(double.infinity, _ctaHeight),
+            maximumSize: Size(double.infinity, _ctaHeight),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          ),
           child: const Text('Отримати ще 15 хвилин'),
         ),
       ),
