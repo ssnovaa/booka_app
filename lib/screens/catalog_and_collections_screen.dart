@@ -1,6 +1,7 @@
 // lib/screens/catalog_and_collections_screen.dart
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
@@ -8,6 +9,7 @@ import '../core/network/api_client.dart';
 import '../constants.dart';
 import 'series_books_list_screen.dart';
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
+import '../core/network/image_cache.dart';
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -414,22 +416,22 @@ class _SeriesRowCard extends StatelessWidget {
                   height: coverH,
                   child: (coverUrl == null || coverUrl!.isEmpty)
                       ? placeholderBuilder(coverW, coverH)
-                      : Image.network(
-                    coverUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        placeholderBuilder(coverW, coverH),
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: LoadingIndicator(size: 22),
+                      : CachedNetworkImage(
+                          imageUrl: coverUrl!,
+                          cacheManager: BookaImageCacheManager.instance,
+                          fit: BoxFit.cover,
+                          fadeInDuration: const Duration(milliseconds: 180),
+                          errorWidget: (_, __, ___) =>
+                              placeholderBuilder(coverW, coverH),
+                          progressIndicatorBuilder: (_, __, ___) =>
+                              const Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: LoadingIndicator(size: 22),
+                                ),
+                              ),
                         ),
-                      );
-                    },
-                  ),
                 ),
               ),
               const SizedBox(width: 12),
