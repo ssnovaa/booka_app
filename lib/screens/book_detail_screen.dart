@@ -3,6 +3,7 @@
 
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -49,6 +50,11 @@ class BookDetailScreen extends StatefulWidget {
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
+  // Локальний логер для розслідування ініціалізації плеєра
+  void _logPlayer(String msg) {
+    if (kDebugMode) debugPrint('[BOOK_DETAIL] $msg');
+  }
+
   // Поточна «повна» книга (може оновитися після довантаження)
   late Book _book;
 
@@ -336,7 +342,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     final needsPreparation = !sameBook || !sameChapters;
 
+    _logPlayer(
+      'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, sameChapters=$sameChapters, needs=$needsPreparation, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
+    );
+
     if (needsPreparation) {
+      _logPlayer('ensureAudio: setChapters() → userInitiated');
       await audio.setChapters(
         chapters,
         book: _book,
@@ -346,9 +357,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         coverUrl: _resolveBgUrl(_book),
         userInitiated: true,
       );
+    } else {
+      _logPlayer('ensureAudio: skip setChapters (same playlist)');
     }
 
     if (startPosition != null) {
+      _logPlayer('ensureAudio: apply startPosition=$startPosition at index=$targetIndex');
       await audio.seekChapter(
         targetIndex,
         position: Duration(seconds: startPosition),
@@ -368,6 +382,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           selectedChapterIndex = idx;
         }
       });
+      _logPlayer('ensureAudio: synced UI selectedChapterIndex=$selectedChapterIndex');
     }
   }
 
@@ -375,6 +390,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final index = chapters.indexWhere((c) => c.id == chapter.id);
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
+      _logPlayer('onChapterSelected: chapter=${chapter.id}, index=$index');
       final audio = context.read<AudioPlayerProvider>();
       await _ensureAudioPrepared(startIndex: index);
       await audio.seekChapter(index, position: Duration.zero, persist: false);
@@ -384,6 +400,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   Future<void> _onPlayPressed() async {
     final startPos = !_initialPositionApplied ? widget.initialPosition : null;
+    _logPlayer('onPlayPressed: startIndex=$selectedChapterIndex, startPos=$startPos');
     await _ensureAudioPrepared(
       startIndex: selectedChapterIndex,
       startPosition: startPos,

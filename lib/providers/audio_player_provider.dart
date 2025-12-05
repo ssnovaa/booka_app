@@ -1078,6 +1078,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         UserType? userTypeOverride,
         bool userInitiated = false,
       }) async {
+    _log(
+        'setChapters: userInitiated=$userInitiated, incoming=${book?.id ?? 'n/a'}, current=$_currentBookId, startIndex=$startIndex');
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
 
@@ -1119,6 +1121,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         _currentBookId != null && incomingBookId != null && _currentBookId == incomingBookId &&
             _chapters.length == playlistChapters.length &&
             _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
+
+    _log(
+        'setChapters: incomingBook=$incomingBookId, current=$_currentBookId, samePlaylist=$samePlaylist, playing=${player.playing}, hasSeq=$_hasSequence');
 
     final playingAnother = player.playing && _hasSequence && !samePlaylist;
     if (playingAnother && !userInitiated) {
@@ -1224,6 +1229,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   // ---------- КОНТРОЛЛЕРЫ ВОСПРОИЗВЕДЕНИЯ ----------
 
   Future<void> play() async {
+    _log(
+        'play(): book=$_currentBookId, chapter=$_currentChapterIndex, adMode=$_adMode, userType=$_userType, playing=${player.playing}');
     _ensureCreditsConsumer();
 
     if (_userType == UserType.free) {
