@@ -150,7 +150,6 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: audio.currentBook!,
             initialChapter: audio.currentChapter!,
             initialPosition: audio.position.inSeconds,
-            autoPlay: true,
           ),
         ),
       );
@@ -171,7 +170,6 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: audio.currentBook!,
             initialChapter: audio.currentChapter!,
             initialPosition: audio.position.inSeconds,
-            autoPlay: true,
           ),
         ),
       );
@@ -207,7 +205,6 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: book,
             initialChapter: chapter,
             initialPosition: position,
-            autoPlay: true,
           ),
         ),
       );

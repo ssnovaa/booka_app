@@ -6,6 +6,7 @@ import 'package:booka_app/models/book.dart';
 import 'package:booka_app/screens/book_detail_screen.dart';
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
+import '../core/network/image_cache.dart'; // спільний кеш-менеджер для мініатюр
 
 class BooksGrid extends StatelessWidget {
   final List<Map<String, dynamic>> items;
@@ -129,6 +130,7 @@ class BooksGrid extends StatelessWidget {
                           )
                               : CachedNetworkImage(
                             imageUrl: coverUrl,
+                            cacheManager: BookaImageCacheManager.instance,
                             fit: BoxFit.cover,
                             fadeInDuration: const Duration(milliseconds: 120),
                             // 🔄 Lottie-лоадер під час завантаження обкладинки
