@@ -277,20 +277,29 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
           isLoading = false;
         });
-        await audioProvider.pause();
+        // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
+        if (audioProvider.currentBook?.id == _book.id) {
+          await audioProvider.pause();
+        }
       }
     } on DioException catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      await audioProvider.pause();
+      // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
+      if (audioProvider.currentBook?.id == _book.id) {
+        await audioProvider.pause();
+      }
     } catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      await audioProvider.pause();
+      // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
+      if (audioProvider.currentBook?.id == _book.id) {
+        await audioProvider.pause();
+      }
     }
   }
 
