@@ -125,7 +125,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   bool _samePlaylist(AudioPlayerProvider provider) {
-    return provider.isCurrentPlaylist(widget.chapters, bookId: widget.book.id);
+    return provider.isCurrentBook(widget.book.id);
   }
 
   int _selectedChapterIndex() {

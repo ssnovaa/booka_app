@@ -193,6 +193,12 @@ class AudioPlayerProvider extends ChangeNotifier {
   int? _currentBookId;
   int? get currentBookId => _currentBookId;
 
+  /// 📚 Перевірка лише за id книги без порівняння розділів.
+  bool isCurrentBook(int? bookId) {
+    if (bookId == null || _currentBookId == null) return false;
+    return _currentBookId == bookId;
+  }
+
   /// 📌 Перевірка, чи збігається переданий плейлист із поточним (id книги + порядок глав).
   bool isCurrentPlaylist(List<Chapter> list, {int? bookId}) {
     final currentBookId = _currentBookId ??
