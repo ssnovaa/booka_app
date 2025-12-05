@@ -190,6 +190,9 @@ class AudioPlayerProvider extends ChangeNotifier {
           ? Book.fromJson(_chapters[_currentChapterIndex].book!)
           : null;
 
+  int? _currentBookId;
+  int? get currentBookId => _currentBookId;
+
   List<Chapter> get chapters => _chapters;
 
   String? get currentUrl => currentChapter?.audioUrl;
@@ -1094,11 +1097,16 @@ class AudioPlayerProvider extends ChangeNotifier {
       playlistChapters = [first];
     }
 
+    final nextBookId = book?.id ??
+        (playlistChapters.isNotEmpty ? _extractBookId(playlistChapters.first) : null);
+
     final samePlaylist =
         _chapters.length == playlistChapters.length &&
             _chapters.asMap().entries.every(
                     (e) => e.value.id == playlistChapters[e.key].id) &&
-            (book?.id != null ? currentBook?.id == book?.id : true);
+            (_currentBookId != null && nextBookId != null
+                ? _currentBookId == nextBookId
+                : false);
 
     if (samePlaylist && _hasSequence) {
       _log('setChapters: same playlist — skip setAudioSource()');
@@ -1139,6 +1147,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       book: book != null ? book.toJson() : ch.book,
     ))
         .toList();
+
+    _currentBookId = book?.id ?? _currentBookId ??
+        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : null);
 
     _currentChapterIndex = initialIndex;
     _lastPushSig = null;
@@ -1182,11 +1193,22 @@ class AudioPlayerProvider extends ChangeNotifier {
     return o;
   }
 
+  int? _extractBookId(Chapter c) {
+    final b = c.book;
+    if (b is Map<String, dynamic>) {
+      final raw = b['id'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+    }
+    return null;
+  }
+
   void _resetState() {
     _chapters = [];
     _currentChapterIndex = 0;
     _position = Duration.zero;
     _duration = Duration.zero;
+    _currentBookId = null;
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
     notifyListeners();

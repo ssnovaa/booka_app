@@ -351,7 +351,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
       final startIndex = selectedChapterIndex;
 
-      final sameChapters = audio.currentBook?.id == _book.id &&
+      final sameChapters = audio.currentBookId == _book.id &&
           audio.currentChapter != null &&
           audio.chapters.length == chapters.length &&
           List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
@@ -411,7 +411,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
 
-      final sameChapters = audio.currentBook?.id == _book.id &&
+      final sameChapters = audio.currentBookId == _book.id &&
           audio.currentChapter != null &&
           audio.chapters.length == chapters.length &&
           List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
