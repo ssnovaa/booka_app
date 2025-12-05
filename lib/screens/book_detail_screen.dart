@@ -52,7 +52,8 @@ class BookDetailScreen extends StatefulWidget {
 class _BookDetailScreenState extends State<BookDetailScreen> {
   // Локальний логер для розслідування ініціалізації плеєра
   void _logPlayer(String msg) {
-    if (kDebugMode) debugPrint('[BOOK_DETAIL] $msg');
+    // Логувати завжди, щоби відловлювати сценарії на реальних пристроях
+    debugPrint('[BOOK_DETAIL] $msg');
   }
 
   // Поточна «повна» книга (може оновитися після довантаження)
