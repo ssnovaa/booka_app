@@ -72,32 +72,64 @@ Future<void> main() async {
       );
     };
 
-    // Провайдери створюємо заздалегідь, щоб зв'язати Audio ↔ User
+    try {
+      // 👇👇👇 НАСТРОЙКИ ВНЕШНЕГО ВИДА ПЛЕЕРА (ШТОРКА И ЛОК-СКРИН) 👇👇👇
+      await JustAudioBackground.init(
+        androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
+        androidNotificationChannelName: 'Booka — аудіо',
+        androidNotificationOngoing: true,
+
+        // 1. Цвет элементов (кнопок, полосы прогресса) в шторке
+        notificationColor: const Color(0xFF6750A4),
+
+        // 2. Иконка уведомления (маленькая в статус-баре)
+        androidNotificationIcon: 'mipmap/ic_launcher',
+
+        // 3. КНОПКИ ПЕРЕМОТКИ!
+        // Добавление этих строк заменяет кнопки "Prev/Next" на "-10" и "+30"
+        // (или добавляет их рядом, в зависимости от версии Android) на локскрине
+        rewindInterval: const Duration(seconds: 10),
+        fastForwardInterval: const Duration(seconds: 30),
+
+        // 4. Предзагрузка обложки
+        preloadArtwork: true,
+      );
+      // 👆👆👆 КОНЕЦ НАСТРОЕК 👇👇👇
+    } catch (_) {}
+
+    // Провайдеры создаём заранее, чтобы связать Audio ↔ User
     final themeNotifier = ThemeNotifier();
+    try {
+      await themeNotifier.load();
+    } catch (_) {}
+
     final userNotifier = UserNotifier();
     final audioProvider = AudioPlayerProvider();
 
-    // 👇 Створюємо екземпляр нового сервісу білінгу (core/billing)
+    // 👇 СОЗДАЁМ ЕКЗЕМПЛЯР НОВОГО СЕРВИСА БИЛЛИНГА (core/billing)
     final billingService = BillingService();
 
-    // Зв'язка секунд з UserNotifier
+    // Связка секунд с UserNotifier
     audioProvider.getFreeSeconds = () => userNotifier.freeSeconds;
     audioProvider.setFreeSeconds = (int v) {
       userNotifier.setFreeSeconds(v);
       audioProvider.onExternalFreeSecondsUpdated(v);
     };
 
-    // 🚀 Запускаємо важкі ініціалізації паралельно, не блокуючи runApp
-    final justAudioInit = _initJustAudioBackground();
-    final themeLoad = _safeThemeLoad(themeNotifier);
-    final apiInit = _safeApiInit();
-    final adsInit = _initMobileAds();
+    // Инициализация сети
+    try {
+      await ApiClient.init();
+    } catch (_) {}
 
-    // ✅ Стартуємо ліниві задачі, не чекаючи завершення
-    unawaited(justAudioInit);
-    unawaited(themeLoad);
-    unawaited(apiInit);
-    unawaited(adsInit);
+    // Инициализация AdMob
+    try {
+      await MobileAds.instance.updateRequestConfiguration(
+        RequestConfiguration(
+          testDeviceIds: <String>['129F9C64839B7C8761347820D44F1697'],
+        ),
+      );
+    } catch (_) {}
+    await MobileAds.instance.initialize();
 
     // === ВАЖНО: назначаем колбэки провайдера АУДИО ===
 
@@ -149,11 +181,6 @@ Future<void> main() async {
     // Отложённые инициализации
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        // 🕒 Чекаємо мережевую ініціалізацію перед пушами/аудіо
-        await apiInit;
-      } catch (_) {}
-
-      try {
         await PushService.instance.init(
           navigatorKey: _navKey,
           userNotifier: userNotifier,
@@ -175,7 +202,8 @@ Future<void> main() async {
             try {
               await user.fetchCurrentUser();
             } catch (e) {
-              // ігноруємо, якщо немає мережі
+              // игнорируем, если нет сети
+              // debugPrint('main: fetchCurrentUser error: $e');
             }
             await audio.hydrateFromServerIfAvailable();
           }
@@ -191,48 +219,6 @@ Future<void> main() async {
       FlutterErrorDetails(exception: error, stack: stack),
     );
   });
-}
-
-Future<void> _initJustAudioBackground() async {
-  try {
-    // ⚙️ Налаштування зовнішнього вигляду плеєра (шторка і локскрін)
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
-      androidNotificationChannelName: 'Booka — аудіо',
-      androidNotificationOngoing: true,
-      notificationColor: const Color(0xFF6750A4),
-      androidNotificationIcon: 'mipmap/ic_launcher',
-      rewindInterval: const Duration(seconds: 10),
-      fastForwardInterval: const Duration(seconds: 30),
-      preloadArtwork: true,
-    );
-  } catch (_) {}
-}
-
-Future<void> _safeThemeLoad(ThemeNotifier notifier) async {
-  try {
-    await notifier.load();
-  } catch (_) {}
-}
-
-Future<void> _safeApiInit() async {
-  try {
-    await ApiClient.init();
-  } catch (_) {}
-}
-
-Future<void> _initMobileAds() async {
-  try {
-    await MobileAds.instance.updateRequestConfiguration(
-      RequestConfiguration(
-        testDeviceIds: <String>['129F9C64839B7C8761347820D44F1697'],
-      ),
-    );
-  } catch (_) {}
-
-  try {
-    await MobileAds.instance.initialize();
-  } catch (_) {}
 }
 
 class BookaApp extends StatelessWidget {

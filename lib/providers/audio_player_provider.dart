@@ -9,12 +9,12 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 
-import 'package:booka_app/constants.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/user.dart'; // enum UserType, getUserType
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
+import 'package:booka_app/constants.dart';
 
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/credits/credits_consumer.dart'; // списание секунд
@@ -190,34 +190,6 @@ class AudioPlayerProvider extends ChangeNotifier {
           ? Book.fromJson(_chapters[_currentChapterIndex].book!)
           : null;
 
-  int? _currentBookId;
-  int? get currentBookId => _currentBookId;
-
-  /// 📚 Перевірка лише за id книги без порівняння розділів.
-  bool isCurrentBook(int? bookId) {
-    if (bookId == null || _currentBookId == null) return false;
-    return _currentBookId == bookId;
-  }
-
-  /// 📌 Перевірка, чи збігається переданий плейлист із поточним (id книги + порядок глав).
-  bool isCurrentPlaylist(List<Chapter> list, {int? bookId}) {
-    final currentBookId = _currentBookId ??
-        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : null);
-    final targetBookId = bookId ?? (list.isNotEmpty ? _extractBookId(list.first) : null);
-
-    // Якщо хоч один ідентифікатор невідомий — вважаємо плейлисти різними,
-    // щоб уникнути хибного збігу між різними книгами з однаковими id глав.
-    if (currentBookId == null || targetBookId == null) return false;
-
-    if (currentBookId != targetBookId) return false;
-
-    if (_chapters.length != list.length) return false;
-    for (var i = 0; i < list.length; i++) {
-      if (_chapters[i].id != list[i].id) return false;
-    }
-    return true;
-  }
-
   List<Chapter> get chapters => _chapters;
 
   String? get currentUrl => currentChapter?.audioUrl;
@@ -382,6 +354,16 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // ---------- ИНИЦИАЛИЗАЦИЯ CreditsConsumer ----------
 
+  Dio _makeDio() {
+    final d = Dio(BaseOptions(baseUrl: BASE_ORIGIN));
+    final access = AuthStore.I.accessToken;
+    if (access != null && access.isNotEmpty) {
+      d.options.headers['Authorization'] = 'Bearer $access';
+    }
+    d.options.headers['Accept'] = 'application/json';
+    return d;
+  }
+
   void _ensureCreditsConsumer() {
     if (_userType == UserType.paid || _userType == UserType.guest) {
       _creditsConsumer?.stop();
@@ -389,9 +371,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
 
+    final dio = _makeDio();
     if (_creditsConsumer == null) {
       _creditsConsumer = CreditsConsumer(
-        dio: ApiClient.i(),
+        dio: dio,
         player: player,
         isPaid: () => _userType == UserType.paid,
         // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
@@ -1075,7 +1058,6 @@ class AudioPlayerProvider extends ChangeNotifier {
 
         _log(
             'hydrate: applied server (book=$bookId, ch=${normalized.id}, pos=$pos, upd=$upd)');
-        _currentBookId = bookId;
         notifyListeners();
         return true;
       }
@@ -1100,12 +1082,10 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? artist,
         String? coverUrl,
         Book? book,
-        UserType? userTypeOverride,
       }) async {
-    final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
 
-    if (effectiveType == UserType.guest) {
+    if (_userType == UserType.guest) {
       if (chapters.isEmpty) {
         _log('setChapters: guest — пустой список разделов');
         _resetState();
@@ -1123,17 +1103,15 @@ class AudioPlayerProvider extends ChangeNotifier {
       playlistChapters = [first];
     }
 
-    final nextBookId = book?.id ??
-        (playlistChapters.isNotEmpty ? _extractBookId(playlistChapters.first) : null);
-
-    final samePlaylist = isCurrentPlaylist(playlistChapters, bookId: nextBookId);
+    final samePlaylist = _chapters.length == playlistChapters.length &&
+        _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
 
     if (samePlaylist && _hasSequence) {
       _log('setChapters: same playlist — skip setAudioSource()');
       return;
     }
 
-    int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
+    int initialIndex = (_userType == UserType.guest) ? 0 : startIndex;
     Duration initialPos = Duration.zero;
 
     if (book != null) {
@@ -1167,9 +1145,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       book: book != null ? book.toJson() : ch.book,
     ))
         .toList();
-
-    _currentBookId = book?.id ?? nextBookId ??
-        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : _currentBookId);
 
     _currentChapterIndex = initialIndex;
     _lastPushSig = null;
@@ -1213,22 +1188,11 @@ class AudioPlayerProvider extends ChangeNotifier {
     return o;
   }
 
-  int? _extractBookId(Chapter c) {
-    final b = c.book;
-    if (b is Map<String, dynamic>) {
-      final raw = b['id'];
-      if (raw is int) return raw;
-      if (raw is num) return raw.toInt();
-    }
-    return null;
-  }
-
   void _resetState() {
     _chapters = [];
     _currentChapterIndex = 0;
     _position = Duration.zero;
     _duration = Duration.zero;
-    _currentBookId = null;
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
     notifyListeners();
@@ -1250,8 +1214,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           if (ok) {
             _enableAdMode(); // включает расписание рекламы и отключает списание секунд
           } else {
-            // Пользователь уже увидел экран выбора (reward/ads-mode) и отменил.
-            // Не показываем второй раз подряд, просто выходим из play().
+            onCreditsExhausted?.call(); // можно показать пейволл/магазин
             return;
           }
         } else {
@@ -1422,37 +1385,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (ch == null || b == null) return false;
 
       // ====================================================================
-      // FIX: Завантажуємо повний плейлист, якщо користувач авторизований.
-      // Якщо токен вже є, але userType ще не виставлений (профіль не
-      // встиг завантажитися), не вважаємо його гостем — інакше плейлист
-      // стискається до однієї глави і в шторці/локскріні не з’являються
-      // «попередня/наступна».
-      UserType effectiveUserType = _userType;
-
-      if (_userType == UserType.guest && AuthStore.I.isLoggedIn) {
-        // Якщо є токен, вважаємо профіль авторизованим: спершу пробуємо взяти
-        // тип користувача з кешу профілю (може бути «оплачений»), і лише якщо
-        // кешу немає — деградуємо до FREE, щоб завантажити плейлист повністю.
-        final cachedProfile = ProfileRepository.I.getCachedMap();
-        if (cachedProfile != null) {
-          final userMap = (cachedProfile['user'] is Map<String, dynamic>)
-              ? Map<String, dynamic>.from(cachedProfile['user'] as Map)
-              : Map<String, dynamic>.from(cachedProfile);
-          final derived = getUserType(User.fromJson(userMap));
-          _log('_prepare: logged-in token, cached profile → userType=$derived');
-          effectiveUserType = derived;
-        } else {
-          _log('_prepare: logged-in token, no cached profile → assume FREE for resume');
-          effectiveUserType = UserType.free;
-        }
-      }
-
+      // FIX: Загружаем полный плейлист, если пользователь авторизован.
       List<Chapter> chaptersToLoad;
       int startIndex = 0;
       final restoredPosition = _position; // Сохраняем точную позицию
 
-      // Логіка гостя (тільки перша глава)
-      if (effectiveUserType == UserType.guest) {
+      // Логика гостя (только первая глава)
+      if (_userType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
           _log('_prepare: guest + saved non-first chapter → очищаем сохранённое');
@@ -1492,7 +1431,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         bookTitle: b.title,
         artist: b.author,
         coverUrl: cover,
-        userTypeOverride: effectiveUserType,
       );
 
       // Восстанавливаем точную позицию, если она была сохранена.
@@ -1547,9 +1485,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         positionSec: _position.inSeconds,
       );
 
-      // 🆔 Запам'ятовуємо поточну книгу, щоб коректно визначати активний плейлист.
-      _currentBookId = book.id;
-
       _log('restoreProgress: ok (pos=${_position.inSeconds})');
     } catch (e) {
       _log('restoreProgress: error: $e');
@@ -1592,7 +1527,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     _currentChapterIndex = 0;
     _position = Duration(seconds: positionSec);
     _duration = Duration(seconds: chapter.duration ?? 0);
-    _currentBookId = book.id;
   }
 
   // ======== Drag-помощники для слайдера ========
@@ -1647,14 +1581,6 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // === AD-MODE: внутренние вспомогательные ===
   void _enableAdMode() {
-    // Не включаем режим рекламы, если у пользователя ещё есть свободные секунды
-    // — в этом состоянии должно продолжаться обычное списание.
-    final secondsLeft = getFreeSeconds?.call() ?? 0;
-    if (secondsLeft > 0) {
-      _log('skip ad-mode: balance=${secondsLeft}s');
-      return;
-    }
-
     if (_adMode) return;
     _log('enable ad-mode');
     _adMode = true;

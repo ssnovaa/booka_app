@@ -18,7 +18,6 @@ import 'package:booka_app/screens/full_books_grid_screen.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/widgets/loading_indicator.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 // ⬇️(используем готовый бейдж минут)
 import 'package:booka_app/widgets/minutes_badge.dart';
 // ⛑ Безпечні тексти помилок (санітизація)
@@ -27,7 +26,6 @@ import 'package:booka_app/core/security/safe_errors.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/network/app_exception.dart'; // Для проверки статуса ошибки
 import 'package:booka_app/screens/subscriptions_screen.dart';
-import 'package:booka_app/core/network/image_cache.dart';
 
 // ⬇️ для getUserType / UserType
 import 'package:booka_app/models/user.dart' show UserType, getUserType;
@@ -253,7 +251,6 @@ class _ProfileHeader extends StatelessWidget {
   final String email;
   final bool isPaid;
   final VoidCallback onLogout;
-  final VoidCallback onRequestMoreMinutes;
 
   const _ProfileHeader({
     super.key,
@@ -261,7 +258,6 @@ class _ProfileHeader extends StatelessWidget {
     required this.email,
     required this.isPaid,
     required this.onLogout,
-    required this.onRequestMoreMinutes,
   });
 
   @override
@@ -366,25 +362,10 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          // бейдж хвилин показуємо лише для користувачів без підписки
+          // бейдж минут показываем только для free
           if (!isPaid) ...[
             const SizedBox(height: 6),
-            Row(
-              children: [
-                const MinutesBadge(),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  onPressed: onRequestMoreMinutes,
-                  icon:
-                  const Icon(Icons.favorite_rounded, color: Colors.redAccent),
-                  label: const Text('Більше хвилин'),
-                ),
-              ],
-            ),
+            const MinutesBadge(),
             const SizedBox(height: 8),
           ],
         ],
@@ -438,18 +419,19 @@ class _PreviewCover extends StatelessWidget {
     );
 
     final image = frame(
-      CachedNetworkImage(
-        imageUrl: imageUrl ?? '',
-        cacheManager: BookaImageCacheManager.instance,
+      Image.network(
+        imageUrl ?? '',
         fit: BoxFit.contain,
         alignment: Alignment.center,
         filterQuality: FilterQuality.medium,
-        fadeInDuration: const Duration(milliseconds: 180),
-        errorWidget: (_, __, ___) => placeholder,
-        progressIndicatorBuilder: (_, __, ___) => const Center(
-          child:
-          SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
-        ),
+        errorBuilder: (_, __, ___) => placeholder,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return const Center(
+            child: SizedBox(
+                width: 20, height: 20, child: LoadingIndicator(size: 20)),
+          );
+        },
       ),
     );
 
@@ -677,6 +659,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: ap.currentBook!,
             initialChapter: ap.currentChapter!,
             initialPosition: ap.position.inSeconds,
+            autoPlay: true,
           ),
         ),
       );
@@ -693,6 +676,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: ap.currentBook!,
             initialChapter: ap.currentChapter!,
             initialPosition: ap.position.inSeconds,
+            autoPlay: true,
           ),
         ),
       );
@@ -717,6 +701,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: book,
             initialChapter: chapter,
             initialPosition: ap.position.inSeconds,
+            autoPlay: false,
           ),
         ),
       );
@@ -734,13 +719,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _openRewardTestScreen() {
-    Navigator.of(context).pushNamed('/rewarded');
-  }
-
   void _switchMainTabAndClose(int tab) {
-    // 🧭 Повертаємо індекс бажаної вкладки назад через Navigator.pop
-    Navigator.of(context).pop(tab);
+    final ms = MainScreen.of(context);
+    if (ms != null) {
+      ms.setTab(tab);
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => MainScreen(initialIndex: tab)),
+            (route) => false,
+      );
+    }
   }
 
   /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
@@ -883,7 +872,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       email: email.isNotEmpty ? email : '—',
                       isPaid: userNotifier.isPaidNow,
                       onLogout: () => logout(context),
-                      onRequestMoreMinutes: _openRewardTestScreen,
                     ),
                   ),
                 ),

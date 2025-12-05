@@ -12,7 +12,6 @@ import 'package:booka_app/core/network/api_client.dart'; // ← мережеви
 import 'package:booka_app/core/security/safe_errors.dart'; // ← санітизація повідомлень про помилки
 import 'package:booka_app/user_notifier.dart'; // ← перевірка авторизації
 import 'package:booka_app/screens/login_screen.dart'; // ← перехід на логін для гостей
-import '../core/network/image_cache.dart'; // спільний кеш-менеджер обкладинок
 
 class BookCardWidget extends StatelessWidget {
   final Book book;
@@ -116,7 +115,6 @@ class BookCardWidget extends StatelessWidget {
                   child: imageUrl.isNotEmpty
                       ? CachedNetworkImage(
                     imageUrl: imageUrl,
-                    cacheManager: BookaImageCacheManager.instance,
                     width: imageWidth,
                     height: imageWidth * 1.5,
                     fit: BoxFit.cover,

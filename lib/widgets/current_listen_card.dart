@@ -12,7 +12,6 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
-import '../core/network/image_cache.dart'; // спільний кешер для поточної книги
 
 class CurrentListenCard extends StatefulWidget {
   const CurrentListenCard({
@@ -439,7 +438,6 @@ class _CoverCompact extends StatelessWidget {
     final image = (coverUrl != null && coverUrl!.isNotEmpty)
         ? CachedNetworkImage(
       imageUrl: coverUrl!,
-      cacheManager: BookaImageCacheManager.instance,
       width: width,
       height: height,
       fit: BoxFit.cover,

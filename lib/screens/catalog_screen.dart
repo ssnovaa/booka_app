@@ -150,6 +150,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: audio.currentBook!,
             initialChapter: audio.currentChapter!,
             initialPosition: audio.position.inSeconds,
+            autoPlay: true,
           ),
         ),
       );
@@ -170,6 +171,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: audio.currentBook!,
             initialChapter: audio.currentChapter!,
             initialPosition: audio.position.inSeconds,
+            autoPlay: true,
           ),
         ),
       );
@@ -205,6 +207,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             book: book,
             initialChapter: chapter,
             initialPosition: position,
+            autoPlay: true,
           ),
         ),
       );
@@ -401,8 +404,7 @@ class CatalogScreenState extends State<CatalogScreen> with RouteAware {
             (data['data'] != null || data['items'] != null)
             ? (data['data'] ?? data['items'])
             : []);
-        final parsed = await compute(_parseGenresOffMain, raw);
-        genres = parsed.where((g) => g.hasBooks).toList();
+        genres = await compute(_parseGenresOffMain, raw);
         return genres;
       }
       // Не формуємо «говорящі» Exception з деталями — кидаємо DioException для санітайзера

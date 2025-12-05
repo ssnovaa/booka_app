@@ -36,12 +36,14 @@ class BookDetailScreen extends StatefulWidget {
   final Book book;
   final Chapter? initialChapter;
   final int? initialPosition;
+  final bool autoPlay;
 
   const BookDetailScreen({
     super.key,
     required this.book,
     this.initialChapter,
     this.initialPosition,
+    this.autoPlay = false,
   });
 
   @override
@@ -277,29 +279,20 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
           isLoading = false;
         });
-        // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
-        if (audioProvider.currentBook?.id == _book.id) {
-          await audioProvider.pause();
-        }
+        await audioProvider.pause();
       }
     } on DioException catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
-      if (audioProvider.currentBook?.id == _book.id) {
-        await audioProvider.pause();
-      }
+      await audioProvider.pause();
     } catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      // 🎧 Не глушимо стороннє відтворення: ставимо паузу лише якщо плеєр уже грає цю ж книгу
-      if (audioProvider.currentBook?.id == _book.id) {
-        await audioProvider.pause();
-      }
+      await audioProvider.pause();
     }
   }
 
@@ -347,27 +340,15 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final audio = context.read<AudioPlayerProvider>();
       final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
-      final wasPlaying = audio.isPlaying;
 
       final startIndex = selectedChapterIndex;
 
-      final sameChapters = audio.isCurrentPlaylist(chapters, bookId: _book.id);
-
-      final keepForeignPlayback = wasPlaying && !sameChapters;
-
-      // 🛡️ Якщо вже щось грає (інша книга), не чіпаємо плеєр, щоб не зривати відтворення під час перегляду інших екранів
-      if (keepForeignPlayback) {
-        if (mounted) {
-          setState(() {
-            _playerInitialized = true;
-            _autoStartPending = false;
-          });
-        }
-        return;
-      }
+      final sameChapters = audio.currentChapter != null &&
+          audio.chapters.length == chapters.length &&
+          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
+              List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
       if (!sameChapters) {
-
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
           chapters,
@@ -379,17 +360,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         );
       }
 
-      // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
+      // Початкова позиція/автовідтворення — користуємось API провайдера
       if (widget.initialPosition != null) {
         await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
-      } else if (widget.initialChapter != null) {
+        if (widget.autoPlay) await audio.play();
+      } else if (widget.initialChapter != null && widget.autoPlay) {
         await audio.seekChapter(startIndex, position: Duration.zero, persist: false);
-      }
-
-      final keepPlaying = wasPlaying && sameChapters;
-
-      if (!keepPlaying) {
-        await audio.pause(); // не запускаємо відтворення автоматично, якщо воно не йшло раніше
+        await audio.play();
       }
 
       if (mounted) {
@@ -406,21 +383,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
-
-      final sameChapters = audio.isCurrentPlaylist(chapters, bookId: _book.id);
-
-      if (!sameChapters) {
-        await audio.pause();
-        await audio.setChapters(
-          chapters,
-          book: _book,
-          startIndex: index,
-          bookTitle: _book.title,
-          artist: _book.author.trim(),
-          coverUrl: _resolveBgUrl(_book),
-        );
-      }
-
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
@@ -452,7 +414,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         title: _book.title,
         author: _book.author,
         coverUrl: bgUrl,
-        book: _book,
         chapters: chapters,
         selectedChapter: chapters[selectedChapterIndex],
         onChapterSelected: _onChapterSelected,

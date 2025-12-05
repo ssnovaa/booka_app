@@ -8,7 +8,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
-import '../core/network/image_cache.dart'; // уніфікований кешер для мініатюр
 
 /// Раскладка времени относительно слайдера.
 /// sides  — время слева/справа от слайдера (компактней по высоте)
@@ -458,7 +457,6 @@ class _CoverThumb extends StatelessWidget {
         height: size,
         child: CachedNetworkImage(
           imageUrl: url!,
-          cacheManager: BookaImageCacheManager.instance,
           fit: BoxFit.cover,
           fadeInDuration: const Duration(milliseconds: 160),
           errorWidget: (_, __, ___) => Container(
