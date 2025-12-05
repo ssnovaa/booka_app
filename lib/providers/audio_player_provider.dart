@@ -1072,6 +1072,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? coverUrl,
         Book? book,
         UserType? userTypeOverride,
+        bool userInitiated = false,
       }) async {
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
@@ -1096,6 +1097,12 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     final samePlaylist = _chapters.length == playlistChapters.length &&
         _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
+
+    final playingAnother = player.playing && _hasSequence && !samePlaylist;
+    if (playingAnother && !userInitiated) {
+      _log('setChapters: skip replace while another playlist is playing (not user-initiated)');
+      return;
+    }
 
     if (samePlaylist && _hasSequence) {
       _log('setChapters: same playlist — skip setAudioSource()');
@@ -1448,6 +1455,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         artist: b.author,
         coverUrl: cover,
         userTypeOverride: effectiveUserType,
+        userInitiated: true,
       );
 
       // Восстанавливаем точную позицию, если она была сохранена.

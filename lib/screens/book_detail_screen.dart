@@ -61,7 +61,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   String? error;
 
   bool _playerInitialized = false;
-  bool _autoStartPending = false;
+  bool _initialPositionApplied = false;
 
   // Завантаження книги (якщо прийшла урізаною)
   bool _bookLoading = false;
@@ -234,8 +234,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       error = null;
     });
 
-    final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
-
     try {
       // КЕШ: forceCache (звично) / refreshForceCache (pull-to-refresh), maxStale 24h
       final cacheOpts = ApiClient.cacheOptions(
@@ -270,35 +268,24 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           selectedChapterIndex = startIndex;
           isLoading = false;
           _playerInitialized = false;
-          _autoStartPending = true; // ініціалізуємо плеєр після побудови
+          _initialPositionApplied = false;
         });
       } else {
         setState(() {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
           isLoading = false;
         });
-        await audioProvider.pause();
       }
     } on DioException catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      await audioProvider.pause();
     } catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
-      await audioProvider.pause();
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_playerInitialized && !_autoStartPending && chapters.isNotEmpty) {
-      _initAudioPlayer();
     }
   }
 
@@ -308,7 +295,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (oldWidget.book.id != widget.book.id) {
       _book = widget.book;
       _playerInitialized = false;
-      _autoStartPending = true;
       _maybeLoadFullBook(refresh: true);
       _syncFavoriteFromServer();
       fetchChapters();
@@ -330,48 +316,53 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return fullResourceUrl(s);
   }
 
-  void _initAudioPlayer() {
-    if (_playerInitialized || chapters.isNotEmpty == false) return;
+  Future<void> _ensureAudioPrepared({int? startIndex, int? startPosition}) async {
+    if (chapters.isEmpty) return;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final audio = context.read<AudioPlayerProvider>();
-      final user = context.read<UserNotifier>().user;
-      audio.userType = getUserType(user);
+    final audio = context.read<AudioPlayerProvider>();
+    final user = context.read<UserNotifier>().user;
+    audio.userType = getUserType(user);
 
-      final startIndex = selectedChapterIndex;
+    final targetIndex = startIndex ?? selectedChapterIndex;
 
-      final sameChapters = audio.currentChapter != null &&
-          audio.chapters.length == chapters.length &&
-          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-              List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
+    final sameChapters = audio.currentChapter != null &&
+        audio.chapters.length == chapters.length &&
+        List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
+            List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
-      if (!sameChapters) {
-        // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
-        await audio.setChapters(
-          chapters,
-          book: _book,
-          startIndex: startIndex,
-          bookTitle: _book.title,                // ← назва книги
-          artist: _book.author.trim(),           // ← ТІЛЬКИ автор (без чтеця)
-          coverUrl: _resolveBgUrl(_book),        // ← абсолютна обкладинка
-        );
-      }
+    if (!sameChapters) {
+      await audio.setChapters(
+        chapters,
+        book: _book,
+        startIndex: targetIndex,
+        bookTitle: _book.title,
+        artist: _book.author.trim(),
+        coverUrl: _resolveBgUrl(_book),
+        userInitiated: true,
+      );
+    }
 
-      // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
-      if (widget.initialPosition != null) {
-        await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
-      } else if (widget.initialChapter != null) {
-        await audio.seekChapter(startIndex, position: Duration.zero, persist: false);
-      }
+    if (startPosition != null) {
+      await audio.seekChapter(
+        targetIndex,
+        position: Duration(seconds: startPosition),
+        persist: false,
+      );
+      _initialPositionApplied = true;
+    }
 
-      if (mounted) {
-        setState(() {
-          _playerInitialized = true;
-          _autoStartPending = false;
-        });
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _playerInitialized = true;
+        final currentId = audio.currentChapter?.id;
+        final idx = currentId != null
+            ? chapters.indexWhere((c) => c.id == currentId)
+            : targetIndex;
+        if (idx >= 0) {
+          selectedChapterIndex = idx;
+        }
+      });
+    }
   }
 
   Future<void> _onChapterSelected(Chapter chapter) async {
@@ -379,7 +370,21 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
+      await _ensureAudioPrepared(startIndex: index);
       await audio.seekChapter(index, position: Duration.zero, persist: false);
+      await audio.play();
+    }
+  }
+
+  Future<void> _onPlayPressed() async {
+    final startPos = !_initialPositionApplied ? widget.initialPosition : null;
+    await _ensureAudioPrepared(
+      startIndex: selectedChapterIndex,
+      startPosition: startPos,
+    );
+
+    final audio = context.read<AudioPlayerProvider>();
+    if (audio.chapters.isNotEmpty) {
       await audio.play();
     }
   }
@@ -493,11 +498,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
-
-    if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
-      _autoStartPending = false;
-      _initAudioPlayer();
-    }
 
     final coverUrlAbs = _absUrl(_book.coverUrl);
 
@@ -789,6 +789,22 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                               ),
                             ),
                           ),
+
+                        if (chapters.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _onPlayPressed,
+                              icon: const Icon(Icons.play_arrow_rounded),
+                              label: Text(
+                                _playerInitialized
+                                    ? 'Продовжити відтворення'
+                                    : 'Слухати книгу',
+                              ),
+                            ),
+                          ),
+                        ],
 
                         if (userType == UserType.free)
                           Text(
