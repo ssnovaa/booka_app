@@ -1098,7 +1098,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         _chapters.length == playlistChapters.length &&
             _chapters.asMap().entries.every(
                     (e) => e.value.id == playlistChapters[e.key].id) &&
-            (book?.id != null ? currentBook?.id == book.id : true);
+            (book?.id != null ? currentBook?.id == book?.id : true);
 
     if (samePlaylist && _hasSequence) {
       _log('setChapters: same playlist — skip setAudioSource()');
