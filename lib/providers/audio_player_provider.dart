@@ -1,6 +1,7 @@
 // lib/providers/audio_player_provider.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
@@ -348,6 +349,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   void _log(String msg) {
     // Логувати завжди, щоб бачити події плеєра у релізі
+    developer.log(msg, name: 'AUDIO');
     debugPrint('[AUDIO] $msg');
   }
 

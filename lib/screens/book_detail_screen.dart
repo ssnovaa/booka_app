@@ -1,6 +1,7 @@
 // lib/screens/book_detail_screen.dart
 // ПОЛНЫЙ ФАЙЛ БЕЗ СОКРАЩЕНИЙ
 
+import 'dart:developer' as developer;
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
 
 import 'package:flutter/foundation.dart';
@@ -53,6 +54,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   // Локальний логер для розслідування ініціалізації плеєра
   void _logPlayer(String msg) {
     // Логувати завжди, щоби відловлювати сценарії на реальних пристроях
+    developer.log(msg, name: 'BOOK_DETAIL');
     debugPrint('[BOOK_DETAIL] $msg');
   }
 
