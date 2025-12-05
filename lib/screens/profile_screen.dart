@@ -677,7 +677,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: ap.currentBook!,
             initialChapter: ap.currentChapter!,
             initialPosition: ap.position.inSeconds,
-            autoPlay: false,
           ),
         ),
       );
@@ -694,7 +693,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: ap.currentBook!,
             initialChapter: ap.currentChapter!,
             initialPosition: ap.position.inSeconds,
-            autoPlay: false,
           ),
         ),
       );
@@ -719,7 +717,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             book: book,
             initialChapter: chapter,
             initialPosition: ap.position.inSeconds,
-            autoPlay: false,
           ),
         ),
       );
