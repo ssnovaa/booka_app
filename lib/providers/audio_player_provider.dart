@@ -1077,9 +1077,10 @@ class AudioPlayerProvider extends ChangeNotifier {
         Book? book,
         UserType? userTypeOverride,
         bool userInitiated = false,
+        bool forceReplace = false,
       }) async {
     _log(
-        'setChapters: userInitiated=$userInitiated, incoming=${book?.id ?? 'n/a'}, current=$_currentBookId, startIndex=$startIndex');
+        'setChapters: userInitiated=$userInitiated, forceReplace=$forceReplace, incoming=${book?.id ?? 'n/a'}, current=$_currentBookId, startIndex=$startIndex');
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
 
@@ -1117,10 +1118,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       playlistChapters = [first];
     }
 
-    final samePlaylist =
-        _currentBookId != null && incomingBookId != null && _currentBookId == incomingBookId &&
-            _chapters.length == playlistChapters.length &&
-            _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
+    final sameBook =
+        _currentBookId != null && incomingBookId != null && _currentBookId == incomingBookId;
+    final samePlaylist = !forceReplace &&
+        sameBook &&
+        _chapters.length == playlistChapters.length &&
+        _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
 
     _log(
         'setChapters: incomingBook=$incomingBookId, current=$_currentBookId, samePlaylist=$samePlaylist, playing=${player.playing}, hasSeq=$_hasSequence');

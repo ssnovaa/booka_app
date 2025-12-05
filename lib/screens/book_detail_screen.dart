@@ -340,7 +340,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
             List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
-    final needsPreparation = !sameBook || !sameChapters;
+    final forceReplace = !sameBook;
+    final needsPreparation = forceReplace || !sameChapters;
 
     _logPlayer(
       'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, sameChapters=$sameChapters, needs=$needsPreparation, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
@@ -356,6 +357,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
         userInitiated: true,
+        forceReplace: forceReplace,
       );
     } else {
       _logPlayer('ensureAudio: skip setChapters (same playlist)');
