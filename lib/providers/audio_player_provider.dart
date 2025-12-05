@@ -195,11 +195,15 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   /// 📌 Перевірка, чи збігається переданий плейлист із поточним (id книги + порядок глав).
   bool isCurrentPlaylist(List<Chapter> list, {int? bookId}) {
+    final currentBookId = _currentBookId ??
+        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : null);
     final targetBookId = bookId ?? (list.isNotEmpty ? _extractBookId(list.first) : null);
 
-    if (_currentBookId != null && targetBookId != null && _currentBookId != targetBookId) {
-      return false;
-    }
+    // Якщо хоч один ідентифікатор невідомий — вважаємо плейлисти різними,
+    // щоб уникнути хибного збігу між різними книгами з однаковими id глав.
+    if (currentBookId == null || targetBookId == null) return false;
+
+    if (currentBookId != targetBookId) return false;
 
     if (_chapters.length != list.length) return false;
     for (var i = 0; i < list.length; i++) {
