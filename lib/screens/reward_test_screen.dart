@@ -27,18 +27,19 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   RewardedAdService? _svc;
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
-  bool _videoCompleted = false;
 
   // Общие флаги/состояния
   bool _loading = false; // загрузка rewarded-рекламы
   bool _enablingAdsMode = false; // включение ad-mode
   String _status =
-      'Ваші хвилини прослуховування закінчилися, оберіть варіанти продовження.';
+      'Ваші хвилини прослуховування закінчилися.\n\n'
+      'Можна:\n'
+      '• Отримати +15 хв за перегляд винагородної реклами, або\n'
+      '• Продовжити з періодичною рекламою (без нарахування хвилин).';
 
   bool _isAuthorized = false;
   int _userId = 0;
   int _rewardSession = 0; // токен для отмены текущего показа
-  bool _adScheduleSuspended = false; // чи призупиняли інтервали реклами саме з цього флоу
 
   // Пульс для лічильника хвилин
   final MinutesCounterController _mc = MinutesCounterController();
@@ -61,54 +62,25 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
     _svc = RewardedAdService(dio: _dio, userId: _userId);
     // (опціонально) префетч: _svc!.load();
 
-    // Банер із відео у шапці екрана (грає один раз, потім запускається тапом)
+    // Банер із відео у шапці екрана
     try {
       _videoController = VideoPlayerController.asset('assets/logo_ped.mp4');
       _videoInit = _videoController!.initialize().then((_) {
-        _videoController!..setLooping(false)..setVolume(0);
-        _videoController!.addListener(() {
-          final controller = _videoController;
-          if (controller == null) return;
-
-          final isEnded = controller.value.duration != Duration.zero &&
-              controller.value.position >= controller.value.duration;
-
-          if (isEnded && !_videoCompleted) {
-            // Відмічаємо завершення, щоб показати плей-оверлей
-            setState(() => _videoCompleted = true);
-          }
-        });
-
-        _videoController!.play().then((_) {
-          if (mounted) setState(() {});
-        });
+        _videoController!.setLooping(true);
+        _videoController!.setVolume(0);
+        _videoController!.play();
+        if (mounted) setState(() {});
       });
     } catch (e) {
       debugPrint('[REWARD][VIDEO] init error: $e');
       _videoController = null;
       _videoInit = Future.error(e);
     }
-
   }
 
-  void _cancelRewardFlow({
-    String reason = 'Показ скасовано користувачем',
-    bool resumeAdSchedule = false,
-  }) {
+  void _cancelRewardFlow({String reason = 'Показ скасовано користувачем'}) {
     _rewardSession++;
     _svc?.cancel(reason: reason);
-
-    final shouldResume = resumeAdSchedule || _adScheduleSuspended;
-    if (shouldResume) {
-      try {
-        // Повертаємо розклад міжсторінкової реклами, якщо відмінили rewarded-флоу,
-        // щоб інтервали реклами не залишались вимкненими після виходу назад
-        context.read<AudioPlayerProvider>().resumeAdSchedule('rewarded');
-      } catch (e) {
-        debugPrint('[REWARD][WARN] resumeAdSchedule() after cancel failed: $e');
-      }
-      _adScheduleSuspended = false;
-    }
     if (mounted && _loading) {
       setState(() => _loading = false);
     }
@@ -139,13 +111,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
     // ⛔️ ВАЖНО: ставим паузу расписанию межстраничной рекламы на всё время Rewarded
     // чтобы интервальная реклама не «прострелила» параллельно.
-    final bool shouldSuspendAdSchedule =
-        app.isAdMode && !app.isAdScheduleSuspended;
-    _adScheduleSuspended = shouldSuspendAdSchedule;
-
-    if (shouldSuspendAdSchedule) {
-      app.suspendAdSchedule('rewarded');
-    }
+    app.suspendAdSchedule('rewarded');
 
     if (wasPlayingBeforeAd) {
       try {
@@ -255,11 +221,8 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       debugPrint('[REWARD][ERROR] $e');
       setState(() => _status = 'Помилка показу реклами: $e');
     } finally {
-      // Повертаємо інтервали лише якщо саме ми їх призупинили для rewarded-флоу
-      if (_adScheduleSuspended) {
-        app.resumeAdSchedule('rewarded');
-        _adScheduleSuspended = false;
-      }
+      // Всегда возобновляем расписание межстраничной рекламы после Rewarded
+      app.resumeAdSchedule('rewarded');
 
       if (_rewardSession == session && wasPlayingBeforeAd && !app.isPlaying) {
         try {
@@ -315,13 +278,9 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Глобальний баланс часу
-    final user = context.watch<UserNotifier>();
-    final secondsLeft = user.freeSeconds;
-    final minutes = secondsLeft ~/ 60;
-    final hasFreeTime = secondsLeft > 0;
-    const logoHeight = 153.0; // 15% меньше от старых 180px
-    const smallLogoHeight = 56.0;
+    // Глобальный баланс минут
+    final minutes = context.watch<UserNotifier>().minutes;
+    final hasMinutes = minutes > 0;
 
     return WillPopScope(
       onWillPop: () async {
@@ -338,25 +297,13 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!hasFreeTime) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        'assets/splash/logo.jpg',
-                        height: smallLogoHeight,
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (hasFreeTime && _videoInit != null)
+                  if (_videoInit != null)
                     FutureBuilder<void>(
                       future: _videoInit,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return Container(
-                            height: logoHeight,
+                            height: 180,
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: cs.surface,
@@ -398,51 +345,20 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         }
 
                         final ratio = _videoController!.value.aspectRatio;
-                        final controller = _videoController!;
-
-                        return FractionallySizedBox(
-                          widthFactor: 0.85,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: AspectRatio(
-                              aspectRatio: ratio == 0 ? 16 / 9 : ratio,
-                              child: GestureDetector(
-                                onTap: () async {
-                                  try {
-                                    await controller.seekTo(Duration.zero);
-                                    await controller.play();
-                                    if (mounted) setState(() => _videoCompleted = false);
-                                  } catch (e) {
-                                    debugPrint('[REWARD][VIDEO] replay error: $e');
-                                  }
-                                },
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    VideoPlayer(controller),
-                                    if (_videoCompleted)
-                                      Container(
-                                        color: Colors.black26,
-                                        alignment: Alignment.center,
-                                        child: const Icon(
-                                          Icons.play_circle_fill,
-                                          size: 72,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: AspectRatio(
+                            aspectRatio: ratio == 0 ? 16 / 9 : ratio,
+                            child: VideoPlayer(_videoController!),
                           ),
                         );
                       },
                     ),
 
-                  if (hasFreeTime && _videoInit != null) const SizedBox(height: 16),
+                  if (_videoInit != null) const SizedBox(height: 16),
 
-                  if (_loading || !hasFreeTime) ...[
-                    // Статус/опис з прогресом під час завантаження реклами
+                  if (!hasMinutes) ...[
+                    // Статус/описание
                     Container(
                       width: double.infinity,
                       padding:
@@ -452,25 +368,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: cs.outlineVariant),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (_loading) ...[
-                            const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2.2),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          Flexible(
-                            child: Text(
-                              _status,
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: Text(_status, textAlign: TextAlign.center),
                     ),
 
                     const SizedBox(height: 12),
@@ -487,7 +385,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 20),
 
-                  if (!hasFreeTime) ...[
+                  if (!hasMinutes) ...[
                     // Кнопка 1 — НОВЫЙ флоу: продолжить с рекламой (ad-mode)
                     SizedBox(
                       width: double.infinity,
@@ -496,7 +394,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text(
-                            'Продовжити з рекламою',
+                            'Продовжити з рекламою (без нарахувань)',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -529,6 +427,14 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
 
                   const SizedBox(height: 8),
 
+                  // Отмена
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Скасувати'),
+                  ),
+
+                  const SizedBox(height: 8),
+
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonal(
@@ -551,7 +457,7 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                     ),
                   ),
 
-                  if (!hasFreeTime) ...[
+                  if (!hasMinutes) ...[
                     const SizedBox(height: 8),
                     Opacity(
                       opacity: 0.7,
@@ -562,14 +468,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                       ),
                     ),
                   ],
-
-                  const SizedBox(height: 8),
-
-                  // Відміна
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Скасувати'),
-                  ),
                 ],
               ),
             ),

@@ -1071,12 +1071,10 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? artist,
         String? coverUrl,
         Book? book,
-        UserType? userTypeOverride,
       }) async {
-    final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
 
-    if (effectiveType == UserType.guest) {
+    if (_userType == UserType.guest) {
       if (chapters.isEmpty) {
         _log('setChapters: guest — пустой список разделов');
         _resetState();
@@ -1102,7 +1100,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
 
-    int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
+    int initialIndex = (_userType == UserType.guest) ? 0 : startIndex;
     Duration initialPos = Duration.zero;
 
     if (book != null) {
@@ -1377,37 +1375,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (ch == null || b == null) return false;
 
       // ====================================================================
-      // FIX: Завантажуємо повний плейлист, якщо користувач авторизований.
-      // Якщо токен вже є, але userType ще не виставлений (профіль не
-      // встиг завантажитися), не вважаємо його гостем — інакше плейлист
-      // стискається до однієї глави і в шторці/локскріні не з’являються
-      // «попередня/наступна».
-      UserType effectiveUserType = _userType;
-
-      if (_userType == UserType.guest && AuthStore.I.isLoggedIn) {
-        // Якщо є токен, вважаємо профіль авторизованим: спершу пробуємо взяти
-        // тип користувача з кешу профілю (може бути «оплачений»), і лише якщо
-        // кешу немає — деградуємо до FREE, щоб завантажити плейлист повністю.
-        final cachedProfile = ProfileRepository.I.getCachedMap();
-        if (cachedProfile != null) {
-          final userMap = (cachedProfile['user'] is Map<String, dynamic>)
-              ? Map<String, dynamic>.from(cachedProfile['user'] as Map)
-              : Map<String, dynamic>.from(cachedProfile);
-          final derived = getUserType(User.fromJson(userMap));
-          _log('_prepare: logged-in token, cached profile → userType=$derived');
-          effectiveUserType = derived;
-        } else {
-          _log('_prepare: logged-in token, no cached profile → assume FREE for resume');
-          effectiveUserType = UserType.free;
-        }
-      }
-
+      // FIX: Загружаем полный плейлист, если пользователь авторизован.
       List<Chapter> chaptersToLoad;
       int startIndex = 0;
       final restoredPosition = _position; // Сохраняем точную позицию
 
-      // Логіка гостя (тільки перша глава)
-      if (effectiveUserType == UserType.guest) {
+      // Логика гостя (только первая глава)
+      if (_userType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
           _log('_prepare: guest + saved non-first chapter → очищаем сохранённое');
@@ -1447,7 +1421,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         bookTitle: b.title,
         artist: b.author,
         coverUrl: cover,
-        userTypeOverride: effectiveUserType,
       );
 
       // Восстанавливаем точную позицию, если она была сохранена.

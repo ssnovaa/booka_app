@@ -11,7 +11,6 @@ import '../models/book.dart';
 import '../services/catalog_service.dart';
 import '../widgets/book_card.dart';
 import 'package:booka_app/widgets/loading_indicator.dart';
-import '../core/network/image_cache.dart'; // спільний кешер обкладинок жанрів
 
 // ⛑ Безопасные тексты ошибок
 import 'package:booka_app/core/security/safe_errors.dart';
@@ -80,7 +79,7 @@ class _GenresScreenState extends State<GenresScreen> {
     try {
       final res = await CatalogService.fetchGenres(); // /genres — кеш на рівні сервісу
       setState(() {
-        genres = res.where((g) => g.hasBooks).toList();
+        genres = res;
         selectedGenre = null;
         books = [];
       });
@@ -314,13 +313,7 @@ class _GenreTile extends StatelessWidget {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.82,
-                      heightFactor: 0.82,
-                      child: _buildImage(url, asset),
-                    ),
-                  ),
+                  child: _buildImage(url, asset),
                 ),
               ),
               const SizedBox(height: 8),
@@ -345,29 +338,18 @@ class _GenreTile extends StatelessWidget {
 
   Widget _buildImage(String? url, String asset) {
     if (url == null || url.isEmpty) {
-      return Image.asset(
-        asset,
-        fit: BoxFit.contain,
-        width: double.infinity,
-        height: double.infinity,
-      );
+      return Image.asset(asset, fit: BoxFit.cover, width: double.infinity);
     }
     return CachedNetworkImage(
       imageUrl: url,
-      cacheManager: BookaImageCacheManager.instance,
-      fit: BoxFit.contain,
+      fit: BoxFit.cover,
       width: double.infinity,
-      height: double.infinity,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (ctx, _) => const Center(
         child: SizedBox(width: 22, height: 22, child: LoadingIndicator(size: 22)),
       ),
-      errorWidget: (ctx, _, __) => Image.asset(
-        asset,
-        fit: BoxFit.contain,
-        width: double.infinity,
-        height: double.infinity,
-      ),
+      errorWidget: (ctx, _, __) =>
+          Image.asset(asset, fit: BoxFit.cover, width: double.infinity),
     );
   }
 

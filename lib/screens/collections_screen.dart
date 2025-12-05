@@ -155,31 +155,12 @@ class _SeriesTabState extends State<_SeriesTab> {
     }
   }
 
-  /// Витягуємо кількість книг у серії для фільтрації порожніх.
-  int _booksCount(Map<String, dynamic> series) {
-    final raw = series['books_count'] ?? series['booksCount'];
-    if (raw is int) return raw;
-    if (raw is num) return raw.toInt();
-
-    final parsed = int.tryParse(raw?.toString() ?? '');
-    if (parsed != null) return parsed;
-
-    final books = series['books'];
-    if (books is List) return books.length;
-
-    return 0;
-  }
-
-  bool _hasBooks(Map<String, dynamic> series) => _booksCount(series) > 0;
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _future,
       builder: (context, snap) {
-        final data = (snap.data ?? const <Map<String, dynamic>>[])
-            .where(_hasBooks)
-            .toList();
+        final data = snap.data ?? const <Map<String, dynamic>>[];
 
         if (snap.connectionState == ConnectionState.waiting) {
           return _loadingSkeleton(context);

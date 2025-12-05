@@ -27,7 +27,6 @@ dependencies:
   google_sign_in: ^6.2.1
   permission_handler: ^12.0.1
   flutter_app_minimizer_plus: ^1.0.2
-  http: ^1.4.0
 
   # Push / локальні сповіщення (версії не фіксуємо, підтягнуться сумісні)
   firebase_core:
