@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/constants.dart';
@@ -12,6 +13,7 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/screens/profile_screen.dart';
+import 'package:booka_app/core/network/image_cache.dart';
 
 enum NumberCorner { topRight, topLeft, bottomRight, bottomLeft }
 
@@ -274,16 +276,15 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Image.network(
-        url,
+      child: CachedNetworkImage(
+        imageUrl: url,
+        cacheManager: BookaImageCacheManager.instance,
         width: 112,
         height: 160,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return placeholder;
-        },
+        fadeInDuration: const Duration(milliseconds: 180),
+        errorWidget: (_, __, ___) => placeholder,
+        progressIndicatorBuilder: (_, __, ___) => placeholder,
       ),
     );
   }

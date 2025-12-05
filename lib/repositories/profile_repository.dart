@@ -1,6 +1,10 @@
 // lib/repositories/profile_repository.dart
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:booka_app/core/network/api_client.dart';
+import 'package:booka_app/core/network/app_exception.dart';
+import 'package:booka_app/core/security/safe_errors.dart';
 import 'package:booka_app/models/user.dart';
 
 /// Єдине джерело профілю:
@@ -58,13 +62,19 @@ class ProfileRepository {
 
     _log(force ? 'net-force' : 'net', debugTag);
 
-    _inflight = _fetchMapFromApi().then((map) {
+    _inflight = _fetchMapFromApi(debugTag: debugTag).then((map) {
       _cacheMap = map;
       _ts = DateTime.now();
       _inflight = null;
       return map;
     }).catchError((e) {
       _inflight = null;
+      // Якщо мережа впала, але є валідний кеш — повертаємо його замість помилки
+      if (_cacheMap != null) {
+        _log('net-fallback-cache', debugTag);
+        return _cacheMap!;
+      }
+
       throw e;
     });
 
@@ -86,44 +96,85 @@ class ProfileRepository {
 
   // ---------------- внутрішня логіка ----------------
 
-  Future<Map<String, dynamic>> _fetchMapFromApi() async {
-    // Пробуємо /profile
-    Response r = await _dio.get(
-      '/profile',
-      options: Options(
-        responseType: ResponseType.json,
-        validateStatus: (s) => s != null && s < 500,
-      ),
-    );
+  static const _retryDelays = <Duration>[
+    Duration(milliseconds: 250),
+    Duration(milliseconds: 650),
+  ];
 
-    // Якщо /profile відсутній на старому беку — пробуємо /me
-    if (r.statusCode == 404 || r.statusCode == 405) {
-      r = await _dio.get(
-        '/me',
+  Future<Map<String, dynamic>> _fetchMapFromApi({String? debugTag}) async {
+    AppNetworkException? last;
+
+    for (var attempt = 0; attempt <= _retryDelays.length; attempt++) {
+      _log('net-attempt-${attempt + 1}', debugTag);
+      try {
+        return await _fetchMapFromApiOnce();
+      } on AppNetworkException catch (e) {
+        last = e;
+
+        final sc = e.statusCode ?? 0;
+        final transient = sc == 0 || sc == 401 || sc == 403 || sc == 408 || sc == 429 || sc >= 500;
+
+        if (transient && attempt < _retryDelays.length) {
+          _log('retry-wait-${_retryDelays[attempt].inMilliseconds}ms', debugTag);
+          await Future.delayed(_retryDelays[attempt]);
+          continue;
+        }
+
+        rethrow;
+      }
+    }
+
+    throw last ?? AppNetworkException('Невідома помилка під час отримання профілю');
+  }
+
+  Future<Map<String, dynamic>> _fetchMapFromApiOnce() async {
+    try {
+      // Пробуємо /profile
+      Response r = await _dio.get(
+        '/profile',
         options: Options(
           responseType: ResponseType.json,
           validateStatus: (s) => s != null && s < 500,
         ),
       );
-    }
 
-    if (r.statusCode != 200) {
-      throw DioException(
-        requestOptions: r.requestOptions,
-        response: r,
-        message: 'Не вдалося отримати профіль',
-      );
-    }
+      // Якщо /profile відсутній на старому беку — пробуємо /me
+      if (r.statusCode == 404 || r.statusCode == 405) {
+        r = await _dio.get(
+          '/me',
+          options: Options(
+            responseType: ResponseType.json,
+            validateStatus: (s) => s != null && s < 500,
+          ),
+        );
+      }
 
-    final normalized = _normalizeToMap(_unwrapPayload(r.data));
-    if (normalized == null) {
-      throw DioException(
-        requestOptions: r.requestOptions,
-        response: r,
-        message: 'Некоректний payload профілю',
+      if (r.statusCode != 200) {
+        throw DioException(
+          requestOptions: r.requestOptions,
+          response: r,
+          message: 'Не вдалося отримати профіль',
+        );
+      }
+
+      final normalized = _normalizeToMap(_unwrapPayload(r.data));
+      if (normalized == null) {
+        throw DioException(
+          requestOptions: r.requestOptions,
+          response: r,
+          message: 'Некоректний payload профілю',
+        );
+      }
+      return normalized;
+    } on DioException catch (e) {
+      // мʼяка обгортка, щоб екрани могли реагувати на 401/403 без крешів
+      final sc = e.response?.statusCode;
+      final msg = safeErrorMessage(
+        e,
+        fallback: 'Не вдалося отримати профіль',
       );
+      throw AppNetworkException(msg, statusCode: sc);
     }
-    return normalized;
   }
 
   /// Розпакування типових обгорток відповіді.

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/chapter.dart';
 import 'simple_player.dart';
+import '../core/network/image_cache.dart'; // єдиний менеджер кешу картинок
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Повноекранний bottom sheet з плеєром.
@@ -46,6 +47,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                 Positioned.fill(
                   child: CachedNetworkImage(
                     imageUrl: coverUrl!,
+                    cacheManager: BookaImageCacheManager.instance,
                     fit: BoxFit.cover,
                     alignment: Alignment.topCenter,
                     fadeInDuration: const Duration(milliseconds: 180),
