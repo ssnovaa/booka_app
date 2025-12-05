@@ -301,6 +301,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (oldWidget.book.id != widget.book.id) {
       _book = widget.book;
       _playerInitialized = false;
+      _initialPositionApplied = false;
       _maybeLoadFullBook(refresh: true);
       _syncFavoriteFromServer();
       fetchChapters();
@@ -334,34 +335,25 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final currentBookId = audio.currentBookId ?? audio.currentBook?.id;
     final sameBook = currentBookId != null && currentBookId == _book.id;
 
-    final sameChapters = sameBook &&
-        audio.currentChapter != null &&
-        audio.chapters.length == chapters.length &&
-        List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-            List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
-
+    // Навіть якщо глава/плейлист збігаються, для іншої книги завжди примусово
+    // замінюємо плейлист, щоб користувач міг переключитися з явним натисканням Play.
     final forceReplace = !sameBook;
-    final needsPreparation = forceReplace || !sameChapters;
 
     _logPlayer(
-      'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, sameChapters=$sameChapters, needs=$needsPreparation, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
+      'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, forceReplace=$forceReplace, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
     );
 
-    if (needsPreparation) {
-      _logPlayer('ensureAudio: setChapters() → userInitiated');
-      await audio.setChapters(
-        chapters,
-        book: _book,
-        startIndex: targetIndex,
-        bookTitle: _book.title,
-        artist: _book.author.trim(),
-        coverUrl: _resolveBgUrl(_book),
-        userInitiated: true,
-        forceReplace: forceReplace,
-      );
-    } else {
-      _logPlayer('ensureAudio: skip setChapters (same playlist)');
-    }
+    _logPlayer('ensureAudio: setChapters() → userInitiated');
+    await audio.setChapters(
+      chapters,
+      book: _book,
+      startIndex: targetIndex,
+      bookTitle: _book.title,
+      artist: _book.author.trim(),
+      coverUrl: _resolveBgUrl(_book),
+      userInitiated: true,
+      forceReplace: forceReplace,
+    );
 
     if (startPosition != null) {
       _logPlayer('ensureAudio: apply startPosition=$startPosition at index=$targetIndex');
