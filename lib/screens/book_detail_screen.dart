@@ -347,12 +347,20 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
               List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
-      if (!sameChapters) {
-        // ⏸️ Якщо зараз грає інша книга, ставимо паузу ДО перепідготовки, щоб just_audio не автозапускав новий плейліст
-        if (wasPlaying) {
-          // 🛑 Повна зупинка, щоб обрубити стан «playing» — just_audio тоді не стартує новий плейліст сам
-          await audio.stop();
+      final keepForeignPlayback = wasPlaying && !sameChapters;
+
+      // 🛡️ Якщо вже щось грає (інша книга), не чіпаємо плеєр, щоб не зривати відтворення під час перегляду інших екранів
+      if (keepForeignPlayback) {
+        if (mounted) {
+          setState(() {
+            _playerInitialized = true;
+            _autoStartPending = false;
+          });
         }
+        return;
+      }
+
+      if (!sameChapters) {
 
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
@@ -392,6 +400,25 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
+
+      final sameChapters = audio.currentChapter != null &&
+          audio.chapters.length == chapters.length &&
+          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
+              List.generate(audio.chapters.length, (i) => audio.chapters[i].id)
+                  .join(',');
+
+      if (!sameChapters) {
+        await audio.pause();
+        await audio.setChapters(
+          chapters,
+          book: _book,
+          startIndex: index,
+          bookTitle: _book.title,
+          artist: _book.author.trim(),
+          coverUrl: _resolveBgUrl(_book),
+        );
+      }
+
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
