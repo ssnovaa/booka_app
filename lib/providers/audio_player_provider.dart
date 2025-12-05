@@ -1541,6 +1541,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         positionSec: _position.inSeconds,
       );
 
+      // 🆔 Запам'ятовуємо поточну книгу, щоб коректно визначати активний плейлист.
+      _currentBookId = book.id;
+
       _log('restoreProgress: ok (pos=${_position.inSeconds})');
     } catch (e) {
       _log('restoreProgress: error: $e');
@@ -1583,6 +1586,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _currentChapterIndex = 0;
     _position = Duration(seconds: positionSec);
     _duration = Duration(seconds: chapter.duration ?? 0);
+    _currentBookId = book.id;
   }
 
   // ======== Drag-помощники для слайдера ========
