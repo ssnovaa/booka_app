@@ -125,12 +125,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   bool _samePlaylist(AudioPlayerProvider provider) {
-    if (provider.currentBookId != widget.book.id) return false;
-    if (provider.chapters.length != widget.chapters.length) return false;
-    for (var i = 0; i < widget.chapters.length; i++) {
-      if (provider.chapters[i].id != widget.chapters[i].id) return false;
-    }
-    return true;
+    return provider.isCurrentPlaylist(widget.chapters, bookId: widget.book.id);
   }
 
   int _selectedChapterIndex() {

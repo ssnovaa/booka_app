@@ -193,6 +193,21 @@ class AudioPlayerProvider extends ChangeNotifier {
   int? _currentBookId;
   int? get currentBookId => _currentBookId;
 
+  /// 📌 Перевірка, чи збігається переданий плейлист із поточним (id книги + порядок глав).
+  bool isCurrentPlaylist(List<Chapter> list, {int? bookId}) {
+    final targetBookId = bookId ?? (list.isNotEmpty ? _extractBookId(list.first) : null);
+
+    if (_currentBookId != null && targetBookId != null && _currentBookId != targetBookId) {
+      return false;
+    }
+
+    if (_chapters.length != list.length) return false;
+    for (var i = 0; i < list.length; i++) {
+      if (_chapters[i].id != list[i].id) return false;
+    }
+    return true;
+  }
+
   List<Chapter> get chapters => _chapters;
 
   String? get currentUrl => currentChapter?.audioUrl;
@@ -1050,6 +1065,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
         _log(
             'hydrate: applied server (book=$bookId, ch=${normalized.id}, pos=$pos, upd=$upd)');
+        _currentBookId = bookId;
         notifyListeners();
         return true;
       }
@@ -1100,13 +1116,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final nextBookId = book?.id ??
         (playlistChapters.isNotEmpty ? _extractBookId(playlistChapters.first) : null);
 
-    final samePlaylist =
-        _chapters.length == playlistChapters.length &&
-            _chapters.asMap().entries.every(
-                    (e) => e.value.id == playlistChapters[e.key].id) &&
-            (_currentBookId != null && nextBookId != null
-                ? _currentBookId == nextBookId
-                : false);
+    final samePlaylist = isCurrentPlaylist(playlistChapters, bookId: nextBookId);
 
     if (samePlaylist && _hasSequence) {
       _log('setChapters: same playlist — skip setAudioSource()');
@@ -1148,8 +1158,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     ))
         .toList();
 
-    _currentBookId = book?.id ?? _currentBookId ??
-        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : null);
+    _currentBookId = book?.id ?? nextBookId ??
+        (_chapters.isNotEmpty ? _extractBookId(_chapters.first) : _currentBookId);
 
     _currentChapterIndex = initialIndex;
     _lastPushSig = null;

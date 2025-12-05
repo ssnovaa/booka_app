@@ -351,11 +351,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
       final startIndex = selectedChapterIndex;
 
-      final sameChapters = audio.currentBookId == _book.id &&
-          audio.currentChapter != null &&
-          audio.chapters.length == chapters.length &&
-          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-              List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
+      final sameChapters = audio.isCurrentPlaylist(chapters, bookId: _book.id);
 
       final keepForeignPlayback = wasPlaying && !sameChapters;
 
@@ -411,12 +407,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
 
-      final sameChapters = audio.currentBookId == _book.id &&
-          audio.currentChapter != null &&
-          audio.chapters.length == chapters.length &&
-          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-              List.generate(audio.chapters.length, (i) => audio.chapters[i].id)
-                  .join(',');
+      final sameChapters = audio.isCurrentPlaylist(chapters, bookId: _book.id);
 
       if (!sameChapters) {
         await audio.pause();
