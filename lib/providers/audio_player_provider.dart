@@ -347,7 +347,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void _log(String msg) {
-    if (kDebugMode) debugPrint('[AUDIO] $msg');
+    // Логувати завжди, щоб бачити події плеєра у релізі
+    debugPrint('[AUDIO] $msg');
   }
 
   void _pullDurationFromPlayer() {
