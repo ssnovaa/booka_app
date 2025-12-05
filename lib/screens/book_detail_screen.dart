@@ -338,6 +338,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final audio = context.read<AudioPlayerProvider>();
       final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
+      final wasPlaying = audio.isPlaying;
 
       final startIndex = selectedChapterIndex;
 
@@ -347,6 +348,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
       if (!sameChapters) {
+        // ⏸️ Якщо зараз грає інша книга, ставимо паузу ДО перепідготовки, щоб just_audio не автозапускав новий плейліст
+        if (wasPlaying) {
+          // 🛑 Повна зупинка, щоб обрубити стан «playing» — just_audio тоді не стартує новий плейліст сам
+          await audio.stop();
+        }
+
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
           chapters,
@@ -363,6 +370,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
       } else if (widget.initialChapter != null) {
         await audio.seekChapter(startIndex, position: Duration.zero, persist: false);
+      }
+
+      final keepPlaying = wasPlaying && sameChapters;
+
+      if (!keepPlaying) {
+        await audio.pause(); // не запускаємо відтворення автоматично, якщо воно не йшло раніше
       }
 
       if (mounted) {
