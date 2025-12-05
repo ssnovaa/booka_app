@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:booka_app/models/book.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
@@ -20,6 +21,7 @@ class SimplePlayer extends StatefulWidget {
   final Function(Chapter) onChapterSelected;
   final Chapter? initialChapter;
   final int? initialPosition; // секунди
+  final Book book;
 
   const SimplePlayer({
     super.key,
@@ -29,6 +31,7 @@ class SimplePlayer extends StatefulWidget {
     required this.selectedChapterId,
     required this.onChapterSelected,
     required this.initialChapter,
+    required this.book,
     this.initialPosition,
   });
 
@@ -96,11 +99,15 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   void _changeSpeed(BuildContext context) {
-    context.read<AudioPlayerProvider>().changeSpeed();
+    final provider = context.read<AudioPlayerProvider>();
+    if (!_samePlaylist(provider)) return;
+    provider.changeSpeed();
   }
 
   Future<void> _skipSeconds(BuildContext context, int seconds) async {
     final provider = context.read<AudioPlayerProvider>();
+    if (!_samePlaylist(provider)) return;
+
     final effDur = _effectiveDuration(provider, provider.currentChapter);
 
     var target = provider.uiPosition + Duration(seconds: seconds);
@@ -117,8 +124,43 @@ class _SimplePlayerState extends State<SimplePlayer> {
     return widget.chapters.indexWhere((c) => c.id == currentId);
   }
 
+  bool _samePlaylist(AudioPlayerProvider provider) {
+    if (provider.chapters.length != widget.chapters.length) return false;
+    for (var i = 0; i < widget.chapters.length; i++) {
+      if (provider.chapters[i].id != widget.chapters[i].id) return false;
+    }
+    return true;
+  }
+
+  int _selectedChapterIndex() {
+    if (widget.selectedChapterId != null) {
+      final idx = widget.chapters.indexWhere((c) => c.id == widget.selectedChapterId);
+      if (idx != -1) return idx;
+    }
+    return 0;
+  }
+
+  Future<void> _ensureThisBookAndPlay(AudioPlayerProvider provider) async {
+    final startIndex = _selectedChapterIndex();
+
+    await provider.pause();
+    await provider.setChapters(
+      widget.chapters,
+      startIndex: startIndex,
+      bookTitle: widget.bookTitle,
+      artist: widget.author,
+      coverUrl: widget.chapters[startIndex].coverUrl,
+      book: widget.book,
+    );
+
+    await provider.seekChapter(startIndex, position: Duration.zero, persist: false);
+    await provider.play();
+  }
+
   Future<void> _nextChapter(BuildContext context, UserType userType) async {
     final provider = context.read<AudioPlayerProvider>();
+    if (!_samePlaylist(provider)) return;
+
     final idx = _currentIndexInWidgetList(provider);
     if (idx == -1) return;
 
@@ -137,6 +179,8 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
   Future<void> _previousChapter(BuildContext context, UserType userType) async {
     final provider = context.read<AudioPlayerProvider>();
+    if (!_samePlaylist(provider)) return;
+
     final idx = _currentIndexInWidgetList(provider);
     if (idx == -1) return;
 
@@ -254,14 +298,26 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final userType = getUserType(user);
 
     final provider = context.watch<AudioPlayerProvider>();
+    final samePlaylist = _samePlaylist(provider);
+
+    final fallbackChapter = widget.initialChapter ??
+        (widget.selectedChapterId != null
+            ? widget.chapters.firstWhere(
+                (c) => c.id == widget.selectedChapterId,
+                orElse: () => widget.chapters.first,
+              )
+            : widget.chapters.first);
+
     final currentChapter =
-        provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
+        samePlaylist ? (provider.currentChapter ?? fallbackChapter) : fallbackChapter;
 
     // Позиція з урахуванням drag-override, щоб UI був стабільним під час перетягування
-    final position = provider.uiPosition;
+    final position = samePlaylist ? provider.uiPosition : Duration.zero;
 
     // Ефективна тривалість
-    final effDuration = _effectiveDuration(provider, currentChapter);
+    final effDuration = samePlaylist
+        ? _effectiveDuration(provider, currentChapter)
+        : Duration(seconds: currentChapter.duration ?? 0);
     final hasDur = effDuration.inSeconds > 0;
 
     // Значення слайдера
@@ -321,14 +377,19 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
-                  onChangeStart: (_) =>
-                      context.read<AudioPlayerProvider>().seekDragStart(),
-                  onChanged: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragUpdate(Duration(seconds: v.floor())),
-                  onChangeEnd: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragEnd(Duration(seconds: v.floor())),
+                  onChangeStart: samePlaylist
+                      ? (_) => context.read<AudioPlayerProvider>().seekDragStart()
+                      : null,
+                  onChanged: samePlaylist
+                      ? (v) => context
+                          .read<AudioPlayerProvider>()
+                          .seekDragUpdate(Duration(seconds: v.floor()))
+                      : null,
+                  onChangeEnd: samePlaylist
+                      ? (v) => context
+                          .read<AudioPlayerProvider>()
+                          .seekDragEnd(Duration(seconds: v.floor()))
+                      : null,
                 ),
               ),
 
@@ -367,12 +428,18 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
                   // Play / Pause
                   Semantics(
-                    label: provider.isPlaying ? 'Пауза' : 'Відтворити',
+                    label: (samePlaylist && provider.isPlaying) ? 'Пауза' : 'Відтворити',
                     button: true,
                     child: _RoundPlayButton(
                       size: 64,
-                      isPlaying: provider.isPlaying,
-                      onTap: provider.togglePlayback,
+                      isPlaying: samePlaylist && provider.isPlaying,
+                      onTap: () async {
+                        if (!samePlaylist) {
+                          await _ensureThisBookAndPlay(provider);
+                          return;
+                        }
+                        await provider.togglePlayback();
+                      },
                     ),
                   ),
 

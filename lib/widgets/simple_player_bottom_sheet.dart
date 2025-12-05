@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../models/book.dart';
 import '../models/chapter.dart';
 import 'simple_player.dart';
 import '../core/network/image_cache.dart'; // єдиний менеджер кешу картинок
@@ -16,6 +17,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
   final String? coverUrl; // опційно: обкладинка для фону
   final List<Chapter> chapters;
   final Chapter selectedChapter;
+  final Book book;
   final void Function(Chapter) onChapterSelected;
 
   const FullPlayerBottomSheet({
@@ -24,6 +26,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
     required this.author,
     required this.chapters,
     required this.selectedChapter,
+    required this.book,
     required this.onChapterSelected,
     this.coverUrl,
   });
@@ -152,6 +155,7 @@ class FullPlayerBottomSheet extends StatelessWidget {
                           chapters: chapters,
                           selectedChapterId: selectedChapter.id,
                           initialChapter: selectedChapter,
+                          book: book,
                           onChapterSelected: onChapterSelected,
                         ),
                       ),

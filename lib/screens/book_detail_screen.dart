@@ -459,6 +459,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         title: _book.title,
         author: _book.author,
         coverUrl: bgUrl,
+        book: _book,
         chapters: chapters,
         selectedChapter: chapters[selectedChapterIndex],
         onChapterSelected: _onChapterSelected,
