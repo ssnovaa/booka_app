@@ -54,8 +54,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   // Локальний логер для розслідування ініціалізації плеєра
   void _logPlayer(String msg) {
     // Логувати завжди, щоби відловлювати сценарії на реальних пристроях
+    // developer.log → окремий тег у logcat; debugPrint/print → звичний потік flutter
     developer.log(msg, name: 'BOOK_DETAIL');
-    debugPrint('[BOOK_DETAIL] $msg');
+    final line = '[BOOK_DETAIL] $msg';
+    debugPrint(line);
+    // ignore: avoid_print
+    print(line);
   }
 
   // Поточна «повна» книга (може оновитися після довантаження)
