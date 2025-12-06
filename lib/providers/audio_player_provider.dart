@@ -1,6 +1,7 @@
 // lib/providers/audio_player_provider.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
@@ -126,6 +127,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   // ====== Скорость/список/индексы/позиции
   double _speed = 1.0;
   List<Chapter> _chapters = [];
+  int? _currentBookId;
   int _currentChapterIndex = 0;
 
   Duration _position = Duration.zero;
@@ -189,6 +191,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       _chapters.isNotEmpty && _chapters[_currentChapterIndex].book != null
           ? Book.fromJson(_chapters[_currentChapterIndex].book!)
           : null;
+
+  int? get currentBookId => _currentBookId;
 
   List<Chapter> get chapters => _chapters;
 
@@ -344,7 +348,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void _log(String msg) {
-    if (kDebugMode) debugPrint('[AUDIO] $msg');
+    // Логувати завжди, щоб бачити події плеєра у релізі
+    developer.log('[AUDIO] $msg', name: 'AUDIO');
   }
 
   void _pullDurationFromPlayer() {
@@ -1041,6 +1046,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         );
 
         _chapters = [normalized];
+        _currentBookId = bookId;
         _currentChapterIndex = 0;
         _position = Duration(seconds: pos);
         _duration = Duration(seconds: normalized.duration ?? 0);
@@ -1072,9 +1078,29 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? coverUrl,
         Book? book,
         UserType? userTypeOverride,
+        bool userInitiated = false,
+        bool forceReplace = false,
       }) async {
+    _log(
+        'setChapters: userInitiated=$userInitiated, forceReplace=$forceReplace, incoming=${book?.id ?? 'n/a'}, current=$_currentBookId, startIndex=$startIndex');
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
+
+    int? _deriveBookId(List<Chapter> list, Book? explicit) {
+      if (explicit != null) return explicit.id;
+      for (final ch in list) {
+        final b = ch.book;
+        if (b != null) {
+          final bid = b['id'];
+          if (bid is int) return bid;
+          final parsed = int.tryParse('$bid');
+          if (parsed != null) return parsed;
+        }
+      }
+      return null;
+    }
+
+    final incomingBookId = _deriveBookId(chapters, book);
 
     if (effectiveType == UserType.guest) {
       if (chapters.isEmpty) {
@@ -1094,12 +1120,29 @@ class AudioPlayerProvider extends ChangeNotifier {
       playlistChapters = [first];
     }
 
-    final samePlaylist = _chapters.length == playlistChapters.length &&
+    final sameBook =
+        _currentBookId != null && incomingBookId != null && _currentBookId == incomingBookId;
+    final samePlaylist = !forceReplace &&
+        sameBook &&
+        _chapters.length == playlistChapters.length &&
         _chapters.asMap().entries.every((e) => e.value.id == playlistChapters[e.key].id);
 
-    if (samePlaylist && _hasSequence) {
-      _log('setChapters: same playlist — skip setAudioSource()');
+    _log(
+        'setChapters: incomingBook=$incomingBookId, current=$_currentBookId, samePlaylist=$samePlaylist, playing=${player.playing}, hasSeq=$_hasSequence');
+
+    final playingAnother = player.playing && _hasSequence && !samePlaylist;
+    if (playingAnother && !userInitiated) {
+      _log('setChapters: skip replace while another playlist is playing (not user-initiated)');
       return;
+    }
+
+    if (samePlaylist && _hasSequence) {
+      if (!userInitiated) {
+        _log('setChapters: same playlist — skip setAudioSource()');
+        return;
+      }
+
+      _log('setChapters: same playlist but userInitiated=true → переинициализация источника');
     }
 
     int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
@@ -1136,6 +1179,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       book: book != null ? book.toJson() : ch.book,
     ))
         .toList();
+
+    _currentBookId = incomingBookId;
 
     _currentChapterIndex = initialIndex;
     _lastPushSig = null;
@@ -1184,6 +1229,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _currentChapterIndex = 0;
     _position = Duration.zero;
     _duration = Duration.zero;
+    _currentBookId = null;
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
     notifyListeners();
@@ -1192,6 +1238,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   // ---------- КОНТРОЛЛЕРЫ ВОСПРОИЗВЕДЕНИЯ ----------
 
   Future<void> play() async {
+    _log(
+        'play(): book=$_currentBookId, chapter=$_currentChapterIndex, adMode=$_adMode, userType=$_userType, playing=${player.playing}');
     _ensureCreditsConsumer();
 
     if (_userType == UserType.free) {
@@ -1448,6 +1496,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         artist: b.author,
         coverUrl: cover,
         userTypeOverride: effectiveUserType,
+        userInitiated: true,
       );
 
       // Восстанавливаем точную позицию, если она была сохранена.
@@ -1491,6 +1540,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           book: chapter.book,
         )
       ];
+      _currentBookId = book.id;
       _currentChapterIndex = 0;
       _position = Duration(
           seconds: position is int ? position : int.tryParse('$position') ?? 0);
@@ -1541,6 +1591,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         book: chapter.book ?? book.toJson(),
       )
     ];
+    _currentBookId = book.id;
     _currentChapterIndex = 0;
     _position = Duration(seconds: positionSec);
     _duration = Duration(seconds: chapter.duration ?? 0);
