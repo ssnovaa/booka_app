@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:booka_app/models/book.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/widgets/custom_bottom_nav_bar.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';

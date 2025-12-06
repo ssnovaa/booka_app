@@ -84,7 +84,13 @@ class BooksGrid extends StatelessWidget {
         final isDark = theme.brightness == Brightness.dark;
 
         return InkWell(
-          onTap: () => onOpen?.call(m) ?? _openDetails(context, m),
+          onTap: () {
+            if (onOpen != null) {
+              onOpen!(m);
+            } else {
+              _openDetails(context, m);
+            }
+          },
           borderRadius: BorderRadius.circular(14),
           child: Container(
             decoration: BoxDecoration(
