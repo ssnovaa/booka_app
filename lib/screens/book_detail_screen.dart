@@ -339,6 +339,21 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
 
+      final currentBook = audio.currentBook;
+      final anotherBookLoaded =
+          currentBook != null && currentBook.id != _book.id;
+
+      // Не чіпаємо вже підготовлений плейлист іншої книги.
+      if (anotherBookLoaded) {
+        if (mounted) {
+          setState(() {
+            _playerInitialized = true;
+            _autoStartPending = false;
+          });
+        }
+        return;
+      }
+
       final startIndex = selectedChapterIndex;
 
       final sameChapters = audio.currentChapter != null &&
@@ -379,6 +394,21 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index != -1) {
       setState(() => selectedChapterIndex = index);
       final audio = context.read<AudioPlayerProvider>();
+
+      final currentBook = audio.currentBook;
+      final needRebuildPlaylist = currentBook == null || currentBook.id != _book.id;
+
+      if (needRebuildPlaylist) {
+        await audio.setChapters(
+          chapters,
+          book: _book,
+          startIndex: index,
+          bookTitle: _book.title,
+          artist: _book.author.trim(),
+          coverUrl: _resolveBgUrl(_book),
+        );
+      }
+
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
