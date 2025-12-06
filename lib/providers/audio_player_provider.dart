@@ -1137,8 +1137,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     if (samePlaylist && _hasSequence) {
-      _log('setChapters: same playlist — skip setAudioSource()');
-      return;
+      if (!userInitiated) {
+        _log('setChapters: same playlist — skip setAudioSource()');
+        return;
+      }
+
+      _log('setChapters: same playlist but userInitiated=true → переинициализация источника');
     }
 
     int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
