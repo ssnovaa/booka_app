@@ -36,14 +36,12 @@ class BookDetailScreen extends StatefulWidget {
   final Book book;
   final Chapter? initialChapter;
   final int? initialPosition;
-  final bool autoPlay;
 
   const BookDetailScreen({
     super.key,
     required this.book,
     this.initialChapter,
     this.initialPosition,
-    this.autoPlay = false,
   });
 
   @override
@@ -363,13 +361,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         );
       }
 
-      // Початкова позиція/автовідтворення — користуємось API провайдера
+      // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
       if (widget.initialPosition != null) {
         await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
-        if (widget.autoPlay) await audio.play();
-      } else if (widget.initialChapter != null && widget.autoPlay) {
+      } else if (widget.initialChapter != null) {
         await audio.seekChapter(startIndex, position: Duration.zero, persist: false);
-        await audio.play();
       }
 
       if (mounted) {
