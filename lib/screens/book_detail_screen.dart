@@ -340,7 +340,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return fullResourceUrl(s);
   }
 
-  Future<void> _ensureAudioPrepared({int? startIndex, int? startPosition}) async {
+  Future<void> _ensureAudioPrepared({
+    int? startIndex,
+    int? startPosition,
+    bool forceReplace = false,
+  }) async {
     if (chapters.isEmpty) {
       _logPlayer('ensureAudio: пропуск (список розділів порожній)');
       return;
@@ -357,10 +361,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     // Навіть якщо глава/плейлист збігаються, для іншої книги завжди примусово
     // замінюємо плейлист, щоб користувач міг переключитися з явним натисканням Play.
-    final forceReplace = !sameBook;
+    final effectiveForceReplace = forceReplace || !sameBook;
 
     _logPlayer(
-      'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, forceReplace=$forceReplace, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
+      'ensureAudio: book=${_book.id}, current=$currentBookId, sameBook=$sameBook, forceReplace=$effectiveForceReplace, targetIndex=$targetIndex, startPos=${startPosition ?? 'null'}',
     );
 
     _logPlayer('ensureAudio: setChapters() → userInitiated');
@@ -372,7 +376,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       artist: _book.author.trim(),
       coverUrl: _resolveBgUrl(_book),
       userInitiated: true,
-      forceReplace: forceReplace,
+      forceReplace: effectiveForceReplace,
     );
 
     if (startPosition != null) {
@@ -406,7 +410,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       setState(() => selectedChapterIndex = index);
       _logPlayer('onChapterSelected: chapter=${chapter.id}, index=$index');
       final audio = context.read<AudioPlayerProvider>();
-      await _ensureAudioPrepared(startIndex: index);
+      await _ensureAudioPrepared(startIndex: index, forceReplace: true);
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
@@ -418,6 +422,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     await _ensureAudioPrepared(
       startIndex: selectedChapterIndex,
       startPosition: startPos,
+      forceReplace: true,
     );
 
     final audio = context.read<AudioPlayerProvider>();
