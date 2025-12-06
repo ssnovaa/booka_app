@@ -509,9 +509,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final double reservedBottom =
         (currentChapter != null ? _miniPlayerReserved : 0.0) + media.padding.bottom;
 
-    return Scaffold(
-      appBar: bookaAppBar(actions: const []),
-      body: MediaQuery(
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.of(context).pop(_isFav);
+        return false;
+      },
+      child: Scaffold(
+        appBar: bookaAppBar(actions: const []),
+        body: MediaQuery(
         data: media.copyWith(textScaleFactor: clampedScale),
         child: isLoading
             ? const LoadingIndicator()
@@ -535,7 +540,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(context).pop(_isFav),
                   child: const Text('Назад'),
                 ),
               ],
@@ -826,6 +831,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 ),
               ),
           ],
+        ),
         ),
       ),
     );

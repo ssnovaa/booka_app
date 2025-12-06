@@ -933,6 +933,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             title: 'Вибране',
                             items: favorites,
                             resolveUrl: _resolveThumbOrCoverUrl,
+                            autoPruneUnfavorited: true,
                           ),
                         ),
                       );

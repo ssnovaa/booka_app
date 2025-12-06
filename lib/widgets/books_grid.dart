@@ -11,12 +11,27 @@ import '../core/network/image_cache.dart'; // спільний кеш-менед
 class BooksGrid extends StatelessWidget {
   final List<Map<String, dynamic>> items;
   final String? Function(Map<String, dynamic>) resolveUrl;
+  final void Function(Map<String, dynamic>)? onOpen;
 
   const BooksGrid({
     Key? key,
     required this.items,
     required this.resolveUrl,
+    this.onOpen,
   }) : super(key: key);
+
+  void _openDetails(BuildContext context, Map<String, dynamic> m) {
+    try {
+      final book = Book.fromJson(Map<String, dynamic>.from(m));
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
+      );
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не вдалося відкрити книгу')),
+      );
+    }
+  }
 
   double _aspect(BuildContext context) {
     final mq = MediaQuery.of(context);
@@ -45,19 +60,6 @@ class BooksGrid extends StatelessWidget {
     return v.toString().trim();
   }
 
-  void _openDetails(BuildContext context, Map<String, dynamic> m) {
-    try {
-      final book = Book.fromJson(Map<String, dynamic>.from(m));
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
-      );
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не вдалося відкрити книгу')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -82,7 +84,7 @@ class BooksGrid extends StatelessWidget {
         final isDark = theme.brightness == Brightness.dark;
 
         return InkWell(
-          onTap: () => _openDetails(context, m),
+          onTap: () => onOpen?.call(m) ?? _openDetails(context, m),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             decoration: BoxDecoration(
