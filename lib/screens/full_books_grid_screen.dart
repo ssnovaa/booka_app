@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:booka_app/models/book.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/widgets/custom_bottom_nav_bar.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
@@ -10,7 +11,7 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/widgets/books_grid.dart';
 import 'package:booka_app/constants.dart'; // ensureAbsoluteImageUrl
 
-class FullBooksGridScreen extends StatelessWidget {
+class FullBooksGridScreen extends StatefulWidget {
   final String title;
   final List<Map<String, dynamic>> items;
   /// Поверніть (можливо відносний) URL обкладинки/thumb
@@ -19,13 +20,26 @@ class FullBooksGridScreen extends StatelessWidget {
   /// Зазвичай сюди приходимо з профілю → підсвітимо профіль
   final int currentIndex;
 
+  /// Якщо true — після повернення з детальної картки автоматично
+  /// видаляємо книгу зі списку, якщо її прибрали з «Вибраного».
+  final bool autoPruneUnfavorited;
+
   const FullBooksGridScreen({
     Key? key,
     required this.title,
     required this.items,
     required this.resolveUrl,
     this.currentIndex = 3,
+    this.autoPruneUnfavorited = false,
   }) : super(key: key);
+
+  @override
+  State<FullBooksGridScreen> createState() => _FullBooksGridScreenState();
+}
+
+class _FullBooksGridScreenState extends State<FullBooksGridScreen> {
+  late final List<Map<String, dynamic>> _items =
+      widget.items.map((m) => Map<String, dynamic>.from(m)).toList();
 
   void _goToMain(BuildContext context, int tabIndex) {
     final ms = MainScreen.of(context);
@@ -63,9 +77,9 @@ class FullBooksGridScreen extends StatelessWidget {
   /// Нормалізуємо карту книги: примусово робимо абсолютні URL для мініатюри/обкладинки,
   /// щоб не ловити «No host specified» на старих даних.
   Map<String, dynamic> _normalizedMap(
-      Map<String, dynamic> m,
-      String? Function(Map<String, dynamic>) parentResolveUrl,
-      ) {
+    Map<String, dynamic> m,
+    String? Function(Map<String, dynamic>) parentResolveUrl,
+  ) {
     final map = Map<String, dynamic>.from(m);
 
     // 1) Найкращий URL через resolveUrl батька (як у превʼю профілю)
@@ -93,10 +107,38 @@ class FullBooksGridScreen extends StatelessWidget {
 
   /// Обгортка над resolveUrl: завжди віддає абсолютний URL.
   String? _resolvedAbsolute(
-      Map<String, dynamic> m,
-      String? Function(Map<String, dynamic>) parentResolveUrl,
-      ) {
+    Map<String, dynamic> m,
+    String? Function(Map<String, dynamic>) parentResolveUrl,
+  ) {
     return ensureAbsoluteImageUrl(parentResolveUrl(m));
+  }
+
+  int? _extractBookId(Map<String, dynamic> m) {
+    final raw = m['book_id'] ?? m['bookId'] ?? m['id'];
+    if (raw == null) return null;
+    return int.tryParse(raw.toString());
+  }
+
+  Future<void> _openDetails(BuildContext context, Map<String, dynamic> m) async {
+    try {
+      final book = Book.fromJson(Map<String, dynamic>.from(m));
+      final bool? isFav = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => BookDetailScreen(book: book)),
+      );
+
+      if (widget.autoPruneUnfavorited && isFav == false) {
+        final id = _extractBookId(m);
+        if (id != null && mounted) {
+          setState(() {
+            _items.removeWhere((it) => _extractBookId(it) == id);
+          });
+        }
+      }
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не вдалося відкрити книгу')),
+      );
+    }
   }
 
   @override
@@ -104,8 +146,8 @@ class FullBooksGridScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     // Нормалізуємо список заздалегідь (lazy недорого)
-    final normalizedItems = items
-        .map((m) => _normalizedMap(m, resolveUrl))
+    final normalizedItems = _items
+        .map((m) => _normalizedMap(m, widget.resolveUrl))
         .toList(growable: false);
 
     return Scaffold(
@@ -118,7 +160,7 @@ class FullBooksGridScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Text(
-                title,
+                widget.title,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
@@ -129,14 +171,15 @@ class FullBooksGridScreen extends StatelessWidget {
               // він сам робить Book.fromJson(...) і відкриває BookDetailScreen.
               child: BooksGrid(
                 items: normalizedItems,
-                resolveUrl: (m) => _resolvedAbsolute(m, resolveUrl),
+                resolveUrl: (m) => _resolvedAbsolute(m, widget.resolveUrl),
+                onOpen: (m) => _openDetails(context, m),
               ),
             ),
           ],
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: currentIndex, // зазвичай 3 (профіль)
+        currentIndex: widget.currentIndex, // зазвичай 3 (профіль)
         onTap: (i) {
           if (i == 0 || i == 1) _goToMain(context, i);
           if (i == 2) _openPlayer(context);
