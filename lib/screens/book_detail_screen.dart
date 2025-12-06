@@ -299,9 +299,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК: Не перебивати поточне аудіо при вході
+    /*
     if (!_playerInitialized && !_autoStartPending && chapters.isNotEmpty) {
       _initAudioPlayer();
     }
+    */
   }
 
   @override
@@ -471,6 +474,35 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
+  // ✅ НОВИЙ МЕТОД: Обробка натискання кнопки «Слухати»
+  Future<void> _onPlayButtonTap() async {
+    // Якщо розділи ще не завантажились — ігноруємо
+    if (isLoading || chapters.isEmpty) return;
+
+    final audio = context.read<AudioPlayerProvider>();
+
+    // Якщо в плеєрі вже завантажена ця книга
+    if (audio.currentBook?.id == _book.id) {
+      // Якщо на паузі — продовжуємо
+      if (!audio.isPlaying) {
+        await audio.play();
+      }
+      // Відкриваємо шторку повного плеєра
+      _openFullPlayer();
+    } else {
+      // Це НОВА книга: завантажуємо її в плеєр і стартуємо
+      await audio.setChapters(
+        chapters,
+        book: _book,
+        startIndex: 0, // Почнемо з початку (або провайдер відновить збережену позицію)
+        bookTitle: _book.title,
+        artist: _book.author.trim(),
+        coverUrl: _resolveBgUrl(_book),
+      );
+      await audio.play();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -498,10 +530,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
 
+    // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК і тут
+    /*
     if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
       _autoStartPending = false;
       _initAudioPlayer();
     }
+    */
 
     final coverUrlAbs = _absUrl(_book.coverUrl);
 
@@ -767,6 +802,35 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
                         const SizedBox(height: 16),
 
+                        // ✅ ВЕЛИКА КНОПКА «СЛУХАТИ»
+                        // Додаємо її, щоб користувач міг явно запустити цю книгу
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: FilledButton.icon(
+                            onPressed: (isLoading || error != null)
+                                ? null
+                                : _onPlayButtonTap,
+                            icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                            label: Text(
+                              isLoading ? 'Завантаження...' : 'Слухати',
+                              style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: cs.primary,
+                              foregroundColor: cs.onPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
                         if ((_book.description ?? '').trim().isNotEmpty)
                           Text(
                             _book.description!.trim(),
@@ -821,8 +885,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   },
                   child: MiniPlayerWidget(
                     chapter: currentChapter,
-                    bookTitle: _book.title,
-                    coverUrl: _resolveBgUrl(_book),
+                    // ✅ ПОКАЗУЄМО ДАНІ ТОГО, ЩО ГРАЄ В ФОНІ, а не поточної сторінки
+                    bookTitle: audio.currentBook?.title ?? _book.title,
+                    coverUrl: audio.currentBook != null
+                        ? _resolveBgUrl(audio.currentBook!)
+                        : _resolveBgUrl(_book),
                     onExpand: _openFullPlayer,
                     // 👇 если показываем рекламу — прижимаем к баннеру
                     bottomSafeMargin: showAds ? 0 : 8,
