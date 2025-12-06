@@ -27,7 +27,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
   RewardedAdService? _svc;
   VideoPlayerController? _videoController;
   Future<void>? _videoInit;
-  bool _videoCompleted = false;
 
   // Общие флаги/состояния
   bool _loading = false; // загрузка rewarded-рекламы
@@ -66,16 +65,18 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
       _videoController = VideoPlayerController.asset('assets/logo_ped.mp4');
       _videoInit = _videoController!.initialize().then((_) {
         _videoController!..setLooping(false)..setVolume(0);
+
         _videoController!.addListener(() {
           final controller = _videoController;
-          if (controller == null) return;
+          if (controller == null || !controller.value.isInitialized) return;
 
-          final isEnded = controller.value.duration != Duration.zero &&
-              controller.value.position >= controller.value.duration;
+          final position = controller.value.position;
+          final duration = controller.value.duration;
+          final hasEnded = duration != Duration.zero && position >= duration;
 
-          if (isEnded && !_videoCompleted) {
-            // Відмічаємо завершення, щоб показати плей-оверлей
-            setState(() => _videoCompleted = true);
+          if (hasEnded) {
+            controller.seekTo(Duration.zero);
+            controller.pause();
           }
         });
 
@@ -411,7 +412,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                                   try {
                                     await controller.seekTo(Duration.zero);
                                     await controller.play();
-                                    if (mounted) setState(() => _videoCompleted = false);
                                   } catch (e) {
                                     debugPrint('[REWARD][VIDEO] replay error: $e');
                                   }
@@ -420,16 +420,6 @@ class _RewardTestScreenState extends State<RewardTestScreen> {
                                   fit: StackFit.expand,
                                   children: [
                                     VideoPlayer(controller),
-                                    if (_videoCompleted)
-                                      Container(
-                                        color: Colors.black26,
-                                        alignment: Alignment.center,
-                                        child: const Icon(
-                                          Icons.play_circle_fill,
-                                          size: 72,
-                                          color: Colors.white,
-                                        ),
-                                      ),
                                   ],
                                 ),
                               ),

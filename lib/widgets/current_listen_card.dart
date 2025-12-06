@@ -11,8 +11,11 @@ import 'package:dio/dio.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/constants.dart';
 import 'package:booka_app/core/network/api_client.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
-import '../core/network/image_cache.dart'; // спільний кешер для поточної книги
+import 'package:booka_app/widgets/loading_indicator.dart';
+import '../core/network/image_cache.dart';
+
+// Імпорт для переходу на сторінку книги
+import 'package:booka_app/screens/book_detail_screen.dart';
 
 class CurrentListenCard extends StatefulWidget {
   const CurrentListenCard({
@@ -51,12 +54,10 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
   void initState() {
     super.initState();
     if (widget.autoHydrate) {
-      // ✅ Локал-first: тягнемо сервер лише якщо локальної сесії немає
       WidgetsBinding.instance.addPostFrameCallback((_) => _hydrateLocalFirst());
     }
   }
 
-  /// ✅ Гідратація з сервера ТІЛЬКИ якщо немає локально збереженої сесії
   Future<void> _hydrateLocalFirst() async {
     if (!mounted || _hydrating) return;
     setState(() => _hydrating = true);
@@ -66,8 +67,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
       if (!hasLocal) {
         await audio.hydrateFromServerIfAvailable();
       }
-      // швидка підготовка плеєра з локалі (неблокуюче для UI)
-      // залишаємо під контролем екранів — картка лише відображає стан
     } finally {
       if (mounted) setState(() => _hydrating = false);
     }
@@ -158,7 +157,7 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
 
         final bool isDark = theme.brightness == Brightness.dark;
         final Color cardBg = isDark
-            ? theme.colorScheme.surfaceVariant.withOpacity(0.24)
+            ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.4)
             : CurrentListenCard._kBlue100;
 
         final double tileHeight =
@@ -193,7 +192,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
               widthFactor: widget.widthFactor,
               alignment: Alignment.center,
               child: Container(
-                margin: widget.margin ?? const EdgeInsets.symmetric(vertical: 8),
+                margin:
+                widget.margin ?? const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius:
                   BorderRadius.circular(CurrentListenCard._kRadius),
@@ -210,153 +210,195 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                   color: cardBg,
                   borderRadius:
                   BorderRadius.circular(CurrentListenCard._kRadius),
-                  child: InkWell(
-                    borderRadius:
-                    BorderRadius.circular(CurrentListenCard._kRadius),
-                    onTap: widget.onContinue,
-                    child: SizedBox(
-                      height: tileHeight,
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              topLeft:
-                              Radius.circular(CurrentListenCard._kRadius),
-                              bottomLeft:
-                              Radius.circular(CurrentListenCard._kRadius),
-                            ),
-                            child: _CoverCompact(
-                              coverUrl: coverUrl,
-                              height: tileHeight,
-                              width: coverWidth,
-                              playing: isThisBookPlaying,
-                            ),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding:
-                              const EdgeInsets.fromLTRB(10, 8, 10, 6),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    book.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: theme.colorScheme.onSurface,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Розділ ${chapter.order ?? chapter.id} · '
-                                        '${_fmt(Duration(seconds: positionSec))} / '
-                                        '${durationSec > 0 ? _fmt(Duration(seconds: durationSec)) : '—:—'}'
-                                        '${_hydrating ? '  ·  оновлення…' : ''}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme
-                                          .colorScheme.onSurface
-                                          .withOpacity(0.7),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  SizedBox(
-                                    height: 3,
-                                    child: LinearProgressIndicator(
-                                      value: progressValue,
-                                      backgroundColor: theme
-                                          .colorScheme.surfaceVariant
-                                          .withOpacity(0.5),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                          minHeight: 28),
-                                      child: ElevatedButton(
-                                        onPressed: widget.onContinue,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                          CurrentListenCard._kPlayYellow,
-                                          foregroundColor: Colors.black87,
-                                          elevation: 0,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 2,
-                                          ),
-                                          tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                          minimumSize: const Size(0, 28),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                            BorderRadius.circular(10),
-                                          ),
-                                          visualDensity: const VisualDensity(
-                                            horizontal: -2,
-                                            vertical: -3,
-                                          ),
-                                        ),
-                                        child: AnimatedSwitcher(
-                                          duration: const Duration(
-                                              milliseconds: 180),
-                                          switchInCurve: Curves.easeOut,
-                                          switchOutCurve: Curves.easeIn,
-                                          layoutBuilder: (currentChild,
-                                              previousChildren) =>
-                                              Stack(
-                                                alignment: Alignment.center,
-                                                children: <Widget>[
-                                                  ...previousChildren,
-                                                  if (currentChild != null)
-                                                    currentChild,
-                                                ],
-                                              ),
-                                          child: isThisBookPlaying
-                                              ? const SizedBox(
-                                            key: ValueKey('eq'),
-                                            height: 18,
-                                            child: _EqualizerIndicator(
-                                              bars: 5,
-                                              barWidth: 3,
-                                              maxHeight: 18,
-                                              gap: 3,
-                                            ),
-                                          )
-                                              : Row(
-                                            key:
-                                            const ValueKey('text'),
-                                            mainAxisSize:
-                                            MainAxisSize.min,
-                                            children: const [
-                                              Icon(
-                                                Icons
-                                                    .play_arrow_rounded,
-                                                size: 18,
-                                              ),
-                                              SizedBox(width: 6),
-                                              Text(
-                                                'Перейти',
-                                                style: TextStyle(
-                                                    fontWeight:
-                                                    FontWeight.w600),
-                                              ),
-                                            ],
+                  child: SizedBox(
+                    height: tileHeight,
+                    // STACK: Дозволяє іконці бути "поверх" всього
+                    child: Stack(
+                      children: [
+                        // ШАР 1: Основний контент (Клікабельна картка)
+                        // Тап по порожньому місцю може вести на сторінку книги,
+                        // але ми винесли перехід в іконку.
+                        // Можна залишити onTap: widget.onContinue якщо потрібно відкривати плеєр.
+                        InkWell(
+                          borderRadius:
+                          BorderRadius.circular(CurrentListenCard._kRadius),
+                          onTap: null, // Вимкнув тап по всій картці, щоб не плутати користувача
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: const BorderRadius.only(
+                                  topLeft:
+                                  Radius.circular(CurrentListenCard._kRadius),
+                                  bottomLeft:
+                                  Radius.circular(CurrentListenCard._kRadius),
+                                ),
+                                child: _CoverCompact(
+                                  coverUrl: coverUrl,
+                                  height: tileHeight,
+                                  width: coverWidth,
+                                  playing: isThisBookPlaying,
+                                ),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding:
+                                  const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Відступ справа для тексту, щоб не наліз на іконку
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 36),
+                                        child: Text(
+                                          book.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: theme.colorScheme.onSurface,
                                           ),
                                         ),
                                       ),
-                                    ),
+                                      const SizedBox(height: 2),
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 36),
+                                        child: Text(
+                                          'Розділ ${chapter.order ?? chapter.id} · '
+                                              '${_fmt(Duration(seconds: positionSec))} / '
+                                              '${durationSec > 0 ? _fmt(Duration(seconds: durationSec)) : '—:—'}'
+                                              '${_hydrating ? '  ·  оновлення…' : ''}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: theme.colorScheme.onSurface
+                                                .withOpacity(0.7),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      // Прогрес-бар коротший, щоб не заважав кнопці
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 4),
+                                        child: SizedBox(
+                                          height: 3,
+                                          child: LinearProgressIndicator(
+                                            value: progressValue,
+                                            backgroundColor: theme
+                                                .colorScheme.surfaceVariant
+                                                .withOpacity(0.5),
+                                          ),
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      // Кнопка "Продовжити" (внизу праворуч)
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                              minHeight: 28),
+                                          child: ElevatedButton(
+                                            // ✅ ТУТ ВИПРАВЛЕННЯ: Кнопка викликає плеєр напряму
+                                            onPressed: () {
+                                              p.handleBottomPlayTap();
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                              CurrentListenCard._kPlayYellow,
+                                              foregroundColor: Colors.black87,
+                                              elevation: 0,
+                                              padding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 4,
+                                              ),
+                                              tapTargetSize: MaterialTapTargetSize
+                                                  .shrinkWrap,
+                                              minimumSize: const Size(0, 28),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                BorderRadius.circular(10),
+                                              ),
+                                              visualDensity: const VisualDensity(
+                                                horizontal: -2,
+                                                vertical: -3,
+                                              ),
+                                            ),
+                                            child: AnimatedSwitcher(
+                                              duration: const Duration(
+                                                  milliseconds: 180),
+                                              switchInCurve: Curves.easeOut,
+                                              switchOutCurve: Curves.easeIn,
+                                              layoutBuilder: (currentChild,
+                                                  previousChildren) =>
+                                                  Stack(
+                                                    alignment: Alignment.center,
+                                                    children: <Widget>[
+                                                      ...previousChildren,
+                                                      if (currentChild != null)
+                                                        currentChild,
+                                                    ],
+                                                  ),
+                                              child: isThisBookPlaying
+                                                  ? const SizedBox(
+                                                key: ValueKey('eq'),
+                                                height: 18,
+                                                child: _EqualizerIndicator(
+                                                  bars: 5,
+                                                  barWidth: 3,
+                                                  maxHeight: 18,
+                                                  gap: 3,
+                                                ),
+                                              )
+                                                  : Row(
+                                                key: const ValueKey('text'),
+                                                mainAxisSize:
+                                                MainAxisSize.min,
+                                                children: const [
+                                                  Icon(
+                                                    Icons.play_arrow_rounded,
+                                                    size: 18,
+                                                  ),
+                                                  SizedBox(width: 6),
+                                                  Text(
+                                                    'Продовжити',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                        FontWeight.w700),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+
+                        // ШАР 2: Велика іконка-стрілка (Верхній правий кут)
+                        // З фоном та легкою анімацією пульсації
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: _PulseArrowButton(
+                            onTap: () {
+                              // Перехід на екран книги
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      BookDetailScreen(book: book),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -397,6 +439,78 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
   }
 }
 
+// ✅ Віджет для кнопки з пульсацією
+class _PulseArrowButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _PulseArrowButton({required this.onTap});
+
+  @override
+  State<_PulseArrowButton> createState() => _PulseArrowButtonState();
+}
+
+class _PulseArrowButtonState extends State<_PulseArrowButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    // Легка пульсація
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.12).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // Колір фону кнопки (напівпрозорий білий або темний)
+    final bgColor = isDark
+        ? Colors.black.withOpacity(0.3)
+        : Colors.white.withOpacity(0.6);
+
+    return AnimatedBuilder(
+      animation: _scaleAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: child,
+        );
+      },
+      child: Material(
+        color: bgColor,
+        shape: const CircleBorder(),
+        elevation: 0, // Без сильної тіні, щоб було "легко"
+        child: InkWell(
+          onTap: widget.onTap,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Icon(
+              Icons.arrow_forward_rounded,
+              size: 24,
+              color: theme.colorScheme.primary, // Колір іконки - основний
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CoverCompact extends StatelessWidget {
   const _CoverCompact({
     required this.coverUrl,
@@ -412,17 +526,14 @@ class _CoverCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Базовий плейсхолдер (фон + іконка)
     Widget _basePlaceholder() => Container(
       width: width,
       height: height,
-      color:
-      Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
+      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
       alignment: Alignment.center,
       child: const Icon(Icons.audiotrack_rounded),
     );
 
-    // Плейсхолдер для етапу завантаження з Lottie-лоадером поверх
     Widget _loadingPlaceholder() => Stack(
       children: [
         _basePlaceholder(),
@@ -512,8 +623,9 @@ class _EqualizerIndicatorState extends State<_EqualizerIndicator>
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        widget.color ?? DefaultTextStyle.of(context).style.color ?? Colors.black87;
+    final color = widget.color ??
+        DefaultTextStyle.of(context).style.color ??
+        Colors.black87;
 
     return Semantics(
       label: 'Відтворюється',
@@ -530,16 +642,14 @@ class _EqualizerIndicatorState extends State<_EqualizerIndicator>
               final h = amp * widget.maxHeight;
 
               return Padding(
-                padding:
-                EdgeInsets.symmetric(horizontal: widget.gap / 2),
+                padding: EdgeInsets.symmetric(horizontal: widget.gap / 2),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
                   width: widget.barWidth,
                   height: h,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius:
-                    BorderRadius.circular(widget.barWidth),
+                    borderRadius: BorderRadius.circular(widget.barWidth),
                   ),
                 ),
               );
