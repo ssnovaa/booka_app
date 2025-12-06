@@ -374,6 +374,23 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       forceReplace: effectiveForceReplace,
     );
 
+    // Якщо з якоїсь причини плейлист не оновився (наприклад, попередня
+    // підготовка була пропущена), повторимо ще раз із примусовою заміною —
+    // це гарантує перемикання на іншу книгу після натискання Play.
+    if (audio.currentBookId != _book.id) {
+      _logPlayer('ensureAudio: повторний setChapters через невідповідний bookId');
+      await audio.setChapters(
+        chapters,
+        book: _book,
+        startIndex: targetIndex,
+        bookTitle: _book.title,
+        artist: _book.author.trim(),
+        coverUrl: _resolveBgUrl(_book),
+        userInitiated: true,
+        forceReplace: true,
+      );
+    }
+
     if (startPosition != null) {
       _logPlayer('ensureAudio: apply startPosition=$startPosition at index=$targetIndex');
       await audio.seekChapter(
