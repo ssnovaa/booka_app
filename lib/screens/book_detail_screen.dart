@@ -4,7 +4,6 @@
 import 'dart:developer' as developer;
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -54,9 +53,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   // Локальний логер для розслідування ініціалізації плеєра
   void _logPlayer(String msg) {
     // Логувати завжди, щоби відловлювати сценарії на реальних пристроях
-    // developer.log → окремий тег у logcat; debugPrint → звичний потік flutter
-    developer.log(msg, name: 'BOOK_DETAIL');
-    debugPrint('[BOOK_DETAIL] $msg');
+    // Використовуємо один канал, щоб уникати дублювання записів у logcat
+    developer.log('[BOOK_DETAIL] $msg', name: 'BOOK_DETAIL');
   }
 
   // Поточна «повна» книга (може оновитися після довантаження)

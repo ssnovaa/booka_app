@@ -349,8 +349,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   void _log(String msg) {
     // Логувати завжди, щоб бачити події плеєра у релізі
-    developer.log(msg, name: 'AUDIO');
-    debugPrint('[AUDIO] $msg');
+    developer.log('[AUDIO] $msg', name: 'AUDIO');
   }
 
   void _pullDurationFromPlayer() {
