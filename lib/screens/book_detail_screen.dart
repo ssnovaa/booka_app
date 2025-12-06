@@ -90,6 +90,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _logPlayer(
+        'initState: книга=${widget.book.id}, initialChapter=${widget.initialChapter?.id ?? 'null'}, initialPos=${widget.initialPosition ?? 'null'}');
     _book = widget.book;
     _inferInitialFavoriteFromModel(); // спроба з моделі (якщо бекенд віддає прапор)
     _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
@@ -242,6 +244,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   Future<void> fetchChapters({bool refresh = false}) async {
+    _logPlayer('fetchChapters: старт (refresh=$refresh)');
     setState(() {
       isLoading = true;
       error = null;
@@ -283,22 +286,28 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           _playerInitialized = false;
           _initialPositionApplied = false;
         });
+
+        _logPlayer(
+            'fetchChapters: успіх, count=${loadedChapters.length}, startIndex=$startIndex, initialPos=${widget.initialPosition ?? 'null'}');
       } else {
         setState(() {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
           isLoading = false;
         });
+        _logPlayer('fetchChapters: http помилка code=${resp.statusCode}');
       }
     } on DioException catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
+      _logPlayer('fetchChapters: dio помилка=${e.message}');
     } catch (e) {
       setState(() {
         error = safeErrorMessage(e);
         isLoading = false;
       });
+      _logPlayer('fetchChapters: інша помилка=$e');
     }
   }
 
@@ -306,6 +315,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   void didUpdateWidget(covariant BookDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.book.id != widget.book.id) {
+      _logPlayer('didUpdateWidget: книга змінилася ${oldWidget.book.id} → ${widget.book.id}');
       _book = widget.book;
       _playerInitialized = false;
       _initialPositionApplied = false;
@@ -331,7 +341,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   Future<void> _ensureAudioPrepared({int? startIndex, int? startPosition}) async {
-    if (chapters.isEmpty) return;
+    if (chapters.isEmpty) {
+      _logPlayer('ensureAudio: пропуск (список розділів порожній)');
+      return;
+    }
 
     final audio = context.read<AudioPlayerProvider>();
     final user = context.read<UserNotifier>().user;
