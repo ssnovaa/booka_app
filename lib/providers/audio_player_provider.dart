@@ -1421,7 +1421,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
-      List<Chapter> chaptersToLoad;
+      List<Chapter> chaptersToLoad = [ch];
       int startIndex = 0;
       final restoredPosition = _position; // Сохраняем точную позицию
 
