@@ -436,11 +436,38 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     });
   }
 
+  // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: "Розумне" перемикання розділів
   Future<void> _onChapterSelected(Chapter chapter) async {
+    // 1. Шукаємо індекс у повному списку на екрані
     final index = chapters.indexWhere((c) => c.id == chapter.id);
-    if (index != -1) {
-      setState(() => selectedChapterIndex = index);
-      final audio = context.read<AudioPlayerProvider>();
+    if (index == -1) return;
+
+    // МИТТЄВО оновлюємо UI (щоб кнопка підсвітилась)
+    setState(() => selectedChapterIndex = index);
+
+    final audio = context.read<AudioPlayerProvider>();
+
+    // 2. Чи потрібно перезавантажувати плейлист?
+    // Так, якщо ID книги не той АБО кількість розділів у плеєрі не збігається.
+    bool needReload = (audio.currentBook?.id != _book.id) ||
+        (audio.chapters.length != chapters.length);
+
+    if (needReload) {
+      // 3. Завантажуємо повний список у плеєр
+      await audio.setChapters(
+        chapters,
+        book: _book,
+        startIndex: index, // І стартуємо з потрібного індексу
+        bookTitle: _book.title,
+        artist: _book.author.trim(),
+        coverUrl: _resolveBgUrl(_book),
+        // 🔥 ВАЖЛИВО: Ігноруємо збережену позицію, бо користувач явно обрав розділ
+        ignoreSavedPosition: true,
+      );
+
+      await audio.play();
+    } else {
+      // 5. Якщо список вже повний і правильний — просто перемикаємо трек
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
@@ -939,7 +966,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ? _resolveBgUrl(audio.currentBook!)
                         : _resolveBgUrl(_book),
                     onExpand: _openFullPlayer,
-                    // 👇 если показываем рекламу — прижимаем к баннеру
+                    // 👇 якщо показуємо рекламу — притискаємо до банера
                     bottomSafeMargin: showAds ? 0 : 8,
                   ),
                 ),

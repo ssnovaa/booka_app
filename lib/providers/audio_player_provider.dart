@@ -1072,6 +1072,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         String? coverUrl,
         Book? book,
         UserType? userTypeOverride,
+        // 🔥 НОВЫЙ ПАРАМЕТР: игнорировать сохраненную позицию
+        bool ignoreSavedPosition = false,
       }) async {
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
@@ -1105,7 +1107,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
     Duration initialPos = Duration.zero;
 
-    if (book != null) {
+    // 🔥 ИЗМЕНЕНО: Добавлена проверка !ignoreSavedPosition
+    if (book != null && !ignoreSavedPosition) {
       final saved = await _getProgressForBook(book.id);
       if (saved != null) {
         final savedChapterId = saved['chapterId'];
@@ -1153,7 +1156,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     );
 
     _log(
-        'setChapters: ${_chapters.length} items, start=$_currentChapterIndex, initialPos=${initialPos.inSeconds}s');
+        'setChapters: ${_chapters.length} items, start=$_currentChapterIndex, initialPos=${initialPos.inSeconds}s, ignoreSaved=$ignoreSavedPosition');
     try {
       await player.setAudioSource(
         playlist,
