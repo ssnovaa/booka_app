@@ -419,7 +419,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
       int startIndex = selectedChapterIndex;
       final current = audio.currentChapter;
-      if (current != null) {
+      final currentBookId = audio.currentBook?.id;
+      final sameBook = current != null && currentBookId == _book.id;
+
+      if (sameBook) {
         final idx = chapters.indexWhere((c) => c.id == current.id);
         if (idx != -1) {
           startIndex = idx;
@@ -433,7 +436,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
       if (!sameChapters) {
         final ignoreSavedPosition =
-            current != null || widget.initialChapter != null;
+            sameBook || widget.initialChapter != null;
 
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
