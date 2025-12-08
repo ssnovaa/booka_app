@@ -432,6 +432,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
       if (!sameChapters) {
+        final ignoreSavedPosition =
+            current != null || widget.initialChapter != null;
+
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
           chapters,
@@ -440,6 +443,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           bookTitle: _book.title,                // ← назва книги
           artist: _book.author.trim(),           // ← ТІЛЬКИ автор (без чтеця)
           coverUrl: _resolveBgUrl(_book),        // ← абсолютна обкладинка
+          // Якщо вже є активна глава/явно передана initialChapter — не перекривати її
+          // прогресом, збереженим на сервері.
+          ignoreSavedPosition: ignoreSavedPosition,
         );
       }
 
