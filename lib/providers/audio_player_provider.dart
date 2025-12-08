@@ -538,6 +538,22 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Повертає індекс збереженої глави для книги в переданому списку глав.
+  /// Використовується на екрані книги, щоб показати останню прослухану главу
+  /// без автоматичної зміни активного плеєра іншої книги.
+  Future<int?> getSavedChapterIndex(int bookId, List<Chapter> chapters) async {
+    final saved = await _getProgressForBook(bookId);
+    if (saved == null) return null;
+
+    final savedChapterId = saved['chapterId'];
+    if (savedChapterId is int) {
+      final idx = chapters.indexWhere((c) => c.id == savedChapterId);
+      if (idx != -1) return idx;
+    }
+
+    return null;
+  }
+
   Future<_LocalCL?> _loadLocalCL() async {
     final prefs = await SharedPreferences.getInstance();
     final s = prefs.getString(_kCurrentListenKey);
