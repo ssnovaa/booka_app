@@ -1,4 +1,5 @@
 // lib/screens/full_books_grid_screen.dart
+import 'dart:async'; // 1️⃣
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,7 +11,10 @@ import 'package:booka_app/screens/main_screen.dart';
 import 'package:booka_app/widgets/books_grid.dart';
 import 'package:booka_app/constants.dart'; // ensureAbsoluteImageUrl
 
-class FullBooksGridScreen extends StatelessWidget {
+// 2️⃣ Імпорт репозиторію для підписки на зміни
+import 'package:booka_app/repositories/profile_repository.dart';
+
+class FullBooksGridScreen extends StatefulWidget {
   final String title;
   final List<Map<String, dynamic>> items;
   /// Поверніть (можливо відносний) URL обкладинки/thumb
@@ -26,6 +30,66 @@ class FullBooksGridScreen extends StatelessWidget {
     required this.resolveUrl,
     this.currentIndex = 3,
   }) : super(key: key);
+
+  @override
+  State<FullBooksGridScreen> createState() => _FullBooksGridScreenState();
+}
+
+class _FullBooksGridScreenState extends State<FullBooksGridScreen> {
+  // 3️⃣ Локальний стан списку книг
+  late List<Map<String, dynamic>> _items;
+  StreamSubscription? _updateSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = widget.items;
+
+    // 4️⃣ Якщо це екран "Вибране" або "Прослухані", слухаємо зміни в репозиторії
+    // (наприклад, коли видалили книгу з вибраного)
+    if (widget.title == 'Вибране' || widget.title == 'Прослухані') {
+      _updateSub = ProfileRepository.I.onUpdate.listen((_) {
+        _refreshListFromCache();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _updateSub?.cancel();
+    super.dispose();
+  }
+
+  /// Оновлюємо список _items з локального кешу ProfileRepository
+  void _refreshListFromCache() {
+    final map = ProfileRepository.I.getCachedMap();
+    if (map == null) return;
+
+    List<dynamic>? rawList;
+    if (widget.title == 'Вибране') {
+      rawList = map['favorites'];
+    } else if (widget.title == 'Прослухані') {
+      rawList = map['listened'];
+    }
+
+    if (rawList != null) {
+      // Конвертуємо raw дані у формат, який очікує Grid
+      final List<Map<String, dynamic>> newItems = (rawList is List)
+          ? rawList.whereType<Map>().map<Map<String, dynamic>>((m) {
+        final out = <String, dynamic>{};
+        // ignore: avoid_function_literals_in_foreach_calls
+        (m as Map).forEach((k, v) => out['$k'] = v);
+        return out;
+      }).toList()
+          : [];
+
+      if (mounted) {
+        setState(() {
+          _items = newItems;
+        });
+      }
+    }
+  }
 
   void _goToMain(BuildContext context, int tabIndex) {
     final ms = MainScreen.of(context);
@@ -60,15 +124,14 @@ class FullBooksGridScreen extends StatelessWidget {
     }
   }
 
-  /// Нормалізуємо карту книги: примусово робимо абсолютні URL для мініатюри/обкладинки,
-  /// щоб не ловити «No host specified» на старих даних.
+  /// Нормалізуємо карту книги: примусово робимо абсолютні URL для мініатюри/обкладинки
   Map<String, dynamic> _normalizedMap(
       Map<String, dynamic> m,
       String? Function(Map<String, dynamic>) parentResolveUrl,
       ) {
     final map = Map<String, dynamic>.from(m);
 
-    // 1) Найкращий URL через resolveUrl батька (як у превʼю профілю)
+    // 1) Найкращий URL через resolveUrl батька
     String? best = parentResolveUrl.call(map);
 
     // 2) Якщо батько не дав — пробуємо стандартні поля
@@ -77,10 +140,10 @@ class FullBooksGridScreen extends StatelessWidget {
     best ??= map['cover_url']?.toString();
     best ??= map['coverUrl']?.toString();
 
-    // 3) Робимо абсолютним (covers/... → https://.../storage/covers/...)
+    // 3) Робимо абсолютним
     final abs = ensureAbsoluteImageUrl(best);
 
-    // 4) Зберігаємо у всі відомі поля (про всяк випадок)
+    // 4) Зберігаємо
     if (abs != null) {
       map['thumb_url'] = abs;
       map['thumbUrl'] = abs;
@@ -103,9 +166,9 @@ class FullBooksGridScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Нормалізуємо список заздалегідь (lazy недорого)
-    final normalizedItems = items
-        .map((m) => _normalizedMap(m, resolveUrl))
+    // 5️⃣ Використовуємо _items (який може оновлюватися), а не widget.items
+    final normalizedItems = _items
+        .map((m) => _normalizedMap(m, widget.resolveUrl))
         .toList(growable: false);
 
     return Scaffold(
@@ -118,25 +181,24 @@ class FullBooksGridScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Text(
-                title,
+                widget.title,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
             Expanded(
-              // Використовуємо готовий віджет з клікабельними картками:
-              // він сам робить Book.fromJson(...) і відкриває BookDetailScreen.
+              // Використовуємо готовий віджет з клікабельними картками
               child: BooksGrid(
                 items: normalizedItems,
-                resolveUrl: (m) => _resolvedAbsolute(m, resolveUrl),
+                resolveUrl: (m) => _resolvedAbsolute(m, widget.resolveUrl),
               ),
             ),
           ],
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: currentIndex, // зазвичай 3 (профіль)
+        currentIndex: widget.currentIndex, // зазвичай 3 (профіль)
         onTap: (i) {
           if (i == 0 || i == 1) _goToMain(context, i);
           if (i == 2) _openPlayer(context);
@@ -145,7 +207,6 @@ class FullBooksGridScreen extends StatelessWidget {
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             } else {
-              // рідкісний випадок: попросимо MainScreen відкрити профіль
               final ms = MainScreen.of(context);
               if (ms != null) ms.setTab(3);
             }

@@ -1,6 +1,7 @@
 // lib/screens/book_detail_screen.dart
 // ПОЛНЫЙ ФАЙЛ БЕЗ СОКРАЩЕНИЙ
 
+import 'dart:async'; // 1️⃣ Додано для StreamSubscription
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
 
 import 'package:flutter/material.dart';
@@ -28,6 +29,10 @@ import 'package:booka_app/core/utils/duration_format.dart';
 
 // ❗ Санітизація повідомлень про помилки
 import 'package:booka_app/core/security/safe_errors.dart';
+
+// 2️⃣ Імпорти для роботи з вибраним та кешем
+import 'package:booka_app/core/network/favorites_api.dart';
+import 'package:booka_app/repositories/profile_repository.dart';
 
 // 🔽 Висота банерної реклами (AdSize.banner.height)
 const double _kAdH = 50.0;
@@ -74,14 +79,68 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   bool _favBusy = false;   // йде запит
   bool _isFav = false;     // поточний стан на клієнті
 
+  // Підписка на оновлення профілю
+  StreamSubscription? _updateSub;
+
   @override
   void initState() {
     super.initState();
     _book = widget.book;
-    _inferInitialFavoriteFromModel(); // спроба з моделі (якщо бекенд віддає прапор)
+
+    // Спробувати взяти початковий стан з моделі (якщо передали)
+    _inferInitialFavoriteFromModel();
+
+    // 3️⃣ МИТТЄВА ПЕРЕВІРКА КЕШУ: прибирає затримку ("блимання") сердечка
+    _checkStatusFromCache();
+
+    // 4️⃣ Підписка на оновлення (щоб синхронізуватися, якщо щось зміниться ззовні)
+    _updateSub = ProfileRepository.I.onUpdate.listen((_) {
+      if (mounted) _checkStatusFromCache();
+    });
+
     _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
-    _syncFavoriteFromServer(); // синхронізація з профілем (GET /favorites)
+
+    // Можна залишити syncFavoriteFromServer як "подвійну перевірку", але кеш зазвичай актуальний
+    _syncFavoriteFromServer();
+
     fetchChapters(); // паралельно підтягнути розділи
+  }
+
+  @override
+  void dispose() {
+    _updateSub?.cancel();
+    super.dispose();
+  }
+
+  /// 5️⃣ Перевіряє статус у локальному кеші репозиторію
+  void _checkStatusFromCache() {
+    final map = ProfileRepository.I.getCachedMap();
+    if (map == null) return;
+
+    final rawFavs = map['favorites'];
+    bool found = false;
+
+    if (rawFavs is List) {
+      for (final item in rawFavs) {
+        int? id;
+        if (item is int) {
+          id = item;
+        } else if (item is Map) {
+          final rawId = item['id'] ?? item['book_id'] ?? item['bookId'];
+          if (rawId != null) {
+            id = int.tryParse(rawId.toString());
+          }
+        }
+        if (id == _book.id) {
+          found = true;
+          break;
+        }
+      }
+    }
+
+    if (found != _isFav) {
+      setState(() => _isFav = found);
+    }
   }
 
   // Спроба визначити стартовий стан «вибране» з моделі Book (якщо є відповідне поле)
@@ -107,7 +166,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return null;
   }
 
-  // Синхронізуємо локальний стан «вибране» з сервером, щоб детальна картка знала поточний статус
+  // Синхронізуємо локальний стан «вибране» з сервером (резервна перевірка)
   Future<void> _syncFavoriteFromServer() async {
     try {
       final r = await ApiClient.i().get('/favorites');
@@ -136,9 +195,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         }
       }
       final nowFav = ids.contains(_book.id);
-      if (mounted) setState(() => _isFav = nowFav);
+      if (mounted && nowFav != _isFav) setState(() => _isFav = nowFav);
     } catch (_) {
-      // м’яко ігноруємо помилку — кнопка все одно працює як toggle
+      // м’яко ігноруємо помилку
     }
   }
 
@@ -312,8 +371,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _book = widget.book;
       _playerInitialized = false;
       _autoStartPending = true;
+      _checkStatusFromCache(); // 🔄 Оновлюємо статус при зміні книги
       _maybeLoadFullBook(refresh: true);
-      _syncFavoriteFromServer();
       fetchChapters();
     }
   }
@@ -445,10 +504,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final wantFav = !_isFav;
     setState(() => _favBusy = true);
     try {
+      // 6️⃣ ВИКОРИСТОВУЄМО ОНОВЛЕНИЙ API (щоб сповістити ProfileScreen)
       if (wantFav) {
-        await ApiClient.i().post('/favorites/${_book.id}');
+        await FavoritesApi.add(_book.id);
       } else {
-        await ApiClient.i().delete('/favorites/${_book.id}');
+        await FavoritesApi.remove(_book.id);
       }
       if (!mounted) return;
       setState(() => _isFav = wantFav);
@@ -526,21 +586,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
 
-    // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК і тут
-    /*
-    if (!_playerInitialized && _autoStartPending && !isLoading && chapters.isNotEmpty) {
-      _autoStartPending = false;
-      _initAudioPlayer();
-    }
-    */
-
     final coverUrlAbs = _absUrl(_book.coverUrl);
 
     // 🔤 Обмежуємо textScaleFactor, щоб верстка не «ламалася» при дуже великих шрифтах
     final clampedScale = media.textScaleFactor.clamp(1.0, 1.35);
 
     // 📏 Динамічний низ: фактична висота MiniPlayer + SafeArea.
-    // РЕЗЕРВ ПІД БАНЕР НЕ ДОДАЄМО — його вже робить GlobalBannerInjector.
     final double reservedBottom =
         (currentChapter != null ? _miniPlayerReserved : 0.0) + media.padding.bottom;
 
@@ -605,7 +656,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
             RefreshIndicator(
               onRefresh: () async {
                 await _maybeLoadFullBook(refresh: true);
-                await _syncFavoriteFromServer();
+                _checkStatusFromCache(); // <-- оновлюємо з кешу
+                await _syncFavoriteFromServer(); // <-- і з сервера
                 await fetchChapters(refresh: true);
               },
               child: SingleChildScrollView(

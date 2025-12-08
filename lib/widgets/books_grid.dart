@@ -5,8 +5,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/book.dart';
 import 'package:booka_app/screens/book_detail_screen.dart';
 import 'package:booka_app/constants.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
-import '../core/network/image_cache.dart'; // спільний кеш-менеджер для мініатюр
+import 'package:booka_app/widgets/loading_indicator.dart';
+import '../core/network/image_cache.dart';
+
+// 1️⃣ Імпорт нашої "розумної" кнопки
+import 'package:booka_app/widgets/add_to_favorites_button.dart';
 
 class BooksGrid extends StatelessWidget {
   final List<Map<String, dynamic>> items;
@@ -45,6 +48,14 @@ class BooksGrid extends StatelessWidget {
     return v.toString().trim();
   }
 
+  // 2️⃣ Хелпер для безпечного отримання ID
+  int _idOf(Map<String, dynamic> m) {
+    final v = m['id'] ?? m['book_id'] ?? m['bookId'];
+    if (v is int) return v;
+    if (v is String) return int.tryParse(v) ?? 0;
+    return 0;
+  }
+
   void _openDetails(BuildContext context, Map<String, dynamic> m) {
     try {
       final book = Book.fromJson(Map<String, dynamic>.from(m));
@@ -78,6 +89,7 @@ class BooksGrid extends StatelessWidget {
         final author = _authorOf(m);
         final duration = _durationOf(m);
         final series = _seriesOf(m);
+        final bookId = _idOf(m); // Отримуємо ID
 
         final isDark = theme.brightness == Brightness.dark;
 
@@ -119,38 +131,64 @@ class BooksGrid extends StatelessWidget {
                       child: SizedBox(
                         height: imageH,
                         width: double.infinity,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: (coverUrl == null || coverUrl.isEmpty)
-                              ? Container(
-                            color: isDark ? Colors.white10 : Colors.black12,
-                            child: const Center(
-                              child: Icon(Icons.book_rounded, size: 32),
-                            ),
-                          )
-                              : CachedNetworkImage(
-                            imageUrl: coverUrl,
-                            cacheManager: BookaImageCacheManager.instance,
-                            fit: BoxFit.cover,
-                            fadeInDuration: const Duration(milliseconds: 120),
-                            // 🔄 Lottie-лоадер під час завантаження обкладинки
-                            placeholder: (_, __) => const Center(
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: LoadingIndicator(size: 20),
-                              ),
-                            ),
-                            errorWidget: (_, __, ___) => Container(
-                              color: isDark ? Colors.white10 : Colors.black12,
-                              child: const Center(
-                                child: Icon(
-                                  Icons.broken_image_rounded,
-                                  size: 28,
+                        // 3️⃣ Використовуємо Stack, щоб накласти кнопку поверх картинки
+                        child: Stack(
+                          children: [
+                            // Картинка на весь фон Stack
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: (coverUrl == null || coverUrl.isEmpty)
+                                    ? Container(
+                                  color: isDark
+                                      ? Colors.white10
+                                      : Colors.black12,
+                                  child: const Center(
+                                    child: Icon(Icons.book_rounded,
+                                        size: 32),
+                                  ),
+                                )
+                                    : CachedNetworkImage(
+                                  imageUrl: coverUrl,
+                                  cacheManager:
+                                  BookaImageCacheManager.instance,
+                                  fit: BoxFit.cover,
+                                  fadeInDuration:
+                                  const Duration(milliseconds: 120),
+                                  placeholder: (_, __) => const Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: LoadingIndicator(size: 20),
+                                    ),
+                                  ),
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: isDark
+                                        ? Colors.white10
+                                        : Colors.black12,
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.broken_image_rounded,
+                                        size: 28,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+
+                            // Кнопка "Вибране" у правому верхньому куті
+                            if (bookId > 0)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: AddToFavoritesButton(
+                                  bookId: bookId,
+                                  style: AddFavStyle.overlay,
+                                  size: 20,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

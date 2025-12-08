@@ -448,7 +448,7 @@ class _PreviewCover extends StatelessWidget {
         errorWidget: (_, __, ___) => placeholder,
         progressIndicatorBuilder: (_, __, ___) => const Center(
           child:
-              SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
+          SizedBox(width: 20, height: 20, child: LoadingIndicator(size: 20)),
         ),
       ),
     );
@@ -606,6 +606,8 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<Map<String, dynamic>?> profileFuture;
+  // 1️⃣ Змінна для підписки на оновлення профілю
+  StreamSubscription? _updateSub;
 
   @override
   void initState() {
@@ -621,6 +623,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await ap.hydrateFromServerIfAvailable();
       }
     });
+
+    // 2️⃣ Підписуємося на потік оновлень репозиторію
+    _updateSub = ProfileRepository.I.onUpdate.listen((_) {
+      // Якщо профіль змінився (наприклад, видалили книгу з вибраного),
+      // автоматично оновлюємо дані на екрані.
+      if (mounted) {
+        _refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // 3️⃣ Відписуємося при закритті екрану
+    _updateSub?.cancel();
+    super.dispose();
   }
 
   Future<Map<String, dynamic>?> _fetchUserProfile({bool force = false}) async {

@@ -1,4 +1,5 @@
 // ШЛЯХ: lib/widgets/book_card.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -7,12 +8,15 @@ import '../models/book.dart';
 import '../screens/book_detail_screen.dart';
 import 'package:booka_app/screens/series_books_list_screen.dart';
 import 'package:booka_app/widgets/loading_indicator.dart';
-import 'package:booka_app/core/utils/duration_format.dart'; // ← форматер тривалості
-import 'package:booka_app/core/network/api_client.dart'; // ← мережевий клієнт
-import 'package:booka_app/core/security/safe_errors.dart'; // ← санітизація повідомлень про помилки
-import 'package:booka_app/user_notifier.dart'; // ← перевірка авторизації
-import 'package:booka_app/screens/login_screen.dart'; // ← перехід на логін для гостей
-import '../core/network/image_cache.dart'; // спільний кеш-менеджер обкладинок
+import 'package:booka_app/core/utils/duration_format.dart';
+import 'package:booka_app/core/security/safe_errors.dart';
+import 'package:booka_app/user_notifier.dart';
+import 'package:booka_app/screens/login_screen.dart';
+import '../core/network/image_cache.dart';
+
+// Імпорти для реактивності
+import 'package:booka_app/core/network/favorites_api.dart';
+import 'package:booka_app/repositories/profile_repository.dart';
 
 class BookCardWidget extends StatelessWidget {
   final Book book;
@@ -60,14 +64,17 @@ class BookCardWidget extends StatelessWidget {
       }
     }
 
-    // ✅ Форматуємо тривалість у години та хвилини (українські позначення)
     final prettyDuration = formatBookDuration(book.duration, locale: 'uk');
 
-    // Спробуємо визначити початковий стан «вибране» з моделі (якщо бекенд віддає прапор)
+    // Спробуємо визначити початковий стан «вибране» з моделі
     bool initialFav = false;
     try {
       final dyn = book as dynamic;
-      final v = dyn.isFavorite ?? dyn.is_favorite ?? dyn.favorite ?? dyn.inFavorites ?? dyn.in_favorites;
+      final v = dyn.isFavorite ??
+          dyn.is_favorite ??
+          dyn.favorite ??
+          dyn.inFavorites ??
+          dyn.in_favorites;
       if (v is bool) initialFav = v;
       if (v is num) initialFav = v != 0;
       if (v is String) {
@@ -105,7 +112,7 @@ class BookCardWidget extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Обкладинка (без оверлея серця)
+              // Обкладинка
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
@@ -149,7 +156,9 @@ class BookCardWidget extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        (book.title).trim().isNotEmpty ? book.title.trim() : 'Без назви',
+                        (book.title).trim().isNotEmpty
+                            ? book.title.trim()
+                            : 'Без назви',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -164,7 +173,8 @@ class BookCardWidget extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.textTheme.bodySmall?.color?.withOpacity(0.8),
+                            color: theme.textTheme.bodySmall?.color
+                                ?.withOpacity(0.8),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -176,7 +186,9 @@ class BookCardWidget extends StatelessWidget {
                           child: Text.rich(
                             TextSpan(
                               children: [
-                                TextSpan(text: 'Серія: ', style: theme.textTheme.bodySmall),
+                                TextSpan(
+                                    text: 'Серія: ',
+                                    style: theme.textTheme.bodySmall),
                                 TextSpan(
                                   text: seriesTitle,
                                   style: theme.textTheme.bodySmall?.copyWith(
@@ -202,13 +214,15 @@ class BookCardWidget extends StatelessWidget {
                         ),
                       const SizedBox(height: 8),
 
-                      // 🔻 Рядок метаданих: [тривалість] [❤️] (серія тут не дублюється, вона вище)
+                      // 🔻 Рядок метаданих: [тривалість] [❤️]
                       Wrap(
                         spacing: 10,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (prettyDuration.isNotEmpty)
-                            _MetaChip(icon: Icons.schedule, text: prettyDuration),
+                            _MetaChip(
+                                icon: Icons.schedule, text: prettyDuration),
+                          // Використовуємо наш розумний віджет кнопки
                           _FavoriteInlineButton(
                             bookId: book.id,
                             initialIsFav: initialFav,
@@ -227,8 +241,7 @@ class BookCardWidget extends StatelessWidget {
   }
 }
 
-/// Кнопка «сердечко» прямо в ряду метаданих — відразу після тривалості.
-/// onPressed завжди встановлений; під час запиту просто рано виходимо, щоб подія не пішла в батьківський InkWell.
+/// Розумна кнопка, яка синхронізується з ProfileRepository
 class _FavoriteInlineButton extends StatefulWidget {
   final int bookId;
   final bool initialIsFav;
@@ -246,10 +259,62 @@ class _FavoriteInlineButtonState extends State<_FavoriteInlineButton> {
   bool _busy = false;
   bool _isFav = false;
 
+  // Змінна для підписки
+  StreamSubscription? _updateSub;
+
   @override
   void initState() {
     super.initState();
     _isFav = widget.initialIsFav;
+
+    // Перевіряємо актуальний статус з кешу при старті
+    _checkStatusFromCache();
+
+    // Слухаємо глобальні зміни
+    _updateSub = ProfileRepository.I.onUpdate.listen((_) {
+      if (mounted) {
+        _checkStatusFromCache();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _updateSub?.cancel();
+    super.dispose();
+  }
+
+  /// Перевірка: чи є ця книга у списку улюблених в кеші
+  void _checkStatusFromCache() {
+    final map = ProfileRepository.I.getCachedMap();
+    // Тепер, завдяки updateLocalFavorites в репозиторії, map не буде null,
+    // і ми зможемо успішно перевірити статус.
+    if (map == null) return;
+
+    final rawFavs = map['favorites'];
+    bool found = false;
+
+    if (rawFavs is List) {
+      for (final item in rawFavs) {
+        int? id;
+        if (item is int) {
+          id = item;
+        } else if (item is Map) {
+          final rawId = item['id'] ?? item['book_id'] ?? item['bookId'];
+          if (rawId != null) {
+            id = int.tryParse(rawId.toString());
+          }
+        }
+        if (id == widget.bookId) {
+          found = true;
+          break;
+        }
+      }
+    }
+
+    if (found != _isFav) {
+      setState(() => _isFav = found);
+    }
   }
 
   Future<void> _toggle() async {
@@ -274,20 +339,32 @@ class _FavoriteInlineButtonState extends State<_FavoriteInlineButton> {
     }
 
     final wantFav = !_isFav;
-    setState(() => _busy = true);
+    // Оптимістичне оновлення
+    setState(() {
+      _busy = true;
+      _isFav = wantFav;
+    });
+
     try {
+      // Використовуємо FavoritesApi для запуску ланцюжка оновлень (в т.ч. локального кешу)
       if (wantFav) {
-        await ApiClient.i().post('/favorites/${widget.bookId}');
+        await FavoritesApi.add(widget.bookId);
       } else {
-        await ApiClient.i().delete('/favorites/${widget.bookId}');
+        await FavoritesApi.remove(widget.bookId);
       }
+
       if (!mounted) return;
-      setState(() => _isFav = wantFav);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(wantFav ? 'Додано у «Вибране»' : 'Прибрано з «Вибраного»')),
+        SnackBar(
+            content: Text(wantFav
+                ? 'Додано у «Вибране»'
+                : 'Прибрано з «Вибраного»')),
       );
     } catch (e) {
       if (!mounted) return;
+      // Відкат при помилці
+      setState(() => _isFav = !wantFav);
+
       final msg = safeErrorMessage(e);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
@@ -348,7 +425,8 @@ class _MetaChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: theme.iconTheme.color?.withOpacity(0.75)),
+          Icon(icon,
+              size: 14, color: theme.iconTheme.color?.withOpacity(0.75)),
           const SizedBox(width: 6),
           Text(
             text,
