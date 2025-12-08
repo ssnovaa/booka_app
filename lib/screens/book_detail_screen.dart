@@ -401,7 +401,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
 
-      final startIndex = selectedChapterIndex;
+      int startIndex = selectedChapterIndex;
+      final current = audio.currentChapter;
+      if (current != null) {
+        final idx = chapters.indexWhere((c) => c.id == current.id);
+        if (idx != -1) {
+          startIndex = idx;
+        }
+      }
 
       final sameChapters = audio.currentChapter != null &&
           audio.chapters.length == chapters.length &&
@@ -420,6 +427,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         );
       }
 
+      _syncSelectedChapterFromPlayer(audio);
+
       // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
       if (widget.initialPosition != null) {
         await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
@@ -434,6 +443,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         });
       }
     });
+  }
+
+  void _syncSelectedChapterFromPlayer(AudioPlayerProvider audio) {
+    final current = audio.currentChapter;
+    if (current == null) return;
+
+    final idx = chapters.indexWhere((c) => c.id == current.id);
+    if (idx != -1 && idx != selectedChapterIndex) {
+      setState(() => selectedChapterIndex = idx);
+    }
   }
 
   // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: "Розумне" перемикання розділів
