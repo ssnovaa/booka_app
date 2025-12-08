@@ -1429,14 +1429,19 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (effectiveUserType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
-          _log('_prepare: guest + saved non-first chapter → очищаем сохранённое');
-          await saveCurrentListenToPrefs(book: null, chapter: null, position: 0);
-          _resetState();
-          return false;
+          // Якщо в SharedPreferences лежить прогрес далі першої глави,
+          // вважаємо, що користувач насправді не гість (напр. токен ще не
+          // підтягнувся) і даємо відновитися як мінімум у режимі FREE, не
+          // очищаючи збережений прогрес.
+          _log('_prepare: guest + saved non-first chapter → assume FREE for resume');
+          effectiveUserType = UserType.free;
+        } else {
+          chaptersToLoad = [ch];
+          startIndex = 0;
         }
-        chaptersToLoad = [ch];
-        startIndex = 0;
-      } else {
+      }
+
+      if (effectiveUserType != UserType.guest) {
         // Для авторизованных: загружаем полный список.
         final fullList = await _retrieveAllChaptersForBook(b.id);
 
