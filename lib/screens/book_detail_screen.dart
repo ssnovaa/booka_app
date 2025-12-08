@@ -638,7 +638,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       await audio.setChapters(
         chapters,
         book: _book,
-        startIndex: 0, // Почнемо з початку (або провайдер відновить збережену позицію)
+        // Використовуємо вже обраний (або синхронізований із плеєром) розділ,
+        // щоб кнопка запускала ту ж главу, що бачить користувач.
+        // Якщо у провайдера є збережений прогрес — він все одно перекриє startIndex.
+        startIndex: selectedChapterIndex,
         bookTitle: _book.title,
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
