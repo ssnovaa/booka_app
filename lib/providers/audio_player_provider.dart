@@ -1403,6 +1403,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       // «попередня/наступна».
       UserType effectiveUserType = _userType;
 
+      // Прогресс із мапи завжди беремо, навіть якщо current_listen застарілий
+      // (це джерело істини для стартового розділу після холодного старту).
+      final saved = await _getProgressForBook(b.id);
+      final savedChapterId = saved?['chapterId'] as int?;
+      final savedPosSec = saved?['position'] is int ? saved?['position'] as int : 0;
+
       if (_userType == UserType.guest && AuthStore.I.isLoggedIn) {
         // Якщо є токен, вважаємо профіль авторизованим: спершу пробуємо взяти
         // тип користувача з кешу профілю (може бути «оплачений»), і лише якщо
@@ -1421,9 +1427,19 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
+      // Якщо current_listen залишився на першій главі, але у прогресі є інший
+      // розділ, підвищимо гостя до FREE, щоб підтягнути плейлист і відновити
+      // справжню точку відновлення.
+      if (effectiveUserType == UserType.guest && savedChapterId != null &&
+          savedChapterId != ch.id) {
+        _log('_prepare: guest + different saved chapter → upgrade to FREE to resume');
+        effectiveUserType = UserType.free;
+      }
+
       List<Chapter> chaptersToLoad = [ch];
       int startIndex = 0;
-      final restoredPosition = _position; // Сохраняем точную позицию
+      int startChapterId = savedChapterId ?? ch.id;
+      Duration restoredPosition = _position; // Сохраняем точную позицию
 
       // Логіка гостя (тільки перша глава)
       if (effectiveUserType == UserType.guest) {
@@ -1437,7 +1453,11 @@ class AudioPlayerProvider extends ChangeNotifier {
           effectiveUserType = UserType.free;
         } else {
           chaptersToLoad = [ch];
+          startChapterId = ch.id;
           startIndex = 0;
+          if (savedChapterId == ch.id && savedPosSec > restoredPosition.inSeconds) {
+            restoredPosition = Duration(seconds: savedPosSec);
+          }
         }
       }
 
@@ -1448,18 +1468,29 @@ class AudioPlayerProvider extends ChangeNotifier {
         if (fullList.isEmpty) {
           _log('_prepare: failed to fetch full chapter list for book ${b.id}, defaulting to single saved chapter');
           chaptersToLoad = [ch];
+          startChapterId = savedChapterId ?? ch.id;
           startIndex = 0;
         } else {
           chaptersToLoad = fullList;
           // Находим индекс главы, с которой остановились, в полном списке.
-          startIndex = fullList.indexWhere((c) => c.id == ch.id);
+          final desiredId = savedChapterId ?? ch.id;
+          startIndex = fullList.indexWhere((c) => c.id == desiredId);
           if (startIndex < 0) {
             _log('_prepare: last listened chapter not found in full list, starting at first chapter');
             startIndex = 0;
+            startChapterId = chaptersToLoad.first.id;
+          } else {
+            startChapterId = desiredId;
           }
         }
       }
       // ====================================================================
+
+      // Якщо ми переїхали на іншу главу з мапи прогресу — беремо і позицію звідти.
+      if (savedChapterId != null && startChapterId == savedChapterId &&
+          savedPosSec > restoredPosition.inSeconds) {
+        restoredPosition = Duration(seconds: savedPosSec);
+      }
 
       final cover = _absImageUrl(b.coverUrl);
 
