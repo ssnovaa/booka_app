@@ -723,6 +723,16 @@ class AudioPlayerProvider extends ChangeNotifier {
     return fullResourceUrl(p);
   }
 
+  int? _toInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+
+    final s = v.toString().trim();
+    if (s.isEmpty) return null;
+    return int.tryParse(s);
+  }
+
   String? _authorFromBook(Map<String, dynamic>? bookMap) {
     if (bookMap == null) return null;
     final v = bookMap['author'] ?? bookMap['authors'];
@@ -1127,13 +1137,13 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (book != null && !ignoreSavedPosition) {
       final saved = await _getProgressForBook(book.id);
       if (saved != null) {
-        final savedChapterId = saved['chapterId'];
-        final savedPosSec = saved['position'] ?? 0;
-        if (savedChapterId is int) {
+        final savedChapterId = _toInt(saved['chapterId']);
+        final savedPosSec = _toInt(saved['position']) ?? 0;
+        if (savedChapterId != null) {
           final idx = playlistChapters.indexWhere((c) => c.id == savedChapterId);
           if (idx >= 0) {
             initialIndex = idx;
-            initialPos = Duration(seconds: savedPosSec is int ? savedPosSec : 0);
+            initialPos = Duration(seconds: savedPosSec);
           } else {
             initialPos = Duration.zero;
           }
@@ -1406,8 +1416,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       // Прогресс із мапи завжди беремо, навіть якщо current_listen застарілий
       // (це джерело істини для стартового розділу після холодного старту).
       final saved = await _getProgressForBook(b.id);
-      final savedChapterId = saved?['chapterId'] as int?;
-      final savedPosSec = saved?['position'] is int ? saved?['position'] as int : 0;
+      final savedChapterId = _toInt(saved?['chapterId']);
+      final savedPosSec = _toInt(saved?['position']) ?? 0;
 
       if (_userType == UserType.guest && AuthStore.I.isLoggedIn) {
         // Якщо є токен, вважаємо профіль авторизованим: спершу пробуємо взяти
