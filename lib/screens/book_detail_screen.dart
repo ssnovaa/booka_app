@@ -81,6 +81,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   // Підписка на оновлення профілю
   StreamSubscription? _updateSub;
+  AudioPlayerProvider? _audioProvider;
+
+  /// Синхронізація локального вибору з глобальним плеєром
+  void _onAudioChanged() {
+    final audio = _audioProvider;
+    if (audio == null || chapters.isEmpty) return;
+    _syncSelectedChapterFromPlayer(audio);
+  }
 
   @override
   void initState() {
@@ -108,6 +116,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   @override
   void dispose() {
+    _audioProvider?.removeListener(_onAudioChanged);
     _updateSub?.cancel();
     super.dispose();
   }
@@ -372,6 +381,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    final newAudio = context.read<AudioPlayerProvider>();
+    if (!identical(_audioProvider, newAudio)) {
+      _audioProvider?.removeListener(_onAudioChanged);
+      _audioProvider = newAudio;
+      _audioProvider?.addListener(_onAudioChanged);
+      _onAudioChanged();
+    }
     // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК: Не перебивати поточне аудіо при вході
     /*
     if (!_playerInitialized && !_autoStartPending && chapters.isNotEmpty) {
