@@ -806,6 +806,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
+  Future<Book?> _fetchBookById(int bookId) async {
+    try {
+      final resp = await ApiClient.i().get(
+        '/abooks/$bookId',
+        options: Options(validateStatus: (s) => s != null && s < 500),
+      );
+      if (resp.statusCode != 200) return null;
+
+      final raw = resp.data;
+      if (raw is Map<String, dynamic>) return Book.fromJson(raw);
+      if (raw is Map) return Book.fromJson(Map<String, dynamic>.from(raw));
+    } catch (e) {
+      _log('fetchBookById error: $e');
+    }
+    return null;
+  }
+
   // ------------------------------------------------------------------------------------------------------
 
   AudioSource _sourceForChapter(
@@ -1087,6 +1104,63 @@ class AudioPlayerProvider extends ChangeNotifier {
     } finally {
       _hydrating = false;
     }
+  }
+
+  Future<bool> _recoverFromProgressMap() async {
+    final map = await _readProgressMap();
+    if (map.isEmpty) return false;
+
+    MapEntry<String, dynamic>? latest;
+    for (final e in map.entries) {
+      final v = e.value;
+      if (v is! Map) continue;
+      final chapterId = _toInt(v['chapterId']);
+      if (chapterId == null) continue;
+
+      final updated = _toInt(v['updatedAt']) ?? 0;
+      final latestUpdated = latest != null
+          ? _toInt((latest!.value as Map)['updatedAt']) ?? 0
+          : 0;
+      if (latest == null || updated > latestUpdated) {
+        latest = MapEntry<String, dynamic>(e.key, Map<String, dynamic>.from(v));
+      }
+    }
+
+    if (latest == null) return false;
+
+    final bookId = int.tryParse(latest!.key);
+    final savedChapterId = _toInt(latest!.value['chapterId']);
+    final savedPosSec = _toInt(latest!.value['position']) ?? 0;
+
+    if (bookId == null || savedChapterId == null) return false;
+
+    final book = await _fetchBookById(bookId);
+    final chapters = await _retrieveAllChaptersForBook(bookId);
+    if (chapters.isEmpty) return false;
+
+    int startIndex = chapters.indexWhere((c) => c.id == savedChapterId);
+    if (startIndex < 0) startIndex = 0;
+
+    final resolvedBook = book ?? Book.fromJson({'id': bookId});
+    final cover = _absImageUrl(resolvedBook.coverUrl);
+
+    await setChapters(
+      chapters,
+      startIndex: startIndex,
+      book: resolvedBook,
+      bookTitle: resolvedBook.title,
+      artist: resolvedBook.author,
+      coverUrl: cover,
+    );
+
+    if (_hasSequence && savedPosSec > 0) {
+      final seekPos = Duration(seconds: savedPosSec);
+      await player.seek(seekPos, index: _currentChapterIndex);
+      _position = seekPos;
+      _pullDurationFromPlayer();
+    }
+
+    return true;
   }
 
   // ---------- НАБОР РАЗДЕЛОВ / ПЛЕЙЛИСТ ----------
@@ -1396,8 +1470,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (currentBook == null || currentChapter == null) {
         final ok = await _hydrateFromServerIfAvailable();
         if (!ok) {
-          _log('_prepare: no saved session at all');
-          return false;
+          // Попробуем поднять сессию из listen_progress_v1, даже если current_listen пустой.
+          final recovered = await _recoverFromProgressMap();
+          if (!recovered) {
+            _log('_prepare: no saved session at all');
+            return false;
+          }
         }
       }
 
