@@ -60,6 +60,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   // Розділи
   List<Chapter> chapters = [];
   int selectedChapterIndex = 0;
+  bool _userSelectedChapter = false;
 
   // Прапорці завантаження/помилок
   bool isLoading = true; // завантаження розділів
@@ -342,6 +343,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         setState(() {
           chapters = loadedChapters;
           selectedChapterIndex = startIndex;
+          _userSelectedChapter = false;
           isLoading = false;
           _playerInitialized = false;
           _autoStartPending = true; // ініціалізуємо плеєр після побудови
@@ -519,7 +521,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index == -1) return;
 
     // МИТТЄВО оновлюємо UI (щоб кнопка підсвітилась)
-    setState(() => selectedChapterIndex = index);
+    setState(() {
+      selectedChapterIndex = index;
+      _userSelectedChapter = true;
+    });
 
     final audio = context.read<AudioPlayerProvider>();
 
@@ -650,13 +655,24 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _openFullPlayer();
     } else {
       // Це НОВА книга: завантажуємо її в плеєр і стартуємо
+      int startIndex = selectedChapterIndex;
+      if (!_userSelectedChapter) {
+        final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
+        if (savedIdx != null) {
+          startIndex = savedIdx;
+          if (startIndex != selectedChapterIndex) {
+            setState(() => selectedChapterIndex = startIndex);
+          }
+        }
+      }
+
       await audio.setChapters(
         chapters,
         book: _book,
         // Використовуємо вже обраний (або синхронізований із плеєром) розділ,
         // щоб кнопка запускала ту ж главу, що бачить користувач.
         // Якщо у провайдера є збережений прогрес — він все одно перекриє startIndex.
-        startIndex: selectedChapterIndex,
+        startIndex: startIndex,
         bookTitle: _book.title,
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
