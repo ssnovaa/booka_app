@@ -331,6 +331,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           _playerInitialized = false;
           _autoStartPending = true; // ініціалізуємо плеєр після побудови
         });
+
+        // Після завантаження глав повторно ініціалізуємо плеєр,
+        // щоб синхронізувати локальний індекс із вже програною главою.
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_playerInitialized && _autoStartPending) {
+              _initAudioPlayer();
+            }
+          });
+        }
       } else {
         setState(() {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
