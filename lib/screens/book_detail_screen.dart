@@ -322,6 +322,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         if (widget.initialChapter != null) {
           final ix = loadedChapters.indexWhere((c) => c.id == widget.initialChapter!.id);
           if (ix != -1) startIndex = ix;
+        } else if (audioProvider.currentBook?.id == _book.id &&
+            audioProvider.currentChapter != null) {
+          final playingIdx = loadedChapters.indexWhere(
+            (c) => c.id == audioProvider.currentChapter!.id,
+          );
+          if (playingIdx != -1) startIndex = playingIdx;
         }
 
         setState(() {
