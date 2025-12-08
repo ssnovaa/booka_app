@@ -439,6 +439,17 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final currentBookId = audio.currentBook?.id;
       final sameBook = current != null && currentBookId == _book.id;
 
+      // Якщо зараз відтворюється інша книга — не перебиваємо її автоматично.
+      // Просто відмічаємо, що ініціалізація екрану виконана; плейлист
+      // оновиться лише після явної дії користувача (кнопка «Слухати»).
+      if (!sameBook && audio.currentBook != null) {
+        setState(() {
+          _playerInitialized = true;
+          _autoStartPending = false;
+        });
+        return;
+      }
+
       if (sameBook) {
         final idx = chapters.indexWhere((c) => c.id == current.id);
         if (idx != -1) {
