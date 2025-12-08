@@ -60,6 +60,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   // Розділи
   List<Chapter> chapters = [];
   int selectedChapterIndex = 0;
+  bool _userSelectedChapter = false;
 
   // Прапорці завантаження/помилок
   bool isLoading = true; // завантаження розділів
@@ -81,6 +82,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   // Підписка на оновлення профілю
   StreamSubscription? _updateSub;
+  AudioPlayerProvider? _audioProvider;
+
+  /// Синхронізація локального вибору з глобальним плеєром
+  void _onAudioChanged() {
+    final audio = _audioProvider;
+    if (audio == null || chapters.isEmpty) return;
+    _syncSelectedChapterFromPlayer(audio);
+  }
 
   @override
   void initState() {
@@ -108,6 +117,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   @override
   void dispose() {
+    _audioProvider?.removeListener(_onAudioChanged);
     _updateSub?.cancel();
     super.dispose();
   }
@@ -322,15 +332,32 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         if (widget.initialChapter != null) {
           final ix = loadedChapters.indexWhere((c) => c.id == widget.initialChapter!.id);
           if (ix != -1) startIndex = ix;
+        } else if (audioProvider.currentBook?.id == _book.id &&
+            audioProvider.currentChapter != null) {
+          final playingIdx = loadedChapters.indexWhere(
+            (c) => c.id == audioProvider.currentChapter!.id,
+          );
+          if (playingIdx != -1) startIndex = playingIdx;
         }
 
         setState(() {
           chapters = loadedChapters;
           selectedChapterIndex = startIndex;
+          _userSelectedChapter = false;
           isLoading = false;
           _playerInitialized = false;
           _autoStartPending = true; // ініціалізуємо плеєр після побудови
         });
+
+        // Після завантаження глав повторно ініціалізуємо плеєр,
+        // щоб синхронізувати локальний індекс із вже програною главою.
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_playerInitialized && _autoStartPending) {
+              _initAudioPlayer();
+            }
+          });
+        }
       } else {
         setState(() {
           error = safeHttpStatus('Не вдалося завантажити розділи', resp.statusCode);
@@ -356,6 +383,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    final newAudio = context.read<AudioPlayerProvider>();
+    if (!identical(_audioProvider, newAudio)) {
+      _audioProvider?.removeListener(_onAudioChanged);
+      _audioProvider = newAudio;
+      _audioProvider?.addListener(_onAudioChanged);
+      _onAudioChanged();
+    }
     // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК: Не перебивати поточне аудіо при вході
     /*
     if (!_playerInitialized && !_autoStartPending && chapters.isNotEmpty) {
@@ -401,7 +436,32 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final user = context.read<UserNotifier>().user;
       audio.userType = getUserType(user);
 
-      final startIndex = selectedChapterIndex;
+      int startIndex = selectedChapterIndex;
+      final current = audio.currentChapter;
+      final currentBookId = audio.currentBook?.id;
+      final sameBook = current != null && currentBookId == _book.id;
+
+      // Якщо зараз відтворюється інша книга — не перебиваємо її автоматично.
+      // Але намагаємося показати останню прослухану главу цієї книги, щоб
+      // кнопка «Слухати» стартувала з правильного місця без заміни плейлиста.
+      if (!sameBook && audio.currentBook != null) {
+        final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
+        if (savedIdx != null && savedIdx != selectedChapterIndex) {
+          setState(() => selectedChapterIndex = savedIdx);
+        }
+        setState(() {
+          _playerInitialized = true;
+          _autoStartPending = false;
+        });
+        return;
+      }
+
+      if (sameBook) {
+        final idx = chapters.indexWhere((c) => c.id == current.id);
+        if (idx != -1) {
+          startIndex = idx;
+        }
+      }
 
       final sameChapters = audio.currentChapter != null &&
           audio.chapters.length == chapters.length &&
@@ -409,6 +469,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
 
       if (!sameChapters) {
+        final ignoreSavedPosition =
+            sameBook || widget.initialChapter != null;
+
         // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
         await audio.setChapters(
           chapters,
@@ -417,8 +480,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           bookTitle: _book.title,                // ← назва книги
           artist: _book.author.trim(),           // ← ТІЛЬКИ автор (без чтеця)
           coverUrl: _resolveBgUrl(_book),        // ← абсолютна обкладинка
+          // Якщо вже є активна глава/явно передана initialChapter — не перекривати її
+          // прогресом, збереженим на сервері.
+          ignoreSavedPosition: ignoreSavedPosition,
         );
       }
+
+      _syncSelectedChapterFromPlayer(audio);
 
       // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
       if (widget.initialPosition != null) {
@@ -436,6 +504,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     });
   }
 
+  void _syncSelectedChapterFromPlayer(AudioPlayerProvider audio) {
+    final current = audio.currentChapter;
+    if (current == null) return;
+
+    final idx = chapters.indexWhere((c) => c.id == current.id);
+    if (idx != -1 && idx != selectedChapterIndex) {
+      setState(() => selectedChapterIndex = idx);
+    }
+  }
+
   // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: "Розумне" перемикання розділів
   Future<void> _onChapterSelected(Chapter chapter) async {
     // 1. Шукаємо індекс у повному списку на екрані
@@ -443,7 +521,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (index == -1) return;
 
     // МИТТЄВО оновлюємо UI (щоб кнопка підсвітилась)
-    setState(() => selectedChapterIndex = index);
+    setState(() {
+      selectedChapterIndex = index;
+      _userSelectedChapter = true;
+    });
 
     final audio = context.read<AudioPlayerProvider>();
 
@@ -574,10 +655,24 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _openFullPlayer();
     } else {
       // Це НОВА книга: завантажуємо її в плеєр і стартуємо
+      int startIndex = selectedChapterIndex;
+      if (!_userSelectedChapter) {
+        final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
+        if (savedIdx != null) {
+          startIndex = savedIdx;
+          if (startIndex != selectedChapterIndex) {
+            setState(() => selectedChapterIndex = startIndex);
+          }
+        }
+      }
+
       await audio.setChapters(
         chapters,
         book: _book,
-        startIndex: 0, // Почнемо з початку (або провайдер відновить збережену позицію)
+        // Використовуємо вже обраний (або синхронізований із плеєром) розділ,
+        // щоб кнопка запускала ту ж главу, що бачить користувач.
+        // Якщо у провайдера є збережений прогрес — він все одно перекриє startIndex.
+        startIndex: startIndex,
         bookTitle: _book.title,
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
