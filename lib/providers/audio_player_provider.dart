@@ -1464,18 +1464,21 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     _isPreparing = true;
     try {
+      // Попробуем сразу поднять плейлист из локальной мапы прогресса, если он есть.
+      // Это покрывает холодный старт, когда профиль/токен ещё не подтянулись,
+      // но в SharedPreferences лежит последняя прослушанная глава.
+      if (await _recoverFromProgressMap()) {
+        return true;
+      }
+
       if (currentBook == null || currentChapter == null) {
         await restoreProgress();
       }
       if (currentBook == null || currentChapter == null) {
         final ok = await _hydrateFromServerIfAvailable();
         if (!ok) {
-          // Попробуем поднять сессию из listen_progress_v1, даже если current_listen пустой.
-          final recovered = await _recoverFromProgressMap();
-          if (!recovered) {
-            _log('_prepare: no saved session at all');
-            return false;
-          }
+          _log('_prepare: no saved session at all');
+          return false;
         }
       }
 
