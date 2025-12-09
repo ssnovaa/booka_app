@@ -15,20 +15,22 @@ import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/screens/profile_screen.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 
+// 🔥 IMPORTS FOR CACHING AND FAVORITES
+import 'package:booka_app/services/catalog_service.dart';
+import 'package:booka_app/widgets/add_to_favorites_button.dart';
+
 enum NumberCorner { topRight, topLeft, bottomRight, bottomLeft }
 
 /// Сторінка — список книг серії.
-/// Підтримує початкові дані, підвантаження з API та візуальну нумерацію в карточках.
 class SeriesBooksListScreen extends StatefulWidget {
   final String title;
   final String seriesId;
   final List<Map<String, dynamic>>? initialBooks;
 
-  /// Налаштування мітки номера в картці
   final NumberCorner numberCorner;
-  final double numberOpacity;      // 0.0 - 1.0
-  final EdgeInsets numberPadding;  // відступ від країв картки
-  final double numberFontSize;     // розмір цифри
+  final double numberOpacity;
+  final EdgeInsets numberPadding;
+  final double numberFontSize;
 
   const SeriesBooksListScreen({
     Key? key,
@@ -56,49 +58,12 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
         : _fetchBooks();
   }
 
-  /// Основний шлях: /series/{id}/books
-  Future<List<Map<String, dynamic>>> _fetchBooks() async {
-    try {
-      final r = await ApiClient.i().get(
-        '/series/${widget.seriesId}/books',
-        options: Options(validateStatus: (s) => s != null && s < 500),
-      );
-      if (r.statusCode == 200 && r.data is List) {
-        return (r.data as List)
-            .map((e) => e is Map<String, dynamic>
-            ? e
-            : Map<String, dynamic>.from(e as Map))
-            .toList();
-      }
-    } catch (_) {}
-
-    // Альтернативний шлях: фільтр по серії в /abooks
-    try {
-      final r = await ApiClient.i().get(
-        '/abooks',
-        queryParameters: {'series': widget.seriesId},
-        options: Options(validateStatus: (s) => s != null && s < 500),
-      );
-      if (r.statusCode == 200 && r.data is Map && r.data['data'] is List) {
-        return (r.data['data'] as List)
-            .map((e) => e is Map<String, dynamic>
-            ? e
-            : Map<String, dynamic>.from(e as Map))
-            .toList();
-      } else if (r.statusCode == 200 && r.data is List) {
-        return (r.data as List)
-            .map((e) => e is Map<String, dynamic>
-            ? e
-            : Map<String, dynamic>.from(e as Map))
-            .toList();
-      }
-    } catch (_) {}
-
-    return <Map<String, dynamic>>[];
+  Future<List<Map<String, dynamic>>> _fetchBooks({bool force = false}) async {
+    return CatalogService.fetchSeriesBooks(widget.seriesId, forceRefresh: force);
   }
 
   Future<void> _refresh() async {
-    final fut = _fetchBooks();
+    final fut = _fetchBooks(force: true);
     setState(() => _future = fut);
     await fut;
   }
@@ -230,7 +195,7 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
     );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      margin: const EdgeInsets.only(right: 6),
+      margin: const EdgeInsets.only(right: 6, bottom: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
@@ -247,11 +212,13 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
             Icon(icon, size: 14, color: t.colorScheme.onSurface.withOpacity(0.7)),
             const SizedBox(width: 4),
           ],
-          Text(
-            text,
-            style: t.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
+          Flexible(
+            child: Text(
+              text,
+              style: t.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
             ),
           ),
         ],
@@ -333,6 +300,9 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
     final duration = _formatDuration(m['duration'] ?? m['length']);
     final g = _firstGenre(m);
 
+    final rawId = m['id'] ?? m['book_id'] ?? m['bookId'];
+    final bookId = (rawId != null) ? int.tryParse(rawId.toString()) : null;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -363,60 +333,83 @@ class _SeriesBooksListScreenState extends State<SeriesBooksListScreen> {
                     ),
                   ),
                 ),
-                child: Row(
+                // 🔥 ЗМІНЕНО: Головний контейнер тепер Column, щоб опис був знизу
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _coverImage(context, url),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 4, right: 2),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title.isEmpty ? 'Без назви' : title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: t.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                            if (author.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                author,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: t.textTheme.bodySmall?.copyWith(
-                                  color: t.textTheme.bodySmall?.color?.withOpacity(0.8),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 8),
-                            Wrap(
+                    // Верхня частина: Обкладинка + Інформація
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _coverImage(context, url),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 4, right: 2),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (duration.isNotEmpty)
-                                  _chip(context, duration, icon: Icons.schedule_rounded),
-                                if (g != null) _chip(context, g),
+                                Text(
+                                  title.isEmpty ? 'Без назви' : title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: t.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                                if (author.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    author,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: t.textTheme.bodySmall?.copyWith(
+                                      color: t.textTheme.bodySmall?.color?.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (duration.isNotEmpty)
+                                      _chip(context, duration, icon: Icons.schedule_rounded),
+
+                                    // 🔥 Кнопка "Вибране"
+                                    if (bookId != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 6, bottom: 4),
+                                        child: AddToFavoritesButton(
+                                          bookId: bookId,
+                                          style: AddFavStyle.bar,
+                                          size: 22,
+                                        ),
+                                      ),
+
+                                    if (g != null) _chip(context, g),
+                                  ],
+                                ),
+                                // ❌ Опис звідси прибрали
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              desc.isEmpty ? 'Опис відсутній.' : desc,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: t.textTheme.bodyMedium,
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
+
+                    // 🔥 Опис тепер тут: на всю ширину під верхнім блоком
+                    const SizedBox(height: 12),
+                    Text(
+                      desc.isEmpty ? 'Опис відсутній.' : desc,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.textTheme.bodyMedium,
                     ),
                   ],
                 ),
               ),
-              _positionedNumber(context, n), // цифра в кутку картки
+              _positionedNumber(context, n),
             ],
           ),
         ),

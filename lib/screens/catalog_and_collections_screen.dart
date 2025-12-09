@@ -8,8 +8,11 @@ import 'genres_screen.dart';
 import '../core/network/api_client.dart';
 import '../constants.dart';
 import 'series_books_list_screen.dart';
-import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
+import 'package:booka_app/widgets/loading_indicator.dart';
 import '../core/network/image_cache.dart';
+
+// 🔥 IMPORT NEW SERVICE
+import '../services/catalog_service.dart';
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -135,38 +138,14 @@ class _SeriesTabState extends State<_SeriesTab> {
     _future = _fetchSeries();
   }
 
+  // 🔥 UPDATED: Use service with caching
   Future<List<Map<String, dynamic>>> _fetchSeries() async {
-    try {
-      final r = await ApiClient.i().get(
-        '/series',
-        options: Options(validateStatus: (s) => s != null && s < 500),
-      );
-
-      if (r.statusCode != 200 || r.data == null) {
-        return <Map<String, dynamic>>[];
-      }
-
-      final raw = (r.data is Map && (r.data as Map).containsKey('data'))
-          ? (r.data['data'] as List?)
-          : (r.data is List ? r.data as List : null);
-
-      if (raw == null) return <Map<String, dynamic>>[];
-
-      return raw
-          .whereType<dynamic>()
-          .map(
-            (e) => e is Map<String, dynamic>
-            ? e
-            : Map<String, dynamic>.from(e as Map),
-      )
-          .toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
+    return CatalogService.fetchSeries();
   }
 
+  // 🔥 UPDATED: Use service force refresh
   Future<void> _refresh() async {
-    final fut = _fetchSeries();
+    final fut = CatalogService.fetchSeries(forceRefresh: true);
     setState(() => _future = fut);
     await fut;
   }
@@ -235,22 +214,9 @@ class _SeriesTabState extends State<_SeriesTab> {
     final title = _seriesTitle(series);
     if (id == null || id.isEmpty) return;
 
-    List<Map<String, dynamic>>? prefetched;
-    try {
-      final r = await ApiClient.i().get(
-        '/series/$id/books',
-        options: Options(validateStatus: (s) => s != null && s < 500),
-      );
-      if (r.statusCode == 200 && r.data is List) {
-        prefetched = (r.data as List)
-            .map(
-              (e) => e is Map<String, dynamic>
-              ? e
-              : Map<String, dynamic>.from(e as Map),
-        )
-            .toList();
-      }
-    } catch (_) {}
+    // 🔥 Note: We are not prefetching here anymore because SeriesBooksListScreen
+    // will now handle fetching via the cached service efficiently.
+    // Passing just the ID and Title is enough.
 
     if (!mounted) return;
     Navigator.of(context).push(
@@ -258,7 +224,7 @@ class _SeriesTabState extends State<_SeriesTab> {
         builder: (_) => SeriesBooksListScreen(
           title: title.isEmpty ? 'Серія' : title,
           seriesId: id,
-          initialBooks: prefetched,
+          initialBooks: null, // Let the screen fetch from cache
         ),
       ),
     );
@@ -433,21 +399,21 @@ class _SeriesRowCard extends StatelessWidget {
                   child: (coverUrl == null || coverUrl!.isEmpty)
                       ? placeholderBuilder(coverW, coverH)
                       : CachedNetworkImage(
-                          imageUrl: coverUrl!,
-                          cacheManager: BookaImageCacheManager.instance,
-                          fit: BoxFit.cover,
-                          fadeInDuration: const Duration(milliseconds: 180),
-                          errorWidget: (_, __, ___) =>
-                              placeholderBuilder(coverW, coverH),
-                          progressIndicatorBuilder: (_, __, ___) =>
-                              const Center(
-                                child: SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: LoadingIndicator(size: 22),
-                                ),
-                              ),
-                        ),
+                    imageUrl: coverUrl!,
+                    cacheManager: BookaImageCacheManager.instance,
+                    fit: BoxFit.cover,
+                    fadeInDuration: const Duration(milliseconds: 180),
+                    errorWidget: (_, __, ___) =>
+                        placeholderBuilder(coverW, coverH),
+                    progressIndicatorBuilder: (_, __, ___) =>
+                    const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: LoadingIndicator(size: 22),
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),

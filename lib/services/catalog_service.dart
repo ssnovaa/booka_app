@@ -246,6 +246,96 @@ class CatalogService {
   static Future<void> clearAllCache() async {
     await ApiClient.clearAllCache();
   }
+
+  // --- 🆕 МЕТОДИ ДЛЯ СЕРІЙ КНИГ (З КЕШУВАННЯМ) ---
+
+  /// Отримати список усіх серій (кеш 12 годин)
+  static Future<List<Map<String, dynamic>>> fetchSeries({bool forceRefresh = false}) async {
+    try {
+      final cacheOpts = ApiClient.cacheOptions(
+        policy: forceRefresh ? CachePolicy.refreshForceCache : CachePolicy.request,
+        maxStale: const Duration(hours: 12),
+      );
+
+      final r = await ApiClient.i().get(
+        '/series',
+        options: cacheOpts.toOptions(),
+      );
+
+      if (r.statusCode == 200) {
+        final data = r.data;
+        // Логіка розбору, аналогічна тій, що була в UI
+        final raw = (data is Map && (data as Map).containsKey('data'))
+            ? (data['data'] as List?)
+            : (data is List ? data as List : null);
+
+        if (raw == null) return [];
+
+        return raw
+            .whereType<dynamic>()
+            .map((e) => e is Map<String, dynamic>
+            ? e
+            : Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Отримати книги конкретної серії (кеш 6 годин)
+  static Future<List<Map<String, dynamic>>> fetchSeriesBooks(
+      String seriesId, {
+        bool forceRefresh = false,
+      }) async {
+    final cacheOpts = ApiClient.cacheOptions(
+      policy: forceRefresh ? CachePolicy.refreshForceCache : CachePolicy.request,
+      maxStale: const Duration(hours: 6),
+    );
+
+    // Спроба 1: прямий ендпоінт
+    try {
+      final r = await ApiClient.i().get(
+        '/series/$seriesId/books',
+        options: cacheOpts.toOptions(),
+      );
+      if (r.statusCode == 200 && r.data is List) {
+        return (r.data as List)
+            .map((e) => e is Map<String, dynamic>
+            ? e
+            : Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+    } catch (_) {}
+
+    // Спроба 2: фільтр через abooks (fallback)
+    try {
+      final r = await ApiClient.i().get(
+        '/abooks',
+        queryParameters: {'series': seriesId},
+        options: cacheOpts.toOptions(),
+      );
+      if (r.statusCode == 200) {
+        final data = r.data;
+        if (data is Map && data['data'] is List) {
+          return (data['data'] as List)
+              .map((e) => e is Map<String, dynamic>
+              ? e
+              : Map<String, dynamic>.from(e as Map))
+              .toList();
+        } else if (data is List) {
+          return (data as List)
+              .map((e) => e is Map<String, dynamic>
+              ? e
+              : Map<String, dynamic>.from(e as Map))
+              .toList();
+        }
+      }
+    } catch (_) {}
+
+    return [];
+  }
 }
 
 /// PARSING UTIL — викликається в isolate (compute)
