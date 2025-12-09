@@ -22,6 +22,8 @@ import 'package:booka_app/core/credits/credits_consumer.dart'; // списани
 // ---- КЛЮЧИ ДЛЯ PREFS ----
 const String _kCurrentListenKey = 'current_listen';
 const String _kProgressMapKey = 'listen_progress_v1';
+// 🔥 НОВЫЙ КЛЮЧ ДЛЯ КЭША ГЛАВ
+const String _kChaptersCachePrefix = 'chapters_cache_v1_';
 
 // ==== помощники времени (UTC)
 DateTime _nowUtc() => DateTime.now().toUtc();
@@ -777,10 +779,17 @@ class AudioPlayerProvider extends ChangeNotifier {
           ? (raw['data'] ?? raw['items'] ?? [])
           : [];
 
-      return items.map((it) => Chapter.fromJson(
+      final list = items.map((it) => Chapter.fromJson(
         Map<String, dynamic>.from(it as Map),
         book: {'id': bookId},
       )).toList();
+
+      // 🔥 ДОБАВЛЕНО: Сохраняем в кэш для следующего раза
+      if (list.isNotEmpty) {
+        _cacheChaptersForBook(bookId, list);
+      }
+
+      return list;
     } catch (e) {
       _log('retrieveAllChaptersForBook error: $e');
       return [];
@@ -1436,7 +1445,17 @@ class AudioPlayerProvider extends ChangeNotifier {
         startIndex = 0;
       } else {
         // Для авторизованных: загружаем полный список.
-        final fullList = await _retrieveAllChaptersForBook(b.id);
+
+        // 🔥 ИЗМЕНЕНИЕ НАЧАЛО: Пробуем кэш, потом сеть
+        List<Chapter> fullList = await _getCachedChaptersForBook(b.id);
+
+        if (fullList.isNotEmpty) {
+          _log('_prepare: using CACHED chapter list (${fullList.length})');
+        } else {
+          _log('_prepare: cache miss, fetching from network...');
+          fullList = await _retrieveAllChaptersForBook(b.id);
+        }
+        // 🔥 ИЗМЕНЕНИЕ КОНЕЦ
 
         if (fullList.isEmpty) {
           _log('_prepare: failed to fetch full chapter list for book ${b.id}, defaulting to single saved chapter');
@@ -1519,13 +1538,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       _log('restoreProgress: error: $e');
     }
   }
-
-  // ... rest of the file ...
-  // (Остальные методы: handleBottomPlayTap, seekDragStart, и т.д. остаются без изменений)
-  // Для экономии места они тут не дублируются, но они должны быть в файле как и раньше.
-  // Так как вы просили "внести изменения" в ваш код,
-  // я включил полный код выше, кроме самых последних методов, которые не менялись.
-  // Вставьте оставшуюся часть файла из вашего исходника, начиная с handleBottomPlayTap.
 
   // ---------- UI helpers ----------
   Future<bool> handleBottomPlayTap() async {
@@ -1681,6 +1693,39 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
     _log('ad scheduled in ${delay.inSeconds}s');
+  }
+
+  // --- ЛОКАЛЬНЫЙ КЭШ ГЛАВ (ДЛЯ МГНОВЕННОГО СТАРТА) ---
+
+  Future<void> _cacheChaptersForBook(int bookId, List<Chapter> list) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Превращаем список объектов в список JSON-строк
+      final jsonList = list.map((c) => c.toJson()).toList();
+      await prefs.setString('$_kChaptersCachePrefix$bookId', json.encode(jsonList));
+    } catch (e) {
+      _log('cacheChapters error: $e');
+    }
+  }
+
+  Future<List<Chapter>> _getCachedChaptersForBook(int bookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_kChaptersCachePrefix$bookId');
+      if (raw == null) return [];
+
+      final List<dynamic> jsonList = json.decode(raw);
+      return jsonList.map((item) {
+        // Важно передать bookId, так как в JSON главы его может не быть
+        return Chapter.fromJson(
+          Map<String, dynamic>.from(item as Map),
+          book: {'id': bookId},
+        );
+      }).toList();
+    } catch (e) {
+      _log('getCachedChapters error: $e');
+      return [];
+    }
   }
 
   @override

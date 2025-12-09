@@ -31,53 +31,63 @@ class _StartupGateState extends State<StartupGate> {
   }
 
   Future<void> _bootstrap() async {
-    // Прибираємо нативний сплеш — тепер буде видно наш лоадер
-    FlutterNativeSplash.remove();
+    // ❌ Не прибираємо сплеш тут, зробимо це в кінці для плавності
 
     try {
-      // 1) Відновлення токенів / авторизації
-      await AuthStore.I.restore();
-
-      // 2) Локал-first підготовка плеєра
       final audio = context.read<AudioPlayerProvider>();
 
-      // підняти локальний прогрес
-      await audio.restoreProgress();
+      // ✅ 1. ПАРАЛЕЛЬНЕ виконання легких локальних задач (найважливіше прискорення)
+      // Це займає мілісекунди, тому чекаємо завершення обох
+      await Future.wait([
+        AuthStore.I.restore(),
+        audio.restoreProgress(),
+      ]);
 
-      // якщо локальна сесія є — одразу готуємо плеєр і відпускаємо UI
       final hasLocal = await audio.hasSavedSession();
-      if (hasLocal) {
-        await audio.ensurePrepared();
 
-        // сервер — у фоні (статистика/резерв)
-        unawaited(() async {
-          try {
-            await ProfileRepository.I.loadMap(force: false);
-          } catch (_) {
-            // мʼяко ігноруємо 401/403/тайм-аути, щоб не сипати в консоль
-          }
-        }());
-        unawaited(audio.hydrateFromServerIfAvailable());
+      // ✅ 2. Вся важка робота з мережею йде у "фон" (ми НЕ чекаємо її через await)
+      if (hasLocal) {
+        // Запускаємо підготовку плеера, але НЕ ЧЕКАЄМО завершення тут.
+        // Інтерфейс завантажиться, а плеер підтягнеться через частку секунди.
+        // ignore: unawaited_futures
+        audio.ensurePrepared().then((_) {
+          debugPrint('[Startup] Audio prepared in background');
+        }).catchError((e) {
+          debugPrint('[Startup] Audio prepare error: $e');
+        });
+
+        // Дані профілю теж оновлюємо фоном
+        // ignore: unawaited_futures
+        ProfileRepository.I.loadMap(force: false);
+        // ignore: unawaited_futures
+        audio.hydrateFromServerIfAvailable();
       } else {
-        // локалі немає: UI не блокуємо, мережеву гідратацію запускаємо у фоні
-        unawaited(() async {
-          try {
-            await ProfileRepository.I.loadMap(force: true);
-          } catch (_) {}
-          final ok = await audio.hydrateFromServerIfAvailable();
-          if (ok) {
-            try {
-              await audio.ensurePrepared();
-            } catch (_) {}
-          }
-        }());
+        // Якщо локальної сесії немає — теж пробуємо синхронізуватися у фоні
+        _hydrateBackground(audio);
       }
-    } catch (_) {
-      // М'яко ігноруємо помилки бутстрапу — все одно пропускаємо в додаток
+
+    } catch (e) {
+      debugPrint('[Startup] Error: $e');
     } finally {
       if (!mounted) return;
+
+      // ✅ 3. Прибираємо нативний сплеш тільки коли все готово до показу UI
+      FlutterNativeSplash.remove();
+
+      // Відкриваємо додаток
       setState(() => _ready = true);
     }
+  }
+
+  // Допоміжний метод для фонової роботи (fire and forget)
+  Future<void> _hydrateBackground(AudioPlayerProvider audio) async {
+    try {
+      await ProfileRepository.I.loadMap(force: true);
+      final ok = await audio.hydrateFromServerIfAvailable();
+      if (ok) {
+        await audio.ensurePrepared();
+      }
+    } catch (_) {}
   }
 
   @override
@@ -95,6 +105,10 @@ class _StartupGateState extends State<StartupGate> {
               'assets/splash/booka_equalizer_loader.json',
               width: 160,
               repeat: true,
+              // Оптимізація рендерингу кадрів для Lottie
+              frameBuilder: (context, child, composition) {
+                return child;
+              },
             ),
             const SizedBox(height: 16),
             Text(
