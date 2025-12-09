@@ -1,5 +1,4 @@
 // lib/screens/book_detail_screen.dart
-// ПОЛНЫЙ ФАЙЛ БЕЗ СОКРАЩЕНИЙ
 
 import 'dart:async'; // 1️⃣ Додано для StreamSubscription
 import 'dart:ui'; // для BackdropFilter (glass-ефект)
@@ -441,10 +440,28 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final currentBookId = audio.currentBook?.id;
       final sameBook = current != null && currentBookId == _book.id;
 
-      // Якщо зараз відтворюється інша книга — не перебиваємо її автоматично.
-      // Але намагаємося показати останню прослухану главу цієї книги, щоб
-      // кнопка «Слухати» стартувала з правильного місця без заміни плейлиста.
-      if (!sameBook && audio.currentBook != null) {
+      // 🔥 FIX ДЛЯ ЗАЇКАННЯ:
+      // Якщо це та сама книга, ми НЕ перезавантажуємо плейлист автоматично.
+      // Ми довіряємо плеєру, що він вже має потрібний контент.
+      // Перезавантаження через setChapters (навіть з правильною позицією)
+      // змушує плеєр скинути буфер, що викликає заїкання звуку.
+      if (sameBook) {
+        // Синхронізуємо тільки UI (яка глава виділена)
+        final idx = chapters.indexWhere((c) => c.id == current!.id);
+        if (idx != -1 && idx != selectedChapterIndex) {
+          setState(() => selectedChapterIndex = idx);
+        }
+        // Позначаємо, що все готово, і виходимо.
+        setState(() {
+          _playerInitialized = true;
+          _autoStartPending = false;
+        });
+        return;
+      }
+
+      // Якщо книга інша (або нічого не грає), то перевіряємо чи це просто навігація на іншу книгу
+      // (ми не хочемо її авто-запускати, але хочемо знати прогрес)
+      if (audio.currentBook != null) {
         final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
         if (savedIdx != null && savedIdx != selectedChapterIndex) {
           setState(() => selectedChapterIndex = savedIdx);
@@ -456,39 +473,24 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         return;
       }
 
-      if (sameBook) {
-        final idx = chapters.indexWhere((c) => c.id == current.id);
-        if (idx != -1) {
-          startIndex = idx;
-        }
-      }
+      // ⬇️ СЮДИ МИ ПОТРАПЛЯЄМО ТІЛЬКИ ЯКЩО ПЛЕЄР БУВ ПУСТИЙ (перший старт без збереження)
+      // АБО якщо сталася якась нештатна ситуація.
+      // В нормальному flow користувача тут не буде (бо або playing, або sameBook).
 
-      final sameChapters = audio.currentChapter != null &&
-          audio.chapters.length == chapters.length &&
-          List.generate(chapters.length, (i) => chapters[i].id).join(',') ==
-              List.generate(audio.chapters.length, (i) => audio.chapters[i].id).join(',');
+      final ignoreSavedPosition = widget.initialChapter != null;
 
-      if (!sameChapters) {
-        final ignoreSavedPosition =
-            sameBook || widget.initialChapter != null;
-
-        // ⬇️ ГОЛОВНА ПРАВКА: передаємо в провайдер bookTitle/author/coverUrl (без «чтеца»)
-        await audio.setChapters(
-          chapters,
-          book: _book,
-          startIndex: startIndex,
-          bookTitle: _book.title,                // ← назва книги
-          artist: _book.author.trim(),           // ← ТІЛЬКИ автор (без чтеця)
-          coverUrl: _resolveBgUrl(_book),        // ← абсолютна обкладинка
-          // Якщо вже є активна глава/явно передана initialChapter — не перекривати її
-          // прогресом, збереженим на сервері.
-          ignoreSavedPosition: ignoreSavedPosition,
-        );
-      }
+      await audio.setChapters(
+        chapters,
+        book: _book,
+        startIndex: startIndex,
+        bookTitle: _book.title,
+        artist: _book.author.trim(),
+        coverUrl: _resolveBgUrl(_book),
+        ignoreSavedPosition: ignoreSavedPosition,
+      );
 
       _syncSelectedChapterFromPlayer(audio);
 
-      // Початкова позиція без автозапуску: просто ставимо seek, але не стартуємо відтворення
       if (widget.initialPosition != null) {
         await audio.seekChapter(startIndex, position: Duration(seconds: widget.initialPosition!), persist: false);
       } else if (widget.initialChapter != null) {
