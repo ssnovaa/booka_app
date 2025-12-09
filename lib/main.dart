@@ -1,4 +1,4 @@
-// lib/main.dart (РАБОЧИЙ + НАСТРОЙКИ ШТОРКИ И ЛОКСКРИНА)
+// lib/main.dart (РАБОЧИЙ + ОПТИМИЗИРОВАННЫЙ СТАРТ)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -50,6 +50,7 @@ class _LifecycleReactor with WidgetsBindingObserver {
     // При возврате в приложение — обновляем пользователя
     if (state == AppLifecycleState.resumed) {
       try {
+        // 🔥 ОПТИМИЗАЦИЯ: запускаем без await, чтобы не фризить UI
         userNotifier.fetchCurrentUser();
       } catch (e) {
         // игнорируем ошибку (нет сети и т.п.)
@@ -146,14 +147,16 @@ Future<void> main() async {
       ),
     );
 
-    // Отложённые инициализации
+    // 🔥 ОПТИМИЗАЦИЯ СТАРТА: Очищена тяжелая логика
+    // Вся подготовка аудио и профиля теперь в StartupGate.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        // 🕒 Чекаємо мережевую ініціалізацію перед пушами/аудіо
+        // 🕒 Чекаємо мережевую ініціалізацію перед пушами
         await apiInit;
       } catch (_) {}
 
       try {
+        // Инициализация пушей (не блокирует UI)
         await PushService.instance.init(
           navigatorKey: _navKey,
           userNotifier: userNotifier,
@@ -163,26 +166,9 @@ Future<void> main() async {
       try {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
-          final audio =
-          Provider.of<AudioPlayerProvider>(ctx, listen: false);
-          final user = Provider.of<UserNotifier>(ctx, listen: false);
-
-          // ⛔ РАНЬШЕ ТУТ БЫЛО billingService.attachContext(ctx);
-          // Для новой структуры биллинга это больше не нужно.
-
-          final hasLocal = await audio.hasSavedSession();
-          if (!hasLocal) {
-            try {
-              await user.fetchCurrentUser();
-            } catch (e) {
-              // ігноруємо, якщо немає мережі
-            }
-            await audio.hydrateFromServerIfAvailable();
-          }
-
-          await audio.ensurePrepared();
-
-          _reactor ??= _LifecycleReactor(audio, user);
+          // Инициализируем реактор жизненного цикла
+          // (аудио и юзер берутся из замыкания main, так надежнее)
+          _reactor ??= _LifecycleReactor(audioProvider, userNotifier);
         }
       } catch (_) {}
     });
