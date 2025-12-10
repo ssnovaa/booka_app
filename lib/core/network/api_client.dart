@@ -87,7 +87,7 @@ class ApiClient {
           final isGet = req.method.toUpperCase() == 'GET';
           if (isGet && status != null && {502, 503, 504}.contains(status)) {
             try {
-              await Future<void>.delayed(const Duration(milliseconds: 400));
+              await Future<void>.delayed(const Duration(milliseconds: 100));
               final cloneResp = await dio.fetch(req);
               return handler.resolve(cloneResp);
             } catch (_) {}

@@ -142,8 +142,8 @@ class ProfileRepository {
   // ---------------- внутрішня логіка ----------------
 
   static const _retryDelays = <Duration>[
-    Duration(milliseconds: 250),
-    Duration(milliseconds: 650),
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 300),
   ];
 
   Future<Map<String, dynamic>> _fetchMapFromApi({String? debugTag}) async {

@@ -1675,6 +1675,19 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     _adTimer?.cancel();
     _adTimer = Timer(delay, () async {
+      // 🔴🔴🔴 ФИКС: Проверка состояния приложения
+      final appState = WidgetsBinding.instance.lifecycleState;
+      final bool isForeground = appState == AppLifecycleState.resumed;
+
+      // Если таймер сработал, когда приложение в фоне
+      if (!isForeground) {
+        _log('Ad timer fired in BACKGROUND. Pausing player instead of showing ad.');
+        // Принудительно паузим, чтобы пользователь не "пропустил" рекламу
+        await pause();
+        return;
+      }
+
+      // Если мы в foreground — показываем рекламу как обычно
       if (_adMode && _isPlayingAudibly() && !isAdScheduleSuspended) {
         try {
           await onShowIntervalAd?.call();
