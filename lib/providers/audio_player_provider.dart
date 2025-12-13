@@ -198,7 +198,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? get currentUrl => currentChapter?.audioUrl;
   bool get _hasSequence => (player.sequenceState?.sequence.isNotEmpty ?? false);
 
-  StreamSubscription<ConnectivityResult>? _connectivitySub;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _pausedByConnectivity = false;
   String? _connectivityMessage;
   String? get connectivityMessage => _connectivityMessage;
@@ -304,8 +304,12 @@ class AudioPlayerProvider extends ChangeNotifier {
         .then(_handleConnectivityChange);
   }
 
-  Future<void> _handleConnectivityChange(ConnectivityResult event) async {
-    final connected = event != ConnectivityResult.none;
+  Future<void> _handleConnectivityChange(
+      List<ConnectivityResult> events) async {
+    // Потоки connectivity_plus v6 передают список состояний; берём наличие
+    // любого активного соединения, а пустой список трактуем как отсутствие связи.
+    final connected =
+        events.isNotEmpty && events.any((event) => event != ConnectivityResult.none);
 
     if (!connected) {
       if (player.playing) {
