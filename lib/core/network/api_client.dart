@@ -28,9 +28,9 @@ class ApiClient {
 
     final options = BaseOptions(
       baseUrl: BASE_URL,
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 12),
-      sendTimeout: const Duration(seconds: 12),
+      connectTimeout: const Duration(seconds: 12),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
       headers: const {'Accept': 'application/json'},
       responseType: ResponseType.json,
     );
