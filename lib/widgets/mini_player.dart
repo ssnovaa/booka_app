@@ -104,6 +104,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
     final audio = context.watch<AudioPlayerProvider>();
     final currentChapter = audio.currentChapter;
+    final connectivityMessage = audio.connectivityMessage;
 
     // Якщо нічого не відтворюється — не показуємо міні-плеєр
     if (audio.currentUrl == null || currentChapter == null) {
@@ -151,6 +152,31 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (connectivityMessage != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: cs.errorContainer,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: cs.error.withOpacity(0.35)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.wifi_off, color: cs.error, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                connectivityMessage,
+                                style: theme.textTheme.bodySmall
+                                    ?.copyWith(color: cs.onErrorContainer),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
                     // Верхній рядок
                     Row(
                       children: [

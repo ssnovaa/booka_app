@@ -202,6 +202,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool _pausedByConnectivity = false;
   String? _connectivityMessage;
   String? get connectivityMessage => _connectivityMessage;
+  bool get pausedByConnectivity => _pausedByConnectivity;
 
   AudioPlayerProvider() {
     // Позиция
