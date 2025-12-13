@@ -87,6 +87,7 @@ Future<void> main() async {
       userNotifier.setFreeSeconds(v);
       audioProvider.onExternalFreeSecondsUpdated(v);
     };
+    audioProvider.getPaidUntil = () => userNotifier.user?.paidUntil;
 
     // 🚀 Запускаємо важкі ініціалізації паралельно, не блокуючи runApp
     final justAudioInit = _initJustAudioBackground();

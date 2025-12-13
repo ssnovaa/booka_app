@@ -96,6 +96,9 @@ class AudioPlayerProvider extends ChangeNotifier {
   int Function()? getFreeSeconds;        // вернуть текущий остаток в секундах
   void Function(int)? setFreeSeconds;    // выставить абсолютный остаток в секундах
 
+  /// Дата окончания платной подписки. Если null — подписки нет или не знаем дедлайн.
+  DateTime? Function()? getPaidUntil;
+
   /// Колбэк, когда баланс исчерпан: показать CTA/баннер/диалог (до ad-mode).
   VoidCallback? onCreditsExhausted;
 
@@ -164,10 +167,16 @@ class AudioPlayerProvider extends ChangeNotifier {
   UserType get userType => _userType;
 
   set userType(UserType value) {
-    if (_userType == value) return;
+    if (_userType == value) {
+      if (value == UserType.paid) {
+        _schedulePaidExpiryCheck();
+      }
+      return;
+    }
     _log('userType := $value');
     _userType = value;
     _exhaustionUiShown = false;
+    _schedulePaidExpiryCheck();
 
     // переключение статусов выключает/включает списание и ad-mode
     if (_userType != UserType.free) {
@@ -207,6 +216,9 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // Чтобы не спамить повторными открытиями экрана reward при обнулении секунд.
   bool _exhaustionUiShown = false;
+
+  // Таймер, переводящий платного пользователя в free после paidUntil.
+  Timer? _paidExpiryTimer;
 
   AudioPlayerProvider() {
     // Позиция
@@ -419,6 +431,52 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_exhaustionUiShown) return;
     _exhaustionUiShown = true;
     onCreditsExhausted?.call();
+  }
+
+  void _schedulePaidExpiryCheck() {
+    _paidExpiryTimer?.cancel();
+
+    if (_userType != UserType.paid) {
+      _paidExpiryTimer = null;
+      return;
+    }
+
+    final paidUntil = getPaidUntil?.call()?.toUtc();
+    if (paidUntil == null) return;
+
+    final now = _nowUtc();
+    if (!paidUntil.isAfter(now)) {
+      _onPaidExpired();
+      return;
+    }
+
+    final delay = paidUntil.difference(now) + const Duration(seconds: 1);
+    _paidExpiryTimer = Timer(delay, _onPaidExpired);
+  }
+
+  void _onPaidExpired() {
+    _paidExpiryTimer?.cancel();
+    _paidExpiryTimer = null;
+
+    if (_userType != UserType.paid) return;
+
+    _log('paidUntil прошло — переводим в free');
+    userType = UserType.free;
+
+    final secondsLeft = getFreeSeconds?.call() ?? 0;
+    if (secondsLeft <= 0 && !_adMode) {
+      _creditsConsumer?.resetExhaustion();
+      _stopFreeSecondsTicker();
+
+      () async {
+        if (player.playing) {
+          await pause();
+        }
+        _notifyExhaustedUi();
+      }();
+    } else {
+      _rearmFreeSecondsTicker();
+    }
   }
 
   void _pullDurationFromPlayer() {
@@ -1306,6 +1364,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _position = Duration.zero;
     _duration = Duration.zero;
     _serverPushTimer?.cancel();
+    _paidExpiryTimer?.cancel();
     _stopFreeSecondsTicker();
     notifyListeners();
   }
