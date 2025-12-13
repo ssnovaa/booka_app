@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 
@@ -197,6 +198,12 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? get currentUrl => currentChapter?.audioUrl;
   bool get _hasSequence => (player.sequenceState?.sequence.isNotEmpty ?? false);
 
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _pausedByConnectivity = false;
+  String? _connectivityMessage;
+  String? get connectivityMessage => _connectivityMessage;
+  bool get pausedByConnectivity => _pausedByConnectivity;
+
   AudioPlayerProvider() {
     // Позиция
     player.positionStream.listen((pos) {
@@ -207,6 +214,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
 
       _position = pos;
+
+      if (pos > _duration) {
+        _duration = pos;
+      }
       _saveProgressThrottled();
       _scheduleServerPush();
 
@@ -227,8 +238,11 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     // Длительность
     player.durationStream.listen((dur) {
-      if (dur != null) {
-        _duration = dur;
+      if (dur == null) return;
+
+      final safeDuration = dur < _position ? _position : dur;
+      if (safeDuration != _duration) {
+        _duration = safeDuration;
         notifyListeners();
       }
     });
@@ -279,6 +293,41 @@ class AudioPlayerProvider extends ChangeNotifier {
       _rearmFreeSecondsTicker();
       _syncAdScheduleWithPlayback(); // === AD-MODE
     });
+
+    _connectivitySub = Connectivity()
+        .onConnectivityChanged
+        .listen(_handleConnectivityChange);
+
+    // Початковий стан (коли зміни ще не надходили)
+    Connectivity()
+        .checkConnectivity()
+        .then(_handleConnectivityChange);
+  }
+
+  Future<void> _handleConnectivityChange(
+      List<ConnectivityResult> events) async {
+    // Потоки connectivity_plus v6 передают список состояний; берём наличие
+    // любого активного соединения, а пустой список трактуем как отсутствие связи.
+    final connected =
+        events.isNotEmpty && events.any((event) => event != ConnectivityResult.none);
+
+    if (!connected) {
+      if (player.playing) {
+        _pausedByConnectivity = true;
+        await pause(fromConnectivity: true);
+      }
+      _connectivityMessage =
+      'Нет соединения с интернетом. Воспроизведение поставлено на паузу.';
+    } else {
+      _connectivityMessage = null;
+
+      if (_pausedByConnectivity && !player.playing) {
+        _pausedByConnectivity = false;
+        await play();
+      }
+    }
+
+    notifyListeners();
   }
 
   // ======== ЛОКАЛЬНЫЙ СЕКУНДНЫЙ ТИКЕР ДЛЯ БЕЙДЖА МИНУТ/СЕКУНД ========
@@ -350,8 +399,17 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void _pullDurationFromPlayer() {
-    final d = player.duration;
-    _duration = d ?? Duration.zero;
+    final fallback = _chapters.isNotEmpty
+        ? Duration(seconds: _chapters[_currentChapterIndex].duration ?? 0)
+        : Duration.zero;
+
+    final d = player.duration ?? fallback;
+    final safeDuration = d < _position ? _position : d;
+
+    if (safeDuration != _duration) {
+      _duration = safeDuration;
+      notifyListeners();
+    }
   }
 
   // ---------- ИНИЦИАЛИЗАЦИЯ CreditsConsumer ----------
@@ -1265,7 +1323,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> pause() async {
+  Future<void> pause({bool fromConnectivity = false}) async {
+    if (!fromConnectivity) {
+      _pausedByConnectivity = false;
+    }
     await player.pause();
     _creditsConsumer?.stop();
     _serverPushTimer?.cancel();
@@ -1748,6 +1809,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _creditsConsumer?.stop();
     _stopFreeSecondsTicker();
     _stopAdTimer();
+    _connectivitySub?.cancel();
     player.dispose();
     super.dispose();
   }
