@@ -273,7 +273,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         _saveProgressThrottled(force: true);
         await _pushProgressToServer(force: true);
 
-        final hasNext = _currentChapterIndex + 1 < _chapters.length;
+        final sequence = player.sequenceState;
+        final currentIdx = sequence?.currentIndex ?? _currentChapterIndex;
+        final hasNext = sequence?.hasNext ?? currentIdx + 1 < _chapters.length;
 
         if (_userType == UserType.guest) {
           _log('ProcessingState.completed for GUEST — остановка');
@@ -283,7 +285,14 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
 
         if (hasNext) {
-          await nextChapter();
+          final nextIndex = currentIdx + 1;
+          await player.seek(Duration.zero, index: nextIndex);
+          _currentChapterIndex = nextIndex;
+          _position = Duration.zero;
+          _lastPushSig = null;
+          _pullDurationFromPlayer();
+          notifyListeners();
+          await player.play();
         } else {
           await player.seek(Duration.zero);
           await player.pause();
