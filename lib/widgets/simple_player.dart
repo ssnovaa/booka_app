@@ -272,6 +272,8 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final double sliderValue =
     position.inSeconds.toDouble().clamp(0.0, sliderMax);
 
+    final connectivityMessage = provider.connectivityMessage;
+
     return Material(
       color: Colors.transparent,
       child: SafeArea(
@@ -281,6 +283,31 @@ class _SimplePlayerState extends State<SimplePlayer> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (connectivityMessage != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: cs.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: cs.error.withOpacity(0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_off, color: cs.error),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          connectivityMessage,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: cs.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Заголовки
               Text(
                 currentChapter.title,

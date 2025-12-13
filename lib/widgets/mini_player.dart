@@ -118,7 +118,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     final metaDur = (currentChapter.duration ?? 0) > 0
         ? Duration(seconds: currentChapter.duration!)
         : Duration.zero;
-    final dur = rawDur > Duration.zero ? rawDur : metaDur;
+    final knownDur = rawDur > Duration.zero ? rawDur : metaDur;
+    final dur = pos > knownDur ? pos : knownDur;
     final hasDur = dur.inSeconds > 0;
 
     // Тимчасовий максимум, якщо тривалість ще невідома
