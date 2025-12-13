@@ -78,16 +78,26 @@ class ApiClient {
     // ⚠️ Немає ручного Authorization-інтерсептора.
     // Актуальна авторизація додається через AuthInterceptor (див. EntryScreen).
 
-    // Простий retry для GET (при 502/503/504).
+    // Простий retry: таймаути для всіх запитів, 502/503/504 для GET.
     dio.interceptors.add(
       InterceptorsWrapper(
         onError: (err, handler) async {
           final req = err.requestOptions;
           final status = err.response?.statusCode;
           final isGet = req.method.toUpperCase() == 'GET';
-          if (isGet && status != null && {502, 503, 504}.contains(status)) {
+          const retryKey = '_retry_attempt';
+          const maxRetries = 2;
+          final attempt = (req.extra[retryKey] as int?) ?? 0;
+          final isTimeout = err.type == DioExceptionType.connectionTimeout ||
+              err.type == DioExceptionType.receiveTimeout ||
+              err.type == DioExceptionType.sendTimeout;
+          final shouldRetryStatus =
+              isGet && status != null && {502, 503, 504}.contains(status);
+          if ((isTimeout || shouldRetryStatus) && attempt < maxRetries) {
             try {
-              await Future<void>.delayed(const Duration(milliseconds: 100));
+              req.extra[retryKey] = attempt + 1;
+              await Future<void>.delayed(
+                  Duration(milliseconds: 200 * (attempt + 1)));
               final cloneResp = await dio.fetch(req);
               return handler.resolve(cloneResp);
             } catch (_) {}
