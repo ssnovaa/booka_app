@@ -275,7 +275,11 @@ class AudioPlayerProvider extends ChangeNotifier {
 
         final sequence = player.sequenceState;
         final currentIdx = sequence?.currentIndex ?? _currentChapterIndex;
-        final hasNext = sequence?.hasNext ?? currentIdx + 1 < _chapters.length;
+        final sequenceLength =
+            sequence?.effectiveSequence?.length ??
+            sequence?.sequence?.length ??
+            _chapters.length;
+        final hasNext = currentIdx + 1 < sequenceLength;
 
         if (_userType == UserType.guest) {
           _log('ProcessingState.completed for GUEST — остановка');
