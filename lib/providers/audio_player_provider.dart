@@ -167,6 +167,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_userType == value) return;
     _log('userType := $value');
     _userType = value;
+    _exhaustionUiShown = false;
 
     // переключение статусов выключает/включает списание и ad-mode
     if (_userType != UserType.free) {
@@ -203,6 +204,9 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? _connectivityMessage;
   String? get connectivityMessage => _connectivityMessage;
   bool get pausedByConnectivity => _pausedByConnectivity;
+
+  // Чтобы не спамить повторными открытиями экрана reward при обнулении секунд.
+  bool _exhaustionUiShown = false;
 
   AudioPlayerProvider() {
     // Позиция
@@ -411,6 +415,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (kDebugMode) debugPrint('[AUDIO] $msg');
   }
 
+  void _notifyExhaustedUi() {
+    if (_exhaustionUiShown) return;
+    _exhaustionUiShown = true;
+    onCreditsExhausted?.call();
+  }
+
   void _pullDurationFromPlayer() {
     final fallback = _chapters.isNotEmpty
         ? Duration(seconds: _chapters[_currentChapterIndex].duration ?? 0)
@@ -453,7 +463,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           }
         },
         onExhausted: () async {
-          onCreditsExhausted?.call();
+          _notifyExhaustedUi();
         },
         tickInterval: const Duration(seconds: 20),
       );
@@ -505,29 +515,36 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// Сообщает провайдеру о внешнем обновлении баланса секунд.
   /// Используется, когда UserNotifier получает свежие данные с сервера.
   void onExternalFreeSecondsUpdated(int seconds) {
+    _ensureCreditsConsumer();
     final consumer = _creditsConsumer;
-
-    if (consumer == null) {
-      if (seconds <= 0) {
-        _stopFreeSecondsTicker();
-      }
-      return;
-    }
 
     if (seconds <= 0) {
       if (kDebugMode) _log('external free seconds → exhausted ($seconds)');
-      consumer.stop();
       _stopFreeSecondsTicker();
+      _exhaustionUiShown = true;
 
-      // FIX: Если секунды закончились (например, локальный тикер дошел до 0)
-      // и плеер активно играет (и не в ad-mode), то нужно принудительно остановить воспроизведение.
-      if (player.playing && _userType == UserType.free && !_adMode) {
-        _log('external free seconds hit zero while playing. Forcing pause.');
-        player.pause();
+      if (_userType == UserType.free && !_adMode) {
+        if (consumer != null) {
+          // Дожимаем накопленное списание и вызываем общий onExhausted.
+          () async {
+            await consumer.flushPendingForExhaustion();
+            _notifyExhaustedUi();
+          }();
+        } else {
+          () async {
+            if (player.playing) {
+              await player.pause();
+            }
+            _notifyExhaustedUi();
+          }();
+        }
       }
-
       return;
     }
+
+    _exhaustionUiShown = false;
+
+    if (consumer == null) return;
 
     if (consumer.isExhausted) {
       if (kDebugMode) {
