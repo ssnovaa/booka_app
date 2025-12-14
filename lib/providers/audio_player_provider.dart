@@ -898,17 +898,30 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
-    final displayTitle = albumName.isNotEmpty ? albumName : title;
-    final displaySubtitle = title;
-    final description = chapter.order > 0
-        ? 'Глава ${chapter.order}: ${chapter.title}'.trim()
-        : chapter.title;
+    final displayTitle = title.isNotEmpty ? title : albumName;
+    final displaySubtitle = albumName.isNotEmpty ? albumName : artistName;
+    final description = (() {
+      final base = chapter.title.trim();
+      if (chapter.order > 0 && base.isNotEmpty) {
+        return 'Глава ${chapter.order}: $base';
+      }
+      if (chapter.order > 0) return 'Глава ${chapter.order}';
+      return base;
+    })();
+
+    final bookIdRaw = chapter.book?['id'] ?? chapter.book?['book_id'];
+    final bookId = bookIdRaw is int
+        ? bookIdRaw
+        : int.tryParse(bookIdRaw?.toString() ?? '');
+    final mediaId = bookId != null
+        ? 'book:${bookId}_chapter:${chapter.id}'
+        : 'chapter:${chapter.id}';
 
     return AudioSource.uri(
       Uri.parse(normalizedUrl),
       headers: _authHeaders(),
       tag: MediaItem(
-        id: chapter.id.toString(),
+        id: mediaId,
         title: title,
         album: albumName,
         artist: artistName,
@@ -918,6 +931,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         displaySubtitle: displaySubtitle,
         extras: {
           'bookTitle': albumName,
+          if (bookId != null) 'bookId': bookId,
+          'chapterId': chapter.id,
           'chapterOrder': chapter.order,
           'chapterTitle': chapter.title,
           if (artUrl != null) 'artUrl': artUrl,
