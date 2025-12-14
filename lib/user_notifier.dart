@@ -212,20 +212,20 @@ class UserNotifier extends ChangeNotifier {
 
       // Генерик сообщение без сырого server body
       throw AppNetworkException(
-        'Не удалось войти. Попробуйте позже.',
+        'Не вдалося увійти. Спробуйте пізніше.',
         statusCode: r.statusCode,
       );
     } on DioException catch (e) {
       String msg = safeErrorMessage(
         e,
-        fallback: 'Ошибка входа. Проверьте соединение.',
+        fallback: 'Помилка входу. Перевірте з’єднання.',
       );
       if (e.response?.statusCode == 401) {
-        msg = 'Неверный email или пароль';
+        msg = 'Невірний email або пароль';
       }
       throw AppNetworkException(msg, statusCode: e.response?.statusCode);
     } catch (_) {
-      throw AppNetworkException('Произошла ошибка. Попробуйте ещё раз.');
+      throw AppNetworkException('Сталася помилка. Спробуйте ще раз.');
     }
   }
 
@@ -264,7 +264,7 @@ class UserNotifier extends ChangeNotifier {
       // Залишаємо авторизацію, помилку передаємо у безпечному вигляді
       final sc = e.response?.statusCode ?? 0;
       throw AppNetworkException(
-        safeErrorMessage(e, fallback: 'Не удалось загрузить профиль'),
+        safeErrorMessage(e, fallback: 'Не вдалося завантажити профіль'),
         statusCode: sc,
       );
     } on AppNetworkException catch (e) {

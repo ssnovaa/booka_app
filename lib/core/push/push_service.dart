@@ -126,10 +126,11 @@ class PushService {
       alert: true, badge: true, sound: true,
     );
 
+    // 🇺🇦 Українізація опису каналу
     const androidChannel = AndroidNotificationChannel(
       'booka_default',
       'Booka · Push',
-      description: 'Default channel',
+      description: 'Канал за замовчуванням для push-сповіщень Booka',
       importance: Importance.high,
       showBadge: true,
       playSound: true,
@@ -255,6 +256,7 @@ class PushService {
         android: AndroidNotificationDetails(
           'booka_default',
           'Booka · Push',
+          channelDescription: 'Канал за замовчуванням для push-сповіщень Booka',
           priority: Priority.high,
           importance: Importance.high,
           icon: '@drawable/ic_stat_notify',
