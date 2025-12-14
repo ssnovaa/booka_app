@@ -1,6 +1,8 @@
-// lib/core/push/push_service.dart (З ВИПРАВЛЕННЯМ LateInitializationError)
+// lib/core/push/push_service.dart
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui'; // 🟢 Для IsolateNameServer
+import 'dart:isolate'; // 🟢 Для SendPort/ReceivePort
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -18,195 +20,219 @@ import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/models/user.dart' show getUserType;
 
-// Фоновий обробник (ізолят)
+// Ім'я "порту" для зв'язку між фоном та UI
+const String kPlayerControlPort = 'booka_player_control_port';
+
+// -----------------------------------------------------------------------------
+// 🔥 ФОНОВИЙ ОБРОБНИК (ІЗОЛЯТ)
+// -----------------------------------------------------------------------------
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
   } catch (_) {}
 
-  if (message.data['type'] == 'subscription_update') {
-    if (kDebugMode) {
-      print('[PUSH_BG] Отримано фонове сповіщення про оновлення підписки!');
+  final data = message.data;
+  if (kDebugMode) {
+    print('[PUSH_BG] Background message received: $data');
+  }
+
+  // 🔴 1. ОБРОБКА КОМАНДИ ЗУПИНКИ (force_stop_player)
+  // Ми в іншому потоці, тому шукаємо "порт" головного потоку і кричимо туди "STOP"
+  if (data['action'] == 'force_stop_player') {
+    if (kDebugMode) print('[PUSH_BG] 🚀 Sending STOP signal to Main Isolate...');
+
+    final SendPort? uiPort = IsolateNameServer.lookupPortByName(kPlayerControlPort);
+    if (uiPort != null) {
+      uiPort.send('stop_player');
+    } else {
+      if (kDebugMode) print('[PUSH_BG] ⚠️ UI Port not found (App might be killed).');
     }
+  }
+
+  // 2. Оновлення підписки (існуюча логіка)
+  if (data['type'] == 'subscription_update') {
+    if (kDebugMode) print('[PUSH_BG] Subscription update received');
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('force_refresh_user_status', true);
-      if (kDebugMode) {
-        print('[PUSH_BG] Встановлено прапор force_refresh_user_status');
-      }
     } catch (e) {
-      if (kDebugMode) {
-        print('[PUSH_BG] Помилка встановлення прапора SharedPreferences: $e');
-      }
+      if (kDebugMode) print('[PUSH_BG] Prefs error: $e');
     }
   }
 }
 
+// -----------------------------------------------------------------------------
+// MAIN SERVICE
+// -----------------------------------------------------------------------------
 class PushService {
   PushService._();
   static final PushService instance = PushService._();
 
   late final FirebaseMessaging _fcm;
+  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
 
-  final FlutterLocalNotificationsPlugin _local =
-  FlutterLocalNotificationsPlugin();
   GlobalKey<NavigatorState>? _navigatorKey;
-
   UserNotifier? _userNotifier;
 
-  // 🔥 FIX: Прапори стану
-  bool _initializing = false;
-  bool _ready = false; // Стає true, коли _fcm ініціалізовано
+  // 🔥 Порт для отримання команд від фонового ізоляту
+  ReceivePort? _uiReceivePort;
 
+  bool _initializing = false;
+  bool _ready = false;
   String? _lastTokenSent;
 
   Future<void> init({
     GlobalKey<NavigatorState>? navigatorKey,
     UserNotifier? userNotifier,
   }) async {
-    // Якщо вже готово або в процесі — виходимо
     if (_ready || _initializing) return;
     _initializing = true;
 
     _navigatorKey = navigatorKey;
     _userNotifier = userNotifier;
 
+    // 🟢 РЕЄСТРАЦІЯ ПОРТУ (Слухаємо команди від фону)
+    _registerBackgroundPort();
+
     try {
       await Firebase.initializeApp();
     } catch (e) {
-      if (kDebugMode) print('Firebase.initializeApp (в PushService) failed: $e');
+      if (kDebugMode) print('Firebase.initializeApp failed: $e');
     }
 
     _fcm = FirebaseMessaging.instance;
-    // ✅ Тепер FCM готовий до використання
     _ready = true;
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    const androidInit =
-    AndroidInitializationSettings('@drawable/ic_stat_notify');
+    // ... (Налаштування каналів і дозволів) ...
+    const androidInit = AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
-    const initSettings =
-    InitializationSettings(android: androidInit, iOS: iosInit);
     await _local.initialize(
-      initSettings,
+      InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: (resp) => _onLocalTap(resp),
-      onDidReceiveBackgroundNotificationResponse: _onLocalTap,
     );
 
     if (Platform.isIOS) {
-      final settings = await _fcm.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        announcement: false,
-        criticalAlert: false,
-        provisional: false,
-        carPlay: false,
-      );
-      if (kDebugMode) {
-        print('🔔 iOS notification permission: ${settings.authorizationStatus}');
-      }
+      await _fcm.requestPermission(alert: true, badge: true, sound: true);
     }
 
     await _fcm.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
+      alert: true, badge: true, sound: true,
     );
 
     const androidChannel = AndroidNotificationChannel(
       'booka_default',
       'Booka · Push',
-      description: 'Канал за замовчуванням для push-сповіщень Booka',
+      description: 'Default channel',
       importance: Importance.high,
       showBadge: true,
       playSound: true,
       enableVibration: true,
     );
     await _local
-        .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(androidChannel);
 
     if (Platform.isAndroid) {
-      final status = await Permission.notification.status;
-      if (!status.isGranted) {
-        final res = await Permission.notification.request();
-        if (kDebugMode) {
-          print('🔔 Android notification result: $res');
-        }
+      if (!await Permission.notification.isGranted) {
+        await Permission.notification.request();
       }
     }
 
-    FirebaseMessaging.onMessage
-        .listen((msg) => _handleRemoteMessage(msg, fromTap: false));
-    FirebaseMessaging.onMessageOpenedApp
-        .listen((msg) => _handleRemoteMessage(msg, fromTap: true));
+    // Слухачі Foreground
+    FirebaseMessaging.onMessage.listen((msg) => _handleRemoteMessage(msg, fromTap: false));
+    FirebaseMessaging.onMessageOpenedApp.listen((msg) => _handleRemoteMessage(msg, fromTap: true));
 
     final initialMessage = await _fcm.getInitialMessage();
     if (initialMessage != null) {
       await _handleRemoteMessage(initialMessage, fromTap: true);
     }
 
-    // Реєстрація токена (тепер безпечно, бо _ready = true)
     await registerToken();
-
-    _fcm.onTokenRefresh
-        .listen((token) => registerToken(force: true, overrideToken: token));
+    _fcm.onTokenRefresh.listen((token) => registerToken(force: true, overrideToken: token));
 
     _initializing = false;
   }
 
-  Future<void> _handleRemoteMessage(
-      RemoteMessage msg, {
-        required bool fromTap,
-      }) async {
+  // 🟢 Магія зв'язку: Реєструємо порт в системі, щоб фон міг його знайти
+  void _registerBackgroundPort() {
+    try {
+      // Закриваємо старий порт, якщо був
+      _uiReceivePort?.close();
+
+      _uiReceivePort = ReceivePort();
+      IsolateNameServer.removePortNameMapping(kPlayerControlPort);
+      final registered = IsolateNameServer.registerPortWithName(
+        _uiReceivePort!.sendPort,
+        kPlayerControlPort,
+      );
+
+      if (kDebugMode) print('[PUSH] UI Port registered: $registered');
+
+      // Слухаємо повідомлення від фонового ізоляту
+      _uiReceivePort!.listen((message) {
+        if (message == 'stop_player') {
+          if (kDebugMode) print('[PUSH] 🛑 Received STOP signal from Background!');
+          _performStopPlayer();
+        }
+      });
+    } catch (e) {
+      if (kDebugMode) print('[PUSH] Port registration error: $e');
+    }
+  }
+
+  // 🟢 Метод зупинки (викликається і з foreground, і через порт з background)
+  Future<void> _performStopPlayer() async {
+    final ctx = _navigatorKey?.currentContext;
+    if (ctx != null) {
+      try {
+        final audio = ctx.read<AudioPlayerProvider>();
+        // Примусова пауза
+        if (audio.isPlaying) {
+          await audio.pause();
+          if (kDebugMode) print('[PUSH] ✅ Player PAUSED successfully.');
+        }
+      } catch (e) {
+        if (kDebugMode) print('[PUSH] Error pausing player: $e');
+      }
+
+      // Оновлюємо статус юзера, щоб показати рекламу/блокування
+      if (_userNotifier != null) {
+        await _userNotifier!.refreshUserFromMe();
+        try {
+          final u = _userNotifier!.user;
+          final audio = ctx.read<AudioPlayerProvider>();
+          if (u != null) {
+            audio.userType = getUserType(u);
+            audio.notifyListeners();
+          }
+        } catch (_) {}
+      }
+    } else {
+      if (kDebugMode) print('[PUSH] Context is null, cannot stop player.');
+    }
+  }
+
+  Future<void> _handleRemoteMessage(RemoteMessage msg, {required bool fromTap}) async {
     final data = msg.data;
-    if (kDebugMode) {
-      print('[PUSH] message received: fromTap=$fromTap, data=$data');
+
+    // 1. Обробка force_stop_player (Foreground випадок)
+    if (data['action'] == 'force_stop_player') {
+      if (kDebugMode) print('[PUSH] 🔥 Foreground STOP action received');
+      await _performStopPlayer();
+      return;
     }
 
+    // 2. Обробка subscription_update
     if (data['type'] == 'subscription_update') {
-      if (_userNotifier != null) {
-        try {
-          if (kDebugMode) {
-            print('[PUSH] subscription_update → running refreshUserFromMe()');
-          }
-          await _userNotifier!.refreshUserFromMe();
-
-          final ctx = _navigatorKey?.currentContext;
-          if (ctx != null) {
-            final u = _userNotifier!.user;
-            if (u != null) {
-              final audio = ctx.read<AudioPlayerProvider>();
-              audio.userType = getUserType(u);
-              audio.notifyListeners();
-              if (kDebugMode) {
-                print('[PUSH] userType updated from push -> ${audio.userType}');
-              }
-            }
-          } else {
-            if (kDebugMode) {
-              print(
-                  '[PUSH] no navigator context, skipped AudioPlayer update (but UserNotifier updated!)');
-            }
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print('[PUSH] failed to refresh subscription status from push: $e');
-          }
-        }
-      } else {
-        if (kDebugMode) {
-          print('[PUSH] no UserNotifier, skip subscription refresh');
-        }
-      }
+      if (kDebugMode) print('[PUSH] Subscription update (foreground)');
+      await _performStopPlayer(); // Теж оновлюємо статус
       return;
     }
 
@@ -214,14 +240,13 @@ class PushService {
       _handleDeepLink(data);
     }
 
-    if (!fromTap) {
+    if (!fromTap && (msg.notification?.title != null || msg.notification?.body != null)) {
       await _onForegroundMessage(msg);
     }
   }
 
   Future<void> _onForegroundMessage(RemoteMessage msg) async {
     final notif = msg.notification;
-
     await _local.show(
       msg.hashCode,
       notif?.title ?? 'Booka',
@@ -230,8 +255,6 @@ class PushService {
         android: AndroidNotificationDetails(
           'booka_default',
           'Booka · Push',
-          channelDescription:
-          'Канал за замовчуванням для push-сповіщень Booka',
           priority: Priority.high,
           importance: Importance.high,
           icon: '@drawable/ic_stat_notify',
@@ -242,21 +265,15 @@ class PushService {
     );
   }
 
-  static void _onLocalTap(NotificationResponse resp) {
-  }
+  static void _onLocalTap(NotificationResponse resp) {}
 
   void _handleDeepLink(Map<String, dynamic> data) {
     if (_navigatorKey == null || data.isEmpty) return;
-
     final bookId = data['book_id'] ?? data['bookId'];
     if (bookId != null) {
-      _navigatorKey!.currentState?.pushNamed(
-        '/book',
-        arguments: {'id': bookId},
-      );
+      _navigatorKey!.currentState?.pushNamed('/book', arguments: {'id': bookId});
       return;
     }
-
     final route = data['route'];
     if (route is String && route.isNotEmpty) {
       _navigatorKey!.currentState?.pushNamed(route, arguments: data);
@@ -264,11 +281,7 @@ class PushService {
   }
 
   Future<void> registerToken({bool force = false, String? overrideToken}) async {
-    // 🔥 FIX: Якщо сервіс ще не готовий (ініціалізація ще йде або не почалась),
-    // ми просто ігноруємо цей виклик.
-    // Коли init() завершиться, він сам викличе registerToken().
     if (!_ready) return;
-
     try {
       final token = overrideToken ?? await _fcm.getToken();
       if (token == null) return;
@@ -282,14 +295,11 @@ class PushService {
         '/push/register',
         data: {
           'token': token,
-          'platform': Platform.isAndroid
-              ? 'android'
-              : (Platform.isIOS ? 'ios' : 'other'),
+          'platform': Platform.isAndroid ? 'android' : (Platform.isIOS ? 'ios' : 'other'),
           'app_version': appVersion,
         },
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );
-
       _lastTokenSent = token;
       if (kDebugMode) print('✅ Push token зареєстрований');
     } catch (e) {
