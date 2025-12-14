@@ -316,8 +316,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         _pausedByConnectivity = true;
         await pause(fromConnectivity: true);
       }
+      // 🇺🇦 UKR FIX
       _connectivityMessage =
-      'Нет соединения с интернетом. Воспроизведение поставлено на паузу.';
+      'Немає з’єднання з інтернетом. Відтворення призупинено.';
     } else {
       _connectivityMessage = null;
 
@@ -881,14 +882,14 @@ class AudioPlayerProvider extends ChangeNotifier {
       throw StateError('Chapter ${chapter.id} has no valid audioUrl');
     }
 
-    final albumName = (bookTitle != null && bookTitle.trim().isNotEmpty)
-        ? bookTitle.trim()
-        : _titleFromBook(chapter.book);
+    final albumName = ((bookTitle ?? '').trim()).isNotEmpty
+        ? bookTitle!.trim()
+        : (_titleFromBook(chapter.book) ?? 'Аудіокнига');
 
     final artistName = (() {
       final s = (artist ?? '').trim();
       if (s.isNotEmpty) return s;
-      return _authorFromBook(chapter.book);
+      return _authorFromBook(chapter.book) ?? 'Booka';
     })();
 
     final artUrl = (() {
@@ -897,15 +898,51 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
+    final displayTitle = title.isNotEmpty ? title : albumName;
+    final displaySubtitle = (() {
+      if (artistName != null && artistName.isNotEmpty) return artistName;
+      return albumName;
+    })();
+
+    final description = (() {
+      final base = chapter.title.trim();
+      final order = chapter.order ?? 0;
+      if (order > 0 && base.isNotEmpty) {
+        return 'Глава $order: $base';
+      }
+      if (order > 0) return 'Глава $order';
+      return base;
+    })();
+
+    final bookIdRaw = chapter.book?['id'] ?? chapter.book?['book_id'];
+    final bookId = bookIdRaw is int
+        ? bookIdRaw
+        : int.tryParse(bookIdRaw?.toString() ?? '');
+    final mediaId = bookId != null
+        ? 'book:${bookId}_chapter:${chapter.id}'
+        : 'chapter:${chapter.id}';
+
     return AudioSource.uri(
       Uri.parse(normalizedUrl),
       headers: _authHeaders(),
       tag: MediaItem(
-        id: chapter.id.toString(),
+        id: mediaId,
         title: title,
         album: albumName,
         artist: artistName,
         artUri: artUrl != null ? Uri.parse(artUrl) : null,
+        displayDescription: description.isNotEmpty ? description : null,
+        displayTitle: displayTitle,
+        displaySubtitle: displaySubtitle,
+        extras: {
+          'bookTitle': albumName,
+          if (artistName != null) 'artistName': artistName,
+          if (bookId != null) 'bookId': bookId,
+          'chapterId': chapter.id,
+          'chapterOrder': chapter.order,
+          'chapterTitle': chapter.title,
+          if (artUrl != null) 'artUrl': artUrl,
+        },
         duration: (chapter.duration != null && chapter.duration! > 0)
             ? Duration(seconds: chapter.duration!)
             : null,
@@ -1533,7 +1570,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
-      final cover = _absImageUrl(b.coverUrl);
+      final cover = _absImageUrl(b.displayCoverUrl);
 
       // 🔥 5. ПЕРЕДАЕМ ПОЗИЦИЮ В SETCHAPTERS
       await setChapters(
