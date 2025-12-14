@@ -899,13 +899,18 @@ class AudioPlayerProvider extends ChangeNotifier {
     })();
 
     final displayTitle = title.isNotEmpty ? title : albumName;
-    final displaySubtitle = albumName.isNotEmpty ? albumName : artistName;
+    final displaySubtitle = (() {
+      if (artistName != null && artistName.isNotEmpty) return artistName;
+      return albumName;
+    })();
+
     final description = (() {
       final base = chapter.title.trim();
-      if (chapter.order > 0 && base.isNotEmpty) {
-        return 'Глава ${chapter.order}: $base';
+      final order = chapter.order ?? 0;
+      if (order > 0 && base.isNotEmpty) {
+        return 'Глава $order: $base';
       }
-      if (chapter.order > 0) return 'Глава ${chapter.order}';
+      if (order > 0) return 'Глава $order';
       return base;
     })();
 
@@ -931,6 +936,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         displaySubtitle: displaySubtitle,
         extras: {
           'bookTitle': albumName,
+          if (artistName != null) 'artistName': artistName,
           if (bookId != null) 'bookId': bookId,
           'chapterId': chapter.id,
           'chapterOrder': chapter.order,
