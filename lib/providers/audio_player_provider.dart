@@ -882,14 +882,14 @@ class AudioPlayerProvider extends ChangeNotifier {
       throw StateError('Chapter ${chapter.id} has no valid audioUrl');
     }
 
-    final albumName = (bookTitle != null && bookTitle.trim().isNotEmpty)
-        ? bookTitle.trim()
-        : _titleFromBook(chapter.book);
+    final albumName = ((bookTitle ?? '').trim()).isNotEmpty
+        ? bookTitle!.trim()
+        : (_titleFromBook(chapter.book) ?? 'Аудіокнига');
 
     final artistName = (() {
       final s = (artist ?? '').trim();
       if (s.isNotEmpty) return s;
-      return _authorFromBook(chapter.book);
+      return _authorFromBook(chapter.book) ?? 'Booka';
     })();
 
     final artUrl = (() {
@@ -897,6 +897,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (c1 != null && c1.isNotEmpty) return c1;
       return _coverFromBook(chapter.book);
     })();
+
+    final displayTitle = albumName.isNotEmpty ? albumName : title;
+    final displaySubtitle = title;
+    final description = chapter.order > 0
+        ? 'Глава ${chapter.order}: ${chapter.title}'.trim()
+        : chapter.title;
 
     return AudioSource.uri(
       Uri.parse(normalizedUrl),
@@ -907,6 +913,15 @@ class AudioPlayerProvider extends ChangeNotifier {
         album: albumName,
         artist: artistName,
         artUri: artUrl != null ? Uri.parse(artUrl) : null,
+        displayDescription: description.isNotEmpty ? description : null,
+        displayTitle: displayTitle,
+        displaySubtitle: displaySubtitle,
+        extras: {
+          'bookTitle': albumName,
+          'chapterOrder': chapter.order,
+          'chapterTitle': chapter.title,
+          if (artUrl != null) 'artUrl': artUrl,
+        },
         duration: (chapter.duration != null && chapter.duration! > 0)
             ? Duration(seconds: chapter.duration!)
             : null,
@@ -1534,7 +1549,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
-      final cover = _absImageUrl(b.coverUrl);
+      final cover = _absImageUrl(b.displayCoverUrl);
 
       // 🔥 5. ПЕРЕДАЕМ ПОЗИЦИЮ В SETCHAPTERS
       await setChapters(
