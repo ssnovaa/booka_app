@@ -1,4 +1,4 @@
-// lib/main.dart (РАБОЧИЙ + ОПТИМИЗИРОВАННЫЙ СТАРТ + UI ЗАГРУЗКИ РЕКЛАМЫ)
+// lib/main.dart (РАБОЧИЙ + ОПТИМИЗИРОВАННЫЙ СТАРТ)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -302,60 +302,15 @@ Future<bool> _openRewardScreen() async {
 }
 
 /// Показываем межстраничную рекламу для ad-mode.
-/// С визуальным индикатором загрузки, чтобы пользователь понимал, почему пауза.
+/// На время показа ставим плеер на паузу и затем возвращаем воспроизведение.
 Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   if (_interstitialInProgress != null && !_interstitialInProgress!.isCompleted) {
     return _interstitialInProgress!.future; // уже показываем, не запускаем вторую
   }
 
-  // 1. Пауза
   final wasPlaying = audio.isPlaying;
   if (wasPlaying) {
     await audio.pause();
-  }
-
-  // 2. 🟢 Показываем индикатор загрузки
-  final nav = _navKey.currentState;
-  bool dialogOpen = false;
-
-  if (nav != null && nav.mounted) {
-    dialogOpen = true;
-    showDialog(
-      context: nav.context,
-      barrierDismissible: false, // Запрещаем закрывать тапом
-      builder: (ctx) {
-        // Запрещаем закрывать кнопкой "Назад"
-        return PopScope(
-          canPop: false,
-          child: Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text(
-                    "Завантаження реклами...",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // Хелпер для закрытия диалога
-  void closeLoader() {
-    if (dialogOpen && nav != null && nav.canPop()) {
-      nav.pop(); // Закрываем диалог
-      dialogOpen = false;
-    }
   }
 
   final completer = _interstitialInProgress = Completer<void>();
@@ -372,9 +327,6 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
     request: const AdRequest(),
     adLoadCallback: InterstitialAdLoadCallback(
       onAdLoaded: (InterstitialAd ad) {
-        // 3. 🟢 Реклама загрузилась — скрываем лоадер
-        closeLoader();
-
         ad.fullScreenContentCallback = FullScreenContentCallback(
           onAdDismissedFullScreenContent: (ad) {
             ad.dispose();
@@ -395,11 +347,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
         ad.show(); // пользователь закроет — колбэк сработает
       },
       onAdFailedToLoad: (LoadAdError error) {
-        // 4. 🟢 Ошибка загрузки — тоже скрываем лоадер и продолжаем играть
-        closeLoader();
-
-        debugPrint('[AD] Failed to load interstitial: $error');
-
+        // Не критично: просто продолжаем воспроизведение.
         if (wasPlaying) {
           unawaited(audio.play());
         }

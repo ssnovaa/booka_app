@@ -316,9 +316,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         _pausedByConnectivity = true;
         await pause(fromConnectivity: true);
       }
-      // 🇺🇦 UKR FIX
       _connectivityMessage =
-      'Немає з’єднання з інтернетом. Відтворення призупинено.';
+      'Нет соединения с интернетом. Воспроизведение поставлено на паузу.';
     } else {
       _connectivityMessage = null;
 
