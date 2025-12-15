@@ -111,7 +111,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool _adConsentShown = false;      // экран согласия уже показывали один раз
   DateTime? _lastAdAt;               // когда последний раз показали рекламу
   Timer? _adTimer;                   // одноразовый таймер до следующего показа
-  static const Duration _adInterval = Duration(minutes: 1); // прод: 10 минут
+  static const Duration _adInterval = Duration(minutes: 10); // прод: 10 минут
 
   // ⬇️ Счётчик приостановок расписания (Rewarded/пейволл/диалоги)
   int _adScheduleSuspend = 0;
