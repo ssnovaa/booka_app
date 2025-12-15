@@ -355,8 +355,12 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
   // Формат mm:ss
   String _fmt(Duration d) {
+    final hours = d.inHours;
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (hours > 0) {
+      return '$hours:$mm:$ss';
+    }
     return '$mm:$ss';
   }
 

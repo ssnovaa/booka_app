@@ -1063,6 +1063,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ? _resolveBgUrl(audio.currentBook!)
                         : _resolveBgUrl(_book),
                     onExpand: _openFullPlayer,
+                    timeLayout: MiniTimeLayout.above,
                     // 👇 якщо показуємо рекламу — притискаємо до банера
                     bottomSafeMargin: showAds ? 0 : 8,
                   ),
