@@ -103,6 +103,10 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool _adMode = false;
   bool _adConsentShown = false;
 
+  // 🔥 Статус загрузки рекламы (для UI, если нужно)
+  bool _isAdLoading = false;
+  bool get isAdLoading => _isAdLoading;
+
   // 🔥 Поле, которое терялось ранее
   DateTime? _lastAdAt;
 
@@ -138,7 +142,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     return _remainingAdDuration;
   }
 
-  // Для сумісності (якщо десь ще використовується)
+  // Для сумісності
   DateTime? get nextAdTime => _adTargetTime;
 
   // ====== СЕКУНДНЫЙ ЛОКАЛЬНЫЙ ТИКЕР ДЛЯ UI
@@ -163,6 +167,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   DateTime _lastUiTick = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _uiTick = Duration(milliseconds: 200);
 
+  // троттлинг сохранения прогресса (локально)
   DateTime? _lastPersistAt;
   final Duration _persistEvery = const Duration(seconds: 10);
 
@@ -172,6 +177,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Map<String, dynamic>? _progressMapCache;
 
+  // ======= PUSH прогресса на API ======= и дебаунс
   Timer? _serverPushTimer;
   String? _lastPushSig;
   final Duration _pushDelay = const Duration(seconds: 5);
@@ -185,11 +191,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log('userType := $value');
     _userType = value;
 
+    // переключение статусов выключает/включает списание и ad-mode
     if (_userType != UserType.free) {
       _disableAdMode();
     }
     _reinitCreditsConsumer();
-    _rearmFreeSecondsTicker();
+    _rearmFreeSecondsTicker(); // переключим тикер с учётом нового статуса
     notifyListeners();
   }
 
@@ -221,6 +228,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool get pausedByConnectivity => _pausedByConnectivity;
 
   AudioPlayerProvider() {
+    // Позиция
     player.positionStream.listen((pos) {
       if (!_hasSequence) return;
 
@@ -245,11 +253,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
 
+    // Сводное состояние плеера
     player.playerStateStream.listen((_) {
       _rearmFreeSecondsTicker();
       _syncAdScheduleWithPlayback();
     });
 
+    // Длительность
     player.durationStream.listen((dur) {
       if (dur == null) return;
 
@@ -262,6 +272,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     player.sequenceStateStream.listen((_) => _pullDurationFromPlayer());
 
+    // Переключение раздела
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
         _currentChapterIndex = idx;
@@ -272,12 +283,14 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
 
+    // Скорость
     player.speedStream.listen((s) {
       _speed = s;
       _rearmFreeSecondsTicker();
       notifyListeners();
     });
 
+    // Конец трека/раздела
     player.processingStateStream.listen((state) async {
       if (state == ProcessingState.completed) {
         _saveProgressThrottled(force: true);
@@ -319,6 +332,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         events.isNotEmpty && events.any((event) => event != ConnectivityResult.none);
 
     if (!connected) {
+      // 🔴 ИНТЕРНЕТ ПРОПАЛ
       if (player.playing) {
         _pausedByConnectivity = true;
         pause(fromConnectivity: true);
@@ -328,6 +342,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       notifyListeners();
     } else {
+      // 🟢 ИНТЕРНЕТ ПОЯВИЛСЯ
       _connectivityMessage = null;
       notifyListeners();
 
@@ -342,6 +357,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
+  // ======== ЛОКАЛЬНЫЙ СЕКУНДНЫЙ ТИКЕР ДЛЯ БЕЙДЖА МИНУТ/СЕКУНД ========
   void _startFreeSecondsTicker() {
     if (_freeSecondsTicker != null) return;
     _log('freeSecondsTicker: START');
@@ -367,6 +383,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _freeSecondsTicker = null;
   }
 
+  // Публичная безопасная обёртка
   void rearmFreeSecondsTickerSafely() {
     _rearmFreeSecondsTicker(retryIfNotReady: true);
   }
@@ -436,9 +453,13 @@ class AudioPlayerProvider extends ChangeNotifier {
         dio: ApiClient.i(),
         player: player,
         isPaid: () => _userType == UserType.paid,
+        // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
         isFreeUser: () => _userType == UserType.free && !_adMode,
         onBalanceUpdated: (secLeft, minLeft) {
+          // Сервер — истина. Жёстко выставляем остаток.
           setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
+
+          // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
           if (secLeft > 0 && _adMode) {
             _log('balance>0 → disable ad-mode');
             _disableAdMode();
@@ -507,10 +528,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       consumer.stop();
       _stopFreeSecondsTicker();
 
+      // FIX: Если секунды закончились (например, локальный тикер дошел до 0)
+      // и плеер активно играет (и не в ad-mode), то нужно принудительно остановить воспроизведение.
       if (player.playing && _userType == UserType.free && !_adMode) {
         _log('external free seconds hit zero while playing. Forcing pause.');
         player.pause();
       }
+
       return;
     }
 
@@ -814,8 +838,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
-  // ---------- HELPERS: API access ----------
+  // ---------- HELPERS: API access / Chapters fetching (FIX: Добавлен _retrieveAllChaptersForBook) ----------
 
+  // Новый вспомогательный метод для получения полного списка глав для книги.
   Future<List<Chapter>> _retrieveAllChaptersForBook(int bookId) async {
     try {
       final resp = await ApiClient.i().get(
@@ -836,6 +861,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         book: {'id': bookId},
       )).toList();
 
+      // 🔥 ДОБАВЛЕНО: Сохраняем в кэш для следующего раза
       if (list.isNotEmpty) {
         _cacheChaptersForBook(bookId, list);
       }
@@ -1185,6 +1211,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         Book? book,
         UserType? userTypeOverride,
         bool ignoreSavedPosition = false,
+        // 🔥 1. НОВЫЙ ПАРАМЕТР: точная позиция старта
         Duration? initialPositionOverride,
       }) async {
     final effectiveType = userTypeOverride ?? _userType;
@@ -1218,8 +1245,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
 
+    // 🔥 2. ЛОГИКА ОПРЕДЕЛЕНИЯ ПОЗИЦИИ
     Duration initialPos = initialPositionOverride ?? Duration.zero;
 
+    // Если override не передан, используем старую логику проверки истории
     if (initialPositionOverride == null) {
       if (book != null && !ignoreSavedPosition) {
         final saved = await _getProgressForBook(book.id);
@@ -1235,6 +1264,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           }
         }
       } else {
+        // Фоллбэк для плейлиста из 1 элемента
         if (_position > Duration.zero && playlistChapters.length == 1) {
           initialPos = _position;
         }
@@ -1267,7 +1297,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       coverUrl: coverUrl,
     );
 
+    _log(
+        'setChapters: ${_chapters.length} items, start=$_currentChapterIndex, initialPos=${initialPos.inSeconds}s, ignoreSaved=$ignoreSavedPosition');
     try {
+      // 🔥 3. АТОМАРНАЯ ИНИЦИАЛИЗАЦИЯ
       await player.setAudioSource(
         playlist,
         initialIndex: _currentChapterIndex,
@@ -1310,20 +1343,25 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_userType == UserType.free) {
       final secondsLeft = getFreeSeconds?.call() ?? 0;
 
+      // Если секунды закончились и ad-mode ещё не включён — спрашиваем согласие.
       if (secondsLeft <= 0 && !_adMode) {
         if (!_adConsentShown) {
           _adConsentShown = true;
           final ok = await (onNeedAdConsent?.call() ?? Future.value(false));
           if (ok) {
-            _enableAdMode();
+            _enableAdMode(); // включает расписание рекламы и отключает списание секунд
           } else {
+            // Пользователь уже увидел экран выбора (reward/ads-mode) и отменил.
+            // Не показываем второй раз подряд, просто выходим из play().
             return;
           }
         } else {
+          // экран уже показывали и отказались → просто не стартуем
           onCreditsExhausted?.call();
           return;
         }
       } else if (secondsLeft > 0) {
+        // На всякий случай снимаем флаг «исчерпано», если секунды вернулись.
         _creditsConsumer?.resetExhaustion();
       }
     }
@@ -1333,7 +1371,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_adMode) {
       _syncAdScheduleWithPlayback();
     } else {
-      _creditsConsumer?.start();
+      _creditsConsumer?.start(); // обычное списание для free с секундами
     }
 
     rearmFreeSecondsTickerSafely();
@@ -1349,7 +1387,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
 
-    _stopAdTimer(); // 🔥 ПАУЗА ТАЙМЕРА РЕКЛАМИ
+    _stopAdTimer(); // === AD-MODE FIX
 
     _saveProgressThrottled(force: true);
     await _pushProgressToServer(force: true, allowZero: false);
@@ -1362,7 +1400,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
 
-    _stopAdTimer(); // 🔥 ПАУЗА ТАЙМЕРА РЕКЛАМИ
+    _stopAdTimer(); // === AD-MODE FIX
 
     _saveProgressThrottled(force: true);
     await _pushProgressToServer(force: true, allowZero: false);
@@ -1464,8 +1502,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ ----------
-
+  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ (FIX: Загрузка полного плейлиста для авторизованных) ----------
   Future<bool> _prepareFromSavedIfNeeded() async {
     if (_hasSequence) return true;
     if (_isPreparing) {
@@ -1512,8 +1549,10 @@ class AudioPlayerProvider extends ChangeNotifier {
       List<Chapter> chaptersToLoad;
       int startIndex = 0;
 
+      // 🔥 4. СОХРАНЯЕМ ТЕКУЩУЮ ПОЗИЦИЮ ПЕРЕД ВЫЗОВОМ SETCHAPTERS
       final posToRestore = _position;
 
+      // Логіка гостя (тільки перша глава)
       if (effectiveUserType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
@@ -1525,6 +1564,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         chaptersToLoad = [ch];
         startIndex = 0;
       } else {
+        // Для авторизованных: загружаем полный список.
+
+        // 🔥 ИЗМЕНЕНИЕ НАЧАЛО: Пробуем кэш, потом сеть
         List<Chapter> fullList = await _getCachedChaptersForBook(b.id);
 
         if (fullList.isNotEmpty) {
@@ -1533,6 +1575,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           _log('_prepare: cache miss, fetching from network...');
           fullList = await _retrieveAllChaptersForBook(b.id);
         }
+        // 🔥 ИЗМЕНЕНИЕ КОНЕЦ
 
         if (fullList.isEmpty) {
           _log('_prepare: failed to fetch full chapter list for book ${b.id}, defaulting to single saved chapter');
@@ -1540,6 +1583,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           startIndex = 0;
         } else {
           chaptersToLoad = fullList;
+          // Находим индекс главы, с которой остановились, в полном списке.
           startIndex = fullList.indexWhere((c) => c.id == ch.id);
           if (startIndex < 0) {
             _log('_prepare: last listened chapter not found in full list, starting at first chapter');
@@ -1550,6 +1594,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final cover = _absImageUrl(b.displayCoverUrl);
 
+      // 🔥 5. ПЕРЕДАЕМ ПОЗИЦИЮ В SETCHAPTERS
       await setChapters(
         chaptersToLoad,
         startIndex: startIndex,
@@ -1559,8 +1604,10 @@ class AudioPlayerProvider extends ChangeNotifier {
         coverUrl: cover,
         userTypeOverride: effectiveUserType,
         ignoreSavedPosition: true,
-        initialPositionOverride: posToRestore,
+        initialPositionOverride: posToRestore, // <--- Важно
       );
+
+      // 🔥 6. УДАЛЕН БЛОК SEEK. Теперь инициализация атомарна.
 
       return true;
     } finally {
@@ -1612,8 +1659,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  // ---------- UI helpers (восстановлены методы!) ----------
-
+  // ---------- UI helpers ----------
   Future<bool> handleBottomPlayTap() async {
     _log('handleBottomPlayTap()');
     final prepared = await _prepareFromSavedIfNeeded();
@@ -1707,7 +1753,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log('enable ad-mode');
     _adMode = true;
     _creditsConsumer?.stop();
-    _remainingAdDuration = _adInterval; // Скидаємо таймер на початок
+    // 🔥 При включении сбрасываем таймер на полный интервал
+    _remainingAdDuration = _adInterval;
     _syncAdScheduleWithPlayback();
     notifyListeners();
   }
@@ -1729,7 +1776,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
   }
 
-  // 🔥 Пауза таймера: зберігаємо залишок часу
+  // 🔥 Пауза таймера: сохраняем остаток
   void _stopAdTimer() {
     _adTimer?.cancel();
     _adTimer = null;
@@ -1737,13 +1784,13 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_adTargetTime != null) {
       final now = DateTime.now();
       final left = _adTargetTime!.difference(now);
-      // Зберігаємо те, що залишилось, щоб дограти потім
+      // Если время вышло, но реклама не успела показаться — будет 0
       _remainingAdDuration = left.isNegative ? Duration.zero : left;
       _adTargetTime = null;
     }
   }
 
-  // 🔥 Запуск таймера: використовуємо збережений залишок
+  // 🔥 Запуск таймера: используем остаток
   void _scheduleNextAd() {
     if (!_adMode) return;
     if (isAdScheduleSuspended) {
@@ -1752,20 +1799,19 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
 
-    // Якщо таймер вже йде — не чіпаємо
+    // Если уже запущен — не трогаем
     if (_adTimer != null && _adTimer!.isActive) return;
 
     final delay = _remainingAdDuration;
 
-    // Встановлюємо "мішень" у майбутньому
     _adTargetTime = DateTime.now().add(delay);
     _log('ad scheduled in ${delay.inSeconds}s');
 
     _adTimer = Timer(delay, () async {
+      // Проверка фона
       final appState = WidgetsBinding.instance.lifecycleState;
       final bool isForeground = appState == AppLifecycleState.resumed;
 
-      // Если таймер сработал, когда приложение в фоне
       if (!isForeground) {
         _log('Ad timer fired in BACKGROUND. Pausing player instead of showing ad.');
         await pause();
@@ -1773,24 +1819,28 @@ class AudioPlayerProvider extends ChangeNotifier {
         return;
       }
 
-      // Если мы в foreground — показываем рекламу как обычно
       if (_adMode && _isPlayingAudibly() && !isAdScheduleSuspended) {
-        // Скидаємо ціль, бо час вийшов
         _adTargetTime = null;
         _remainingAdDuration = Duration.zero;
+
+        // Включаем "Загрузка"
+        _isAdLoading = true;
+        notifyListeners();
 
         try {
           await onShowIntervalAd?.call();
         } catch (e) {
           _log('show ad error: $e');
+        } finally {
+          _isAdLoading = false;
+          // 🔥 СБРОС ТАЙМЕРА ПОСЛЕ ПОКАЗА, ЧТОБЫ НЕ БЫЛО ЦИКЛА
+          _lastAdAt = DateTime.now();
+          _remainingAdDuration = _adInterval;
+          notifyListeners();
         }
-
-        // Після реклами скидаємо таймер на повний інтервал
-        _lastAdAt = DateTime.now();
-        _remainingAdDuration = _adInterval;
       } else {
         _lastAdAt = DateTime.now();
-        // Якщо не змогли показати — скидаємо таймер
+        // Если не показали — всё равно сбрасываем на след. интервал
         _remainingAdDuration = _adInterval;
       }
 
@@ -1802,33 +1852,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     });
   }
 
-  // --- НОВЫЙ МЕТОД: Показать "зависшую" рекламу при возврате из фона ---
-  Future<void> checkPendingAdOnResume() async {
-    if (_pendingAdDueToBackground) {
-      _log('Resumed with pending ad -> Show NOW');
-      _pendingAdDueToBackground = false;
-
-      try {
-        await onShowIntervalAd?.call();
-      } catch (e) {
-        _log('show pending ad error: $e');
-      }
-
-      // Обновляем время
-      _lastAdAt = DateTime.now();
-      _remainingAdDuration = _adInterval;
-
-      if (_adMode) {
-        await play();
-      }
-    }
-  }
-
   // --- ЛОКАЛЬНЫЙ КЭШ ГЛАВ (ДЛЯ МГНОВЕННОГО СТАРТА) ---
 
   Future<void> _cacheChaptersForBook(int bookId, List<Chapter> list) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Превращаем список объектов в список JSON-строк
       final jsonList = list.map((c) => c.toJson()).toList();
       await prefs.setString('$_kChaptersCachePrefix$bookId', json.encode(jsonList));
     } catch (e) {
@@ -1844,6 +1873,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final List<dynamic> jsonList = json.decode(raw);
       return jsonList.map((item) {
+        // Важно передать bookId, так как в JSON главы его может не быть
         return Chapter.fromJson(
           Map<String, dynamic>.from(item as Map),
           book: {'id': bookId},
@@ -1852,6 +1882,32 @@ class AudioPlayerProvider extends ChangeNotifier {
     } catch (e) {
       _log('getCachedChapters error: $e');
       return [];
+    }
+  }
+
+  // --- НОВЫЙ МЕТОД: Показать "зависшую" рекламу при возврате из фона ---
+  Future<void> checkPendingAdOnResume() async {
+    if (_pendingAdDueToBackground) {
+      _log('Resumed with pending ad -> Show NOW');
+      _pendingAdDueToBackground = false;
+
+      _isAdLoading = true;
+      notifyListeners();
+
+      try {
+        await onShowIntervalAd?.call();
+      } catch (e) {
+        _log('show pending ad error: $e');
+      } finally {
+        _isAdLoading = false;
+        _lastAdAt = DateTime.now();
+        _remainingAdDuration = _adInterval;
+        notifyListeners();
+      }
+
+      if (_adMode) {
+        await play();
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Background Fix + Player Init Fix)
+// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Notification + Resume Logic)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -305,9 +305,23 @@ Future<bool> _openRewardScreen() async {
 }
 
 /// Показываем межстраничную рекламу для ad-mode.
+/// С добавлением визуального уведомления и корректным возобновлением плеера.
 Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   if (_interstitialInProgress != null && !_interstitialInProgress!.isCompleted) {
     return _interstitialInProgress!.future;
+  }
+
+  // 🔔 1. ПОКАЗЫВАЕМ ПРЕДУПРЕЖДЕНИЕ ПОЛЬЗОВАТЕЛЮ
+  // Используем scaffoldMessenger, чтобы показать плашку снизу
+  final context = _navKey.currentContext;
+  if (context != null && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Рекламна пауза... Завантаження'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   final wasPlaying = audio.isPlaying;
@@ -332,6 +346,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
         ad.fullScreenContentCallback = FullScreenContentCallback(
           onAdDismissedFullScreenContent: (ad) {
             ad.dispose();
+            // 🟢 2. ВОЗОБНОВЛЯЕМ ВОСПРОИЗВЕДЕНИЕ
             if (wasPlaying) {
               unawaited(audio.play());
             }
@@ -339,6 +354,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
           },
           onAdFailedToShowFullScreenContent: (ad, err) {
             ad.dispose();
+            // Если не смогли показать - тоже играем
             if (wasPlaying) {
               unawaited(audio.play());
             }
@@ -346,10 +362,11 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
           },
         );
 
-        ad.show(); // пользователь закроет — колбэк сработает
+        ad.show();
       },
       onAdFailedToLoad: (LoadAdError error) {
-        // Не критично: просто продолжаем воспроизведение.
+        debugPrint('[AD] Failed to load: $error');
+        // Если ошибка — просто продолжаем играть
         if (wasPlaying) {
           unawaited(audio.play());
         }

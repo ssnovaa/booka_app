@@ -1,3 +1,4 @@
+// lib/widgets/custom_bottom_nav_bar.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -368,7 +369,8 @@ class _MiniRingButton extends StatelessWidget {
   }
 }
 
-class _PlayerFab extends StatelessWidget {
+// 🔥🔥 ТЕПЕРЬ ЭТА КНОПКА (FAB) УМЕЕТ ВРАЩАТЬСЯ 🔥🔥
+class _PlayerFab extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool isPlaying;
@@ -399,13 +401,56 @@ class _PlayerFab extends StatelessWidget {
   });
 
   @override
+  State<_PlayerFab> createState() => _PlayerFabState();
+}
+
+class _PlayerFabState extends State<_PlayerFab>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Полный оборот за 10 секунд
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    );
+
+    if (widget.isPlaying) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlayerFab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        if (!_controller.isAnimating) {
+          _controller.repeat();
+        }
+      } else {
+        // Останавливаем вращение на текущей позиции при паузе
+        _controller.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final double outerRadius = ringVisualSize / 2;
-    final double hitDiameter = (outerRadius + extraHitRadius) * 2;
+    final double outerRadius = widget.ringVisualSize / 2;
+    final double hitDiameter = (outerRadius + widget.extraHitRadius) * 2;
 
     return Semantics(
       button: true,
-      label: isPlaying ? 'Пауза' : 'Відтворити',
+      label: widget.isPlaying ? 'Пауза' : 'Відтворити',
       child: Stack(
         alignment: Alignment.center,
         clipBehavior: Clip.none,
@@ -416,37 +461,45 @@ class _PlayerFab extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  width: ringVisualSize,
-                  height: ringVisualSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: ringColor,
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.all(logoPadding),
-                    child: Image.asset(
-                      'lib/assets/images/logo.png',
-                      fit: BoxFit.contain,
+                // 1. 🔥 ВРАЩАЮЩЕЕСЯ ВНЕШНЕЕ КОЛЬЦО (ПЛАСТИНКА)
+                RotationTransition(
+                  turns: _controller,
+                  child: Container(
+                    width: widget.ringVisualSize,
+                    height: widget.ringVisualSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.ringColor,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(widget.logoPadding),
+                      child: Image.asset(
+                        'lib/assets/images/logo.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 ),
+
+                // 2. СТАТИЧНЫЙ ЦЕНТР С ИКОНКОЙ
                 Container(
-                  width: innerSize,
-                  height: innerSize,
+                  width: widget.innerSize,
+                  height: widget.innerSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: bgColor,
+                    color: widget.bgColor,
                   ),
                   child: Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: iconColor,
-                    size: iconSize,
+                    widget.isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: widget.iconColor,
+                    size: widget.iconSize,
                   ),
                 ),
               ],
             ),
           ),
+
+          // Область нажатия (тач)
           Align(
             alignment: Alignment.bottomCenter,
             child: SizedBox(
@@ -457,13 +510,14 @@ class _PlayerFab extends StatelessWidget {
                 shape: const CircleBorder(),
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: onTap,
-                  onLongPress: onLongPress,
+                  onTap: widget.onTap,
+                  onLongPress: widget.onLongPress,
                 ),
               ),
             ),
           ),
-          if (debugShowHitArea)
+
+          if (widget.debugShowHitArea)
             Align(
               alignment: Alignment.bottomCenter,
               child: SizedBox(
