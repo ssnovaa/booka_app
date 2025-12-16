@@ -11,8 +11,6 @@ import 'package:booka_app/user_notifier.dart';
 import '../core/network/image_cache.dart'; // уніфікований кешер для мініатюр
 
 /// Раскладка времени относительно слайдера.
-/// sides  — время слева/справа от слайдера (компактней по высоте)
-/// above  — время над слайдером (тоже компактно, но читаемее)
 enum MiniTimeLayout { sides, above }
 
 class MiniPlayerWidget extends StatefulWidget {
@@ -20,12 +18,7 @@ class MiniPlayerWidget extends StatefulWidget {
   final String bookTitle;
   final String? coverUrl;
   final VoidCallback onExpand;
-
-  /// НОВОЕ: выбор раскладки времени. По умолчанию — по бокам.
   final MiniTimeLayout timeLayout;
-
-  /// НОВОЕ: нижний минимальный отступ SafeArea. Передай 0 на экране книги,
-  /// чтобы плеер вплотную прилегал к баннеру.
   final double bottomSafeMargin;
 
   const MiniPlayerWidget({
@@ -35,7 +28,7 @@ class MiniPlayerWidget extends StatefulWidget {
     required this.onExpand,
     this.coverUrl,
     this.timeLayout = MiniTimeLayout.sides,
-    this.bottomSafeMargin = 8, // было захардкожено 8
+    this.bottomSafeMargin = 8,
   });
 
   @override
@@ -111,7 +104,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       return const SizedBox.shrink();
     }
 
-    // ⚠️ Позиція з провайдера (з урахуванням drag-override)
+    // ⚠️ Позиція з провайдера
     final pos = audio.uiPosition;
 
     // ✅ Ефективна тривалість
@@ -123,8 +116,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     final dur = pos > knownDur ? pos : knownDur;
     final hasDur = dur.inSeconds > 0;
 
-    // Тимчасовий максимум, якщо тривалість ще невідома
-    final provisionalMax = (pos.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble(); // до 24 год
+    // Тимчасовий максимум
+    final provisionalMax = (pos.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
     final sliderMax = hasDur ? dur.inSeconds.toDouble() : provisionalMax;
     final sliderValue = pos.inSeconds.toDouble().clamp(0.0, sliderMax);
 
@@ -132,7 +125,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       top: false,
       left: false,
       right: false,
-      // 🔧 было const EdgeInsets.only(bottom: 8)
       minimum: EdgeInsets.only(bottom: widget.bottomSafeMargin),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -147,7 +139,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Padding(
-                // чуть компактнее вертикальные отступы
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -209,7 +200,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                         const SizedBox(width: 8),
 
-                        // Play/Pause
                         Semantics(
                           label: audio.isPlaying ? 'Пауза' : 'Відтворити',
                           button: true,
@@ -222,7 +212,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                         const SizedBox(width: 6),
 
-                        // Розгортання
                         Semantics(
                           label: 'Розгорнути плеєр',
                           button: true,
@@ -259,13 +248,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                     const SizedBox(height: 8),
 
-                    // ===== СЛАЙДЕР + ВРЕМЯ (КОМПАКТНО) =====
+                    // ===== СЛАЙДЕР + ВРЕМЯ =====
                     Builder(
                       builder: (_) {
                         final slider = SliderTheme(
                           data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3, // тоньше
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), // меньше «пиптик»
+                            trackHeight: 3,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             overlayShape: SliderComponentShape.noOverlay,
                             minThumbSeparation: 0,
                           ),
@@ -285,7 +274,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                         theme.textTheme.labelSmall?.copyWith(color: cs.onSurface.withOpacity(0.6));
 
                         if (widget.timeLayout == MiniTimeLayout.sides) {
-                          // Время по бокам от слайдера — самая низкая компоновка
                           return Row(
                             children: [
                               Text(_fmt(pos), style: timeStyle),
@@ -296,7 +284,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             ],
                           );
                         } else {
-                          // Время над слайдером
                           return Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -353,14 +340,18 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     );
   }
 
-  // Формат mm:ss
+  // 🔥 ВИПРАВЛЕНО: тепер повертає години, якщо вони є!
   String _fmt(Duration d) {
+    final hh = d.inHours;
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    if (hh > 0) {
+      return '$hh:$mm:$ss';
+    }
     return '$mm:$ss';
   }
 
-  /// 🧭 Тап по «розгорнути» з обробкою гостя
   void _handleExpandTap() {
     final user = context.read<UserNotifier>();
     if (user.isGuest) {
