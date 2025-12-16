@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'booka_app_bar_title.dart';
 import 'theme_toggle_action.dart';
-import 'ad_timer_badge.dart'; // 👈 Добавлен импорт
+import 'ad_timer_badge.dart'; // 1. Импорт должен быть здесь
 
 PreferredSizeWidget bookaAppBar({
   List<Widget> actions = const [],
@@ -16,18 +16,11 @@ PreferredSizeWidget bookaAppBar({
     centerTitle: centerTitle,
     title: const BookaAppBarTitle(),
     actions: [
-      // Сначала идут кнопки конкретной страницы (если есть)
       ...actions,
 
-      // 👇 Таймер до рекламы (появляется только в Ad-Mode)
-      const Center(
-        child: Padding(
-          padding: EdgeInsets.only(right: 8.0),
-          child: AdTimerBadge(),
-        ),
-      ),
+      // 2. Таймер должен быть здесь
+      const AdTimerBadge(),
 
-      // Переключатель темы (всегда справа)
       const ThemeToggleAction(),
     ],
     bottom: bottom,
