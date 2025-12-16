@@ -113,6 +113,9 @@ class AudioPlayerProvider extends ChangeNotifier {
   Timer? _adTimer;                   // одноразовый таймер до следующего показа
   static const Duration _adInterval = Duration(minutes: 10); // прод: 10 минут
 
+  // 🔥 Флаг: реклама была пропущена из-за фона, нужно показать при возврате
+  bool _pendingAdDueToBackground = false;
+
   // ⬇️ Счётчик приостановок расписания (Rewarded/пейволл/диалоги)
   int _adScheduleSuspend = 0;
   bool get isAdScheduleSuspended => _adScheduleSuspend > 0;
@@ -306,29 +309,33 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Future<void> _handleConnectivityChange(
       List<ConnectivityResult> events) async {
-    // Потоки connectivity_plus v6 передают список состояний; берём наличие
-    // любого активного соединения, а пустой список трактуем как отсутствие связи.
     final connected =
         events.isNotEmpty && events.any((event) => event != ConnectivityResult.none);
 
     if (!connected) {
+      // 🔴 ИНТЕРНЕТ ПРОПАЛ
       if (player.playing) {
         _pausedByConnectivity = true;
-        await pause(fromConnectivity: true);
+        pause(fromConnectivity: true); // Не чекаємо await, щоб швидше показати UI
       }
-      // 🇺🇦 UKR FIX
       _connectivityMessage =
       'Немає з’єднання з інтернетом. Відтворення призупинено.';
+
+      notifyListeners(); // Оновлюємо UI
     } else {
+      // 🟢 ИНТЕРНЕТ ПОЯВИЛСЯ
       _connectivityMessage = null;
+      notifyListeners(); // 🔥 Миттєво прибираємо табличку
 
       if (_pausedByConnectivity && !player.playing) {
         _pausedByConnectivity = false;
-        await play();
+        try {
+          await play();
+        } catch (e) {
+          _log('Auto-resume failed: $e');
+        }
       }
     }
-
-    notifyListeners();
   }
 
   // ======== ЛОКАЛЬНЫЙ СЕКУНДНЫЙ ТИКЕР ДЛЯ БЕЙДЖА МИНУТ/СЕКУНД ========
@@ -1780,8 +1787,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       // Если таймер сработал, когда приложение в фоне
       if (!isForeground) {
         _log('Ad timer fired in BACKGROUND. Pausing player instead of showing ad.');
-        // Принудительно паузим, чтобы пользователь не "пропустил" рекламу
+        // Принудительно паузим и запоминаем, что реклама "висит"
         await pause();
+        _pendingAdDueToBackground = true;
         return;
       }
 
@@ -1804,6 +1812,30 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     });
     _log('ad scheduled in ${delay.inSeconds}s');
+  }
+
+  // --- НОВЫЙ МЕТОД: Показать "зависшую" рекламу при возврате из фона ---
+  Future<void> checkPendingAdOnResume() async {
+    if (_pendingAdDueToBackground) {
+      _log('Resumed with pending ad -> Show NOW');
+      _pendingAdDueToBackground = false;
+
+      // Показываем рекламу
+      try {
+        await onShowIntervalAd?.call();
+      } catch (e) {
+        _log('show pending ad error: $e');
+      }
+
+      // Обновляем время
+      _lastAdAt = DateTime.now();
+
+      // Если всё еще в ad-mode (например, юзер не купил премиум в процессе),
+      // то можно попробовать продолжить воспроизведение автоматически
+      if (_adMode) {
+        await play();
+      }
+    }
   }
 
   // --- ЛОКАЛЬНЫЙ КЭШ ГЛАВ (ДЛЯ МГНОВЕННОГО СТАРТА) ---

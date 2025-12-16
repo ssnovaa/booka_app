@@ -1,4 +1,4 @@
-// lib/main.dart (РАБОЧИЙ + ОПТИМИЗИРОВАННЫЙ СТАРТ)
+// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Background Fix + Player Init Fix)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -47,11 +47,15 @@ class _LifecycleReactor with WidgetsBindingObserver {
       unawaited(audio.flushProgress());
     }
 
-    // При возврате в приложение — обновляем пользователя
+    // При возврате в приложение — обновляем пользователя и проверяем рекламу
     if (state == AppLifecycleState.resumed) {
       try {
         // 🔥 ОПТИМИЗАЦИЯ: запускаем без await, чтобы не фризить UI
         userNotifier.fetchCurrentUser();
+
+        // 👇 НОВОЕ: Если реклама должна была сработать пока телефон спал — показываем сейчас
+        audio.checkPendingAdOnResume();
+
       } catch (e) {
         // игнорируем ошибку (нет сети и т.п.)
       }
@@ -73,6 +77,10 @@ Future<void> main() async {
       );
     };
 
+    // ✅ ВАЖНО: Инициализируем аудио СТРОГО ПЕРВЫМ и с await.
+    // Это гарантирует, что канал уведомлений будет создан до старта плеера.
+    await _initJustAudioBackground();
+
     // Провайдери створюємо заздалегідь, щоб зв'язати Audio ↔ User
     final themeNotifier = ThemeNotifier();
     final userNotifier = UserNotifier();
@@ -88,21 +96,19 @@ Future<void> main() async {
       audioProvider.onExternalFreeSecondsUpdated(v);
     };
 
-    // 🚀 Запускаємо важкі ініціалізації паралельно, не блокуючи runApp
-    final justAudioInit = _initJustAudioBackground();
+    // 🚀 Запускаємо інші важкі ініціалізації паралельно
     final themeLoad = _safeThemeLoad(themeNotifier);
     final apiInit = _safeApiInit();
     final adsInit = _initMobileAds();
 
     // ✅ Стартуємо ліниві задачі, не чекаючи завершення
-    unawaited(justAudioInit);
     unawaited(themeLoad);
     unawaited(apiInit);
     unawaited(adsInit);
 
     // === ВАЖНО: назначаем колбэки провайдера АУДИО ===
 
-    // 2) Автопоказ межстраничной рекламы раз в 10 минут (ad-mode)
+    // 2) Автопоказ межстраничной рекламы раз в интервал (ad-mode)
     audioProvider.onShowIntervalAd = () async {
       await _showInterstitialAd(audioProvider);
     };
@@ -126,18 +132,14 @@ Future<void> main() async {
           ),
 
           // 👇 НОВЫЙ БИЛЛИНГ В ДЕРЕВЕ
-          // Сервис — НЕ ChangeNotifier, поэтому используется обычный Provider.
-          // Использование .value, так как экземпляр уже создан выше.
           Provider<BillingService>.value(
             value: billingService,
           ),
 
           // Контроллер — ChangeNotifier, работает с UI
           ChangeNotifierProvider<BillingController>(
-            // Используем 'create' и 'context.read' для получения
-            // BillingService, который уже есть в дереве
             create: (context) => BillingController(
-              service: context.read<BillingService>(), // ⬅️ ИСПРАВЛЕНО
+              service: context.read<BillingService>(),
               userNotifier: userNotifier,
               audioPlayerProvider: audioProvider,
             ),
@@ -147,8 +149,7 @@ Future<void> main() async {
       ),
     );
 
-    // 🔥 ОПТИМИЗАЦИЯ СТАРТА: Очищена тяжелая логика
-    // Вся подготовка аудио и профиля теперь в StartupGate.
+    // 🔥 ОПТИМИЗАЦИЯ СТАРТА
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         // 🕒 Чекаємо мережевую ініціалізацію перед пушами
@@ -167,7 +168,6 @@ Future<void> main() async {
         final ctx = _navKey.currentContext;
         if (ctx != null) {
           // Инициализируем реактор жизненного цикла
-          // (аудио и юзер берутся из замыкания main, так надежнее)
           _reactor ??= _LifecycleReactor(audioProvider, userNotifier);
         }
       } catch (_) {}
@@ -183,16 +183,22 @@ Future<void> _initJustAudioBackground() async {
   try {
     // ⚙️ Налаштування зовнішнього вигляду плеєра (шторка і локскрін)
     await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.booka.audioplayer.channel.audio',
+      // 👇 Якщо міняли раніше ID, переконайтеся, що тут актуальний
+      androidNotificationChannelId: 'com.booka.audioplayer.channel.audio_v2',
       androidNotificationChannelName: 'Booka — аудіо',
       androidNotificationOngoing: true,
       notificationColor: const Color(0xFF6750A4),
-      androidNotificationIcon: 'mipmap/ic_launcher',
+
+      // ✅ ПРАВИЛЬНА ІКОНКА (силует для шторки), щоб плеер не показував Spotify
+      androidNotificationIcon: 'drawable/ic_stat_notify',
+
       rewindInterval: const Duration(seconds: 10),
       fastForwardInterval: const Duration(seconds: 30),
       preloadArtwork: true,
     );
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[AUDIO] Init failed: $e');
+  }
 }
 
 Future<void> _safeThemeLoad(ThemeNotifier notifier) async {
@@ -271,9 +277,6 @@ class BookaApp extends StatelessWidget {
 Future<bool> _openRewardScreen() async {
   NavigatorState? nav = _navKey.currentState;
 
-  // 🔄 Навигатор может быть недоступен в момент вызова (например, сразу после
-  // старта приложения или во время горячей навигации). Пробуем получить его
-  // несколько раз с небольшими задержками, прежде чем сдаться.
   if (nav == null) {
     for (var i = 0; i < 5 && nav == null; i++) {
       await Future.delayed(const Duration(milliseconds: 200));
@@ -302,10 +305,9 @@ Future<bool> _openRewardScreen() async {
 }
 
 /// Показываем межстраничную рекламу для ad-mode.
-/// На время показа ставим плеер на паузу и затем возвращаем воспроизведение.
 Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   if (_interstitialInProgress != null && !_interstitialInProgress!.isCompleted) {
-    return _interstitialInProgress!.future; // уже показываем, не запускаем вторую
+    return _interstitialInProgress!.future;
   }
 
   final wasPlaying = audio.isPlaying;
