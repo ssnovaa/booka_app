@@ -122,6 +122,12 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   bool get isAdMode => _adMode;      // <-- публичный геттер, удобно в UI
 
+  // 🔥 ДОБАВЛЕНО: Геттер для таймера обратного отсчета в UI
+  DateTime? get nextAdTime {
+    if (!_adMode || _lastAdAt == null) return null;
+    return _lastAdAt!.add(_adInterval);
+  }
+
   // ====== СЕКУНДНЫЙ ЛОКАЛЬНЫЙ ТИКЕР ДЛЯ UI
   Timer? _freeSecondsTicker;
   static const Duration _uiSecTick = Duration(seconds: 1);
