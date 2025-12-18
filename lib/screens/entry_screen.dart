@@ -25,6 +25,9 @@ import 'package:booka_app/core/network/auth_interceptor.dart';
 import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/core/billing/billing_controller.dart';
 
+// 👇 1. Імпорт для гарного тосту
+import 'package:booka_app/core/ui/app_toast.dart';
+
 // ui
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← єдина точка Lottie-лоадера
 
@@ -138,13 +141,10 @@ class _EntryScreenState extends State<EntryScreen> {
             }
             await audio.ensurePrepared(); // 3) быстро подготовить плеер
 
-            // 🚨 Підсилення виправлення: даємо нульову затримку, щоб система
-            // встигла додати тимчасовий маршрут, перш ніж ми його приберемо.
-            // Так popUntil спрацьовує стабільно й не зачіпає нормальну навігацію.
+            // 🚨 Підсилення виправлення: даємо нульову затримку
             await Future.delayed(Duration.zero);
 
-            // 4. Удаляем любые фантомные маршруты, гарантируя, что EntryScreen
-            //    является корнем стека, но только если сам EntryScreen ещё на вершине.
+            // 4. Удаляем любые фантомные маршруты
             final route = ModalRoute.of(context);
             final isCurrentEntry = route?.isCurrent == true;
             if (mounted && isCurrentEntry && Navigator.of(context).canPop()) {
@@ -160,7 +160,7 @@ class _EntryScreenState extends State<EntryScreen> {
     }
   }
 
-  /// Диалог подтверждения выхода
+  /// Диалог подтверждения выхода (ЛОГИКА ОСТАЛАСЬ ПРЕЖНЕЙ)
   Future<bool> _showExitDialog() async {
     final result = await showDialog<bool>(
       context: context,
@@ -199,21 +199,16 @@ class _EntryScreenState extends State<EntryScreen> {
   }
 
   /// Реальный выход из приложения:
-  /// 1) показать короткое "спасибо"
+  /// 1) показать короткое "спасибо" (ТЕПЕРЬ ЧЕРЕЗ AppToast)
   /// 2) вызвать dart:io.exit(0) для немедленного уничтожения процесса
   Future<void> _performAppExit() async {
+    // 👇 2. ЗМІНЕНО: Використовуємо AppToast замість SnackBar
+    if (mounted) {
+      AppToast.showThankYou(context);
+    }
 
-    // Пытаемся показать snackbar с благодарностью
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      const SnackBar(
-        content: Text('Дякуємо, що були з Booka 💛'),
-        duration: Duration(seconds: 1),
-      ),
-    );
-
-    // Даём 1 секунду на отображение и завершение фоновых задач
-    await Future.delayed(const Duration(seconds: 1));
+    // Даємо 2 секунди на відображення (було 1 сек, для краси краще 2)
+    await Future.delayed(const Duration(seconds: 2));
 
     // 🚨 Немедленное и принудительное завершение процесса
     exit(0);
@@ -252,34 +247,18 @@ class _EntryScreenState extends State<EntryScreen> {
         // didPop == true → Flutter уже сделал pop, нам ничего не надо
         if (didPop) return;
 
-        // Показываем диалог подтверждения
+        // Показываем диалог подтверждения (СТАРАЯ ЛОГИКА)
         final shouldExit = await _showExitDialog();
         if (!shouldExit) return;
 
-        // Пользователь нажал "Вийти" (Выход) → выполняем сценарий полного выхода
+        // Пользователь нажал "Вийти" (Выход) → выполняем сценарий полного выхода (НОВОЕ ОТОБРАЖЕНИЕ)
         await _performAppExit();
       },
       child: Stack(
         children: [
           const MainScreen(),
 
-          // DEBUG Reward-test FAB (сейчас выключен, но легко включить при отладке):
-          // if (kDebugMode)
-          //   Positioned(
-          //     right: 16,
-          //     bottom: 16,
-          //     child: FloatingActionButton.extended(
-          //       // Кнопка видна только в debug-сборках
-          //       heroTag: 'reward_test_fab',
-          //       icon: const Icon(Icons.ondemand_video),
-          //       label: const Text('Reward test'),
-          //       onPressed: () {
-          //         Navigator.of(context).push(
-          //           MaterialPageRoute(builder: (_) => const RewardTestScreen()),
-          //         );
-          //       },
-          //     ),
-          //   ),
+          // DEBUG Reward-test FAB...
         ],
       ),
     );
