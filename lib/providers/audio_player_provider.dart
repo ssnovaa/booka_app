@@ -302,9 +302,17 @@ class AudioPlayerProvider extends ChangeNotifier {
     // Переключение раздела
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
-        _currentChapterIndex = idx;
-        _setPosition(player.position);
+        final nextIndex = idx;
+        final changed = nextIndex != _currentChapterIndex;
+
+        _currentChapterIndex = nextIndex;
+        _setPosition(Duration.zero);
         _lastPushSig = null;
+
+        if (changed) {
+          _duration = Duration(seconds: _chapters[nextIndex].duration ?? 0);
+        }
+
         _pullDurationFromPlayer();
         notifyListeners();
       }
