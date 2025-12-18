@@ -898,6 +898,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
+    final displayTitle = albumName?.isNotEmpty == true ? albumName! : title;
+    final displaySubtitle = title;
+
     return AudioSource.uri(
       Uri.parse(normalizedUrl),
       headers: _authHeaders(),
@@ -907,6 +910,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         album: albumName,
         artist: artistName,
         artUri: artUrl != null ? Uri.parse(artUrl) : null,
+        displayTitle: displayTitle,
+        displaySubtitle: displaySubtitle,
         duration: (chapter.duration != null && chapter.duration! > 0)
             ? Duration(seconds: chapter.duration!)
             : null,
@@ -1534,7 +1539,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       }
 
-      final cover = _absImageUrl(b.coverUrl);
+      final cover = _absImageUrl(b.displayCoverUrl);
 
       // 🔥 5. ПЕРЕДАЕМ ПОЗИЦИЮ В SETCHAPTERS
       await setChapters(
