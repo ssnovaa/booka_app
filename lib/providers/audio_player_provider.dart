@@ -822,8 +822,13 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? _coverFromBook(Map<String, dynamic>? bookMap) {
     if (bookMap == null) return null;
     final cand = [
+      bookMap['displayCoverUrl'],
+      bookMap['display_cover_url'],
       bookMap['cover_url'],
+      bookMap['coverUrl'],
       bookMap['thumbnailUrl'],
+      bookMap['thumb_url'],
+      bookMap['thumbUrl'],
       bookMap['thumb'],
       bookMap['cover'],
       bookMap['image'],
@@ -924,7 +929,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final displaySubtitle = (() {
       final artist = artistName ?? '';
       if (artist.trim().isNotEmpty) return artist;
-      return safeAlbum;
+      return safeArtist;
     })();
     final mediaTitle = title.isNotEmpty ? title : displayTitle;
     final mediaArtUri = (() {
