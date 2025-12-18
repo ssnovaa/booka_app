@@ -309,6 +309,12 @@ class AudioPlayerProvider extends ChangeNotifier {
         _setPosition(Duration.zero);
         _lastPushSig = null;
 
+        // Сбрасываем любые пользовательские оверрайды/drag-состояния,
+        // чтобы слайдер новой главы стартовал с нуля без артефактов.
+        _isUserSeeking = false;
+        _uiPositionOverride = null;
+        _lastUiTick = DateTime.now();
+
         if (changed) {
           _duration = Duration(seconds: _chapters[nextIndex].duration ?? 0);
         }
