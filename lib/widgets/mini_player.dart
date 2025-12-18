@@ -116,10 +116,14 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     final dur = pos > knownDur ? pos : knownDur;
     final hasDur = dur.inSeconds > 0;
 
-    // Тимчасовий максимум
-    final provisionalMax = (pos.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
-    final sliderMax = hasDur ? dur.inSeconds.toDouble() : provisionalMax;
-    final sliderValue = pos.inSeconds.toDouble().clamp(0.0, sliderMax);
+    // Тимчасовий максимум (у мс)
+    final provisionalMaxMillis =
+        (pos.inMilliseconds + 1000).clamp(1000, 24 * 60 * 60 * 1000);
+    final sliderMax = hasDur
+        ? dur.inMilliseconds.toDouble()
+        : provisionalMaxMillis.toDouble();
+    final sliderValue =
+        pos.inMilliseconds.clamp(0, sliderMax.toInt()).toDouble();
 
     return SafeArea(
       top: false,
@@ -263,10 +267,12 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             min: 0.0,
                             max: sliderMax,
                             onChangeStart: (_) => context.read<AudioPlayerProvider>().seekDragStart(),
-                            onChanged: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragUpdate(Duration(seconds: v.floor())),
-                            onChangeEnd: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragEnd(Duration(seconds: v.floor())),
+                            onChanged: (v) => context
+                                .read<AudioPlayerProvider>()
+                                .seekDragUpdate(Duration(milliseconds: v.round())),
+                            onChangeEnd: (v) => context.read<AudioPlayerProvider>().seekDragEnd(
+                                  Duration(milliseconds: v.round()),
+                                ),
                           ),
                         );
 
