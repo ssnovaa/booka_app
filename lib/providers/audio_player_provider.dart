@@ -913,11 +913,16 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
+    // 🔥 Важливо: системний плеєр читає заголовок саме з `title`,
+    // а `displayTitle`/`displaySubtitle` використовуються лише у вигляді
+    // розширених полів. Тому не залишаємо `title` порожнім, навіть якщо
+    // не прийшов красивий `prettyTitle`.
     final displayTitle = title.isNotEmpty ? title : albumName;
     final displaySubtitle = (() {
       if (artistName != null && artistName.isNotEmpty) return artistName;
       return albumName;
     })();
+    final mediaTitle = title.isNotEmpty ? title : displayTitle;
 
     final description = (() {
       final base = chapter.title.trim();
@@ -942,13 +947,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       headers: _authHeaders(),
       tag: MediaItem(
         id: mediaId,
-        title: title,
-        album: albumName,
+        title: mediaTitle,
+        album: albumName.isNotEmpty ? albumName : displaySubtitle,
         artist: artistName,
         artUri: artUrl != null ? Uri.parse(artUrl) : null,
         displayDescription: description.isNotEmpty ? description : null,
-        displayTitle: displayTitle,
-        displaySubtitle: displaySubtitle,
+        displayTitle: displayTitle.isNotEmpty ? displayTitle : mediaTitle,
+        displaySubtitle: displaySubtitle.isNotEmpty ? displaySubtitle : null,
         extras: {
           'bookTitle': albumName,
           if (artistName != null) 'artistName': artistName,
