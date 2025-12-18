@@ -103,7 +103,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool _adMode = false;
   bool _adConsentShown = false;
 
-  // 🔥 Статус загрузки рекламы (для UI, если нужно)
+  // 🔥 1. ДОБАВЛЕНО: Статус загрузки рекламы (для UI, если нужно)
   bool _isAdLoading = false;
   bool get isAdLoading => _isAdLoading;
 
@@ -111,7 +111,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   DateTime? _lastAdAt;
 
   // 🔥 НОВАЯ ЛОГИКА ТАЙМЕРА (Секундомер)
-  static const Duration _adInterval = Duration(minutes: 10);
+  static const Duration _adInterval = Duration(minutes: 1);
 
   // Скільки часу залишилось до реклами (зберігається при паузі)
   Duration _remainingAdDuration = _adInterval;
@@ -456,10 +456,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         // ⬇️ в ad-mode не списываем — consumer сам ничего не блокирует
         isFreeUser: () => _userType == UserType.free && !_adMode,
         onBalanceUpdated: (secLeft, minLeft) {
-          // Сервер — истина. Жёстко выставляем остаток.
           setFreeSeconds?.call(secLeft < 0 ? 0 : secLeft);
-
-          // Если снова появились секунды — выходим из ad-mode и возвращаем списание.
           if (secLeft > 0 && _adMode) {
             _log('balance>0 → disable ad-mode');
             _disableAdMode();
@@ -1820,8 +1817,12 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
 
       if (_adMode && _isPlayingAudibly() && !isAdScheduleSuspended) {
+        // 🔥 FIX 1: Сбрасываем цели
         _adTargetTime = null;
-        _remainingAdDuration = Duration.zero;
+
+        // 🔥 FIX 2: Сбрасываем таймер ЗАРАНЕЕ, до вызова рекламы.
+        // Это предотвращает зацикливание, если play() будет вызван внутри колбека рекламы.
+        _remainingAdDuration = _adInterval;
 
         // Включаем "Загрузка"
         _isAdLoading = true;
@@ -1835,7 +1836,7 @@ class AudioPlayerProvider extends ChangeNotifier {
           _isAdLoading = false;
           // 🔥 СБРОС ТАЙМЕРА ПОСЛЕ ПОКАЗА, ЧТОБЫ НЕ БЫЛО ЦИКЛА
           _lastAdAt = DateTime.now();
-          _remainingAdDuration = _adInterval;
+          // _remainingAdDuration уже сброшен выше.
           notifyListeners();
         }
       } else {
