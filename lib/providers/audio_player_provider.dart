@@ -913,16 +913,25 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
-    // 🔥 Важливо: системний плеєр читає заголовок саме з `title`,
-    // а `displayTitle`/`displaySubtitle` використовуються лише у вигляді
-    // розширених полів. Тому не залишаємо `title` порожнім, навіть якщо
-    // не прийшов красивий `prettyTitle`.
-    final displayTitle = title.isNotEmpty ? title : albumName;
+    // Системный плеер читает заголовок именно из `title`,
+    // поэтому гарантируем непустые значения для всех отображаемых полей,
+    // чтобы всегда показать название книги, автора и обложку.
+    final safeAlbum = albumName.isNotEmpty ? albumName : 'Аудіокнига';
+    final safeArtist = (artistName != null && artistName.trim().isNotEmpty)
+        ? artistName
+        : 'Booka';
+    final displayTitle = title.isNotEmpty ? title : safeAlbum;
     final displaySubtitle = (() {
-      if (artistName != null && artistName.isNotEmpty) return artistName;
-      return albumName;
+      final artist = artistName ?? '';
+      if (artist.trim().isNotEmpty) return artist;
+      return safeAlbum;
     })();
     final mediaTitle = title.isNotEmpty ? title : displayTitle;
+    final mediaArtUri = (() {
+      final url = artUrl?.trim() ?? '';
+      if (url.isEmpty) return null;
+      return Uri.tryParse(url);
+    })();
 
     final description = (() {
       final base = chapter.title.trim();
@@ -948,9 +957,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       tag: MediaItem(
         id: mediaId,
         title: mediaTitle,
-        album: albumName.isNotEmpty ? albumName : displaySubtitle,
-        artist: artistName,
-        artUri: artUrl != null ? Uri.parse(artUrl) : null,
+        album: safeAlbum,
+        artist: safeArtist,
+        artUri: mediaArtUri,
         displayDescription: description.isNotEmpty ? description : null,
         displayTitle: displayTitle.isNotEmpty ? displayTitle : mediaTitle,
         displaySubtitle: displaySubtitle.isNotEmpty ? displaySubtitle : null,
