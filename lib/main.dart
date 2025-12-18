@@ -1,4 +1,4 @@
-// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Notification + Resume Logic)
+// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Notification + Resume Logic + AppToast)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -25,6 +25,9 @@ import 'package:booka_app/widgets/global_banner_injector.dart';
 // 👇 НОВЫЙ БИЛЛИНГ
 import 'package:booka_app/core/billing/billing_service.dart';
 import 'package:booka_app/core/billing/billing_controller.dart';
+
+// 👇 1. Добавлено: Импорт для красивых уведомлений
+import 'package:booka_app/core/ui/app_toast.dart';
 
 final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
 bool _rewardScreenOpen = false; // защита от дублирующихся пушей
@@ -311,22 +314,16 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
     return _interstitialInProgress!.future;
   }
 
-  // 🔔 1. ПОКАЗЫВАЕМ ПРЕДУПРЕЖДЕНИЕ ПОЛЬЗОВАТЕЛЮ
-  // Используем scaffoldMessenger, чтобы показать плашку снизу
-  final context = _navKey.currentContext;
-  if (context != null && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Рекламна пауза... Завантаження'),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   final wasPlaying = audio.isPlaying;
   if (wasPlaying) {
+    // ВАЖЛИВО: pause(), а не stop(), щоб не ламати шторку
     await audio.pause();
+  }
+
+  // 👇 2. ОНОВЛЕНО: Используем AppToast вместо SnackBar
+  final context = _navKey.currentContext;
+  if (context != null && context.mounted) {
+    AppToast.showAdStarting(context);
   }
 
   final completer = _interstitialInProgress = Completer<void>();
