@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 
 import '../widgets/booka_app_bar.dart';
 import 'genres_screen.dart';
@@ -13,6 +14,11 @@ import '../core/network/image_cache.dart';
 
 // 🔥 IMPORT NEW SERVICE
 import '../services/catalog_service.dart';
+
+// Player
+import '../providers/audio_player_provider.dart';
+import '../user_notifier.dart';
+import '../models/user.dart'; // getUserType
 
 class CatalogAndCollectionsScreen extends StatefulWidget {
   const CatalogAndCollectionsScreen({Key? key}) : super(key: key);
@@ -29,6 +35,7 @@ class _CatalogAndCollectionsScreenState
 
   // 🔑 ключ к внутреннему GenresScreen (тип не указываем, он приватный в другом файле)
   final GlobalKey _genresKey = GlobalKey(debugLabel: 'GenresScreenKey');
+  VoidCallback? _onContinueFromCard;
 
   @override
   void initState() {
@@ -40,6 +47,36 @@ class _CatalogAndCollectionsScreenState
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  // --- Действие при нажатии на кнопку ---
+  Future<void> _onFabTap() async {
+    final p = context.read<AudioPlayerProvider>();
+    final userN = context.read<UserNotifier>();
+
+    // 1) Актуализируем тип пользователя
+    p.userType = getUserType(userN.user);
+
+    // 2) Привязываем consumer
+    await p.ensureCreditsTickerBound();
+
+    // 3) Пытаемся продолжить
+    final bool started = await p.handleBottomPlayTap();
+
+    if (!started) {
+      _onContinueFromCard?.call();
+      return;
+    }
+
+    p.rearmFreeSecondsTickerSafely();
+
+    Future.microtask(() => p.ensureCreditsTickerBound());
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        p.ensureCreditsTickerBound();
+        p.rearmFreeSecondsTickerSafely();
+      }
+    });
   }
 
   @override
@@ -72,7 +109,7 @@ class _CatalogAndCollectionsScreenState
               return;
             }
           } catch (_) {
-            // якщо з якоїсь причини методу немає — ігноруємо й ідемо далі
+            // если метода нет — игнорируем
           }
         }
 
@@ -114,6 +151,45 @@ class _CatalogAndCollectionsScreenState
             ),
             const _SeriesTab(key: PageStorageKey('series_tab')),
           ],
+        ),
+        // 🔥 КНОПКА СПРАВА ВНИЗУ (ПОД ПАЛЕЦ)
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: Consumer<AudioPlayerProvider>(
+          builder: (context, audio, _) {
+            final isPlaying = audio.isPlaying;
+            final isDark = theme.brightness == Brightness.dark;
+            final screenBg = theme.scaffoldBackgroundColor;
+
+            // Цвета как в CustomBottomNavBar
+            // Внутренний фон: светлая тема = primary(0.8), темная = screenBg
+            final Color fabInnerColor = isDark
+                ? screenBg
+                : theme.colorScheme.primary.withOpacity(0.8);
+
+            const Color ringBlue = Color(0xFF2196F3);     // Синий ободок
+            const Color iconYellow = Color(0xFFfffc00);   // Желтая иконка
+
+            // Размеры
+            const double size = 78.0;
+
+            return Padding(
+              // 🔥 ОТОДВИГАЕМ КНОПКУ ЛЕВЕЕ ОТ КРАЯ
+              padding: const EdgeInsets.only(right: 26.0),
+              child: SizedBox(
+                width: size,
+                height: size,
+                // Используем нашу кастомную "нарядную" кнопку
+                child: _FancySpinningFab(
+                  onTap: _onFabTap,
+                  isPlaying: isPlaying,
+                  bgColor: fabInnerColor,
+                  ringColor: ringBlue,
+                  iconColor: iconYellow,
+                  size: size,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -318,7 +394,8 @@ class _SeriesTabState extends State<_SeriesTab> {
                   },
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              // 🔥 УВЕЛИЧЕННЫЙ ОТСТУП СНИЗУ ДЛЯ FAB
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
           );
         },
@@ -583,6 +660,145 @@ class _SeriesSkeletonList extends StatelessWidget {
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 12)),
       ],
+    );
+  }
+}
+
+// =========================================================
+// 🔥 ТА САМАЯ НАРЯДНАЯ КНОПКА (ВРАЩАЮЩАЯСЯ ПЛАСТИНКА) 🔥
+// =========================================================
+class _FancySpinningFab extends StatefulWidget {
+  final VoidCallback onTap;
+  final bool isPlaying;
+  final Color bgColor;
+  final Color ringColor;
+  final Color iconColor;
+  final double size; // Общий размер кнопки
+
+  const _FancySpinningFab({
+    Key? key,
+    required this.onTap,
+    required this.isPlaying,
+    required this.bgColor,
+    required this.ringColor,
+    required this.iconColor,
+    required this.size,
+  }) : super(key: key);
+
+  @override
+  State<_FancySpinningFab> createState() => _FancySpinningFabState();
+}
+
+class _FancySpinningFabState extends State<_FancySpinningFab>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Полный оборот за 15 секунд (медленно и красиво)
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    );
+
+    if (widget.isPlaying) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _FancySpinningFab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        if (!_controller.isAnimating) {
+          _controller.repeat();
+        }
+      } else {
+        _controller.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double fullSize = widget.size;
+
+    final double innerSize = fullSize * 0.48;
+    final double iconSize = fullSize * 0.42;
+    final double logoPadding = fullSize * 0.01;
+
+    return Semantics(
+      button: true,
+      label: widget.isPlaying ? 'Пауза' : 'Відтворити',
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          // 1. 🔥 ВРАЩАЮЩЕЕСЯ ВНЕШНЕЕ КОЛЬЦО (ПЛАСТИНКА)
+          RotationTransition(
+            turns: _controller,
+            child: Container(
+              width: fullSize,
+              height: fullSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.ringColor, // Синяя оболочка
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(logoPadding),
+                child: Image.asset(
+                  'lib/assets/images/logo.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+
+          // 2. СТАТИЧНЫЙ ЦЕНТР С ИКОНКОЙ
+          Container(
+            width: innerSize,
+            height: innerSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.bgColor, // Темная или Primary(0.8)
+            ),
+            child: Icon(
+              widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              color: widget.iconColor, // Желтый
+              size: iconSize,
+            ),
+          ),
+
+          // 3. ОБЛАСТЬ НАЖАТИЯ (INKWELL)
+          SizedBox(
+            width: fullSize,
+            height: fullSize,
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onTap,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -111,7 +111,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   DateTime? _lastAdAt;
 
   // 🔥 НОВАЯ ЛОГИКА ТАЙМЕРА (Секундомер)
-  static const Duration _adInterval = Duration(minutes: 1);
+  static const Duration _adInterval = Duration(minutes: 10);
 
   // Скільки часу залишилось до реклами (зберігається при паузі)
   Duration _remainingAdDuration = _adInterval;
