@@ -1,99 +1,159 @@
-// lib/core/ui/app_toast.dart
 import 'package:flutter/material.dart';
 
 class AppToast {
-  /// Повідомлення про рекламу (Помаранчевий/Жовтий акцент або колір теми)
+  AppToast._(); // Приватный конструктор
+
+  /// 🟡 Рекламная пауза
   static void showAdStarting(BuildContext context) {
-    _showStyledToast(
+    _showFancyToast(
       context,
-      text: 'Рекламна пауза... Завантаження',
+      title: 'Рекламна пауза',
+      subtitle: 'Завантаження відео...',
       icon: Icons.access_time_filled_rounded,
-      // Використовуємо вторинний колір для акценту (наприклад, жовтий/помаранчевий в темі)
-      // Або просто primary, якщо хочете строгий стиль.
-      useWarningColor: false,
+      accentColor: Colors.orangeAccent,
     );
   }
 
-  /// Повідомлення "Дякуємо" (Зелений акцент або Primary)
+  /// 🟢 Благодарность (Скорректирован отступ текста)
   static void showThankYou(BuildContext context) {
-    _showStyledToast(
+    _showFancyToast(
       context,
-      text: 'Дякуємо, що ви з Booka!',
+      title: 'Дякуємо!',
+      subtitle: 'До скорої зустрічі в Booka',
       icon: Icons.favorite_rounded,
-      useSuccessColor: true,
+      accentColor: const Color(0xFFE91E63), // Розовый
+      isSpecial: true,
     );
   }
 
-  /// Універсальний метод для показу
-  static void _showStyledToast(
+  /// 🛠 Основной метод построения
+  static void _showFancyToast(
       BuildContext context, {
-        required String text,
+        required String title,
+        String? subtitle,
         required IconData icon,
-        bool useWarningColor = false,
-        bool useSuccessColor = false,
+        required Color accentColor,
+        bool isSpecial = false,
       }) {
-    // Очищаємо попередні, щоб вони не накопичувались
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    // Визначаємо колір фону
-    Color bgColor = colorScheme.inverseSurface; // Темний сірий (стандарт)
-    Color iconColor = colorScheme.onInverseSurface; // Білий (стандарт)
-    Color textColor = colorScheme.onInverseSurface;
-
-    if (useSuccessColor) {
-      // Для "Дякуємо" можна зробити фіолетовий (брендовий) фон
-      bgColor = colorScheme.primary;
-      iconColor = colorScheme.onPrimary;
-      textColor = colorScheme.onPrimary;
-    } else if (useWarningColor) {
-      // Для попереджень
-      bgColor = colorScheme.tertiary;
-      iconColor = colorScheme.onTertiary;
-      textColor = colorScheme.onTertiary;
-    }
+    // Чистим очередь
+    ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.only(bottom: 20),
+
+        content: Stack(
+          alignment: Alignment.bottomLeft,
+          clipBehavior: Clip.none,
           children: [
-            // Гарна іконка у фоні
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
-            ),
-            const SizedBox(width: 14),
-            // Текст
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
+            // --- 1. Основная карточка (ФОН) ---
+            Padding(
+              // Отступ сверху, чтобы иконка физически влезала
+              padding: const EdgeInsets.only(top: 30),
+
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF252525)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 25,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // --- ВЕРХНИЙ ЭТАЖ: Иконка + Заголовок ---
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // 🔥 БЫЛО 70, СТАЛО 75 (сдвинули текст вправо на 5px)
+                        const SizedBox(width: 85),
+
+                        // Заголовок
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              color: Theme.of(context).colorScheme.onSurface,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // --- НИЖНИЙ ЭТАЖ: Подпись ---
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
+
+            // --- 2. Иконка ---
+            Positioned(
+              top: 0,
+              left: 24,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 6,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withOpacity(0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 34),
+              ),
+            ),
+
+            // --- 3. Декор ---
+            if (isSpecial)
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: IgnorePointer(
+                  child: Icon(
+                    Icons.auto_awesome,
+                    size: 60,
+                    color: accentColor.withOpacity(0.06),
+                  ),
+                ),
+              ),
           ],
         ),
-        // 🔥 Стиль плашки
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: bgColor,
-        elevation: 4,
-        // Робимо відступи з боків і знизу, щоб вона "парила"
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        // Сильно закруглені кути (капсула)
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
-        // Час показу
-        duration: const Duration(seconds: 3),
       ),
     );
   }
