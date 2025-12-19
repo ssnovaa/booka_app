@@ -157,15 +157,42 @@ class AudioPlayerProvider extends ChangeNotifier {
   int _currentChapterIndex = 0;
 
   Duration _position = Duration.zero;
+  DateTime _lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   Duration _duration = Duration.zero;
 
   // ===== UI throttle и drag override для слайдера
   bool _isUserSeeking = false;
   Duration? _uiPositionOverride;
-  Duration get uiPosition => _uiPositionOverride ?? _position;
+  Duration get uiPosition {
+    if (_uiPositionOverride != null) return _uiPositionOverride!;
+    if (_isUserSeeking) return _position;
+
+    // Плавно интерполируем прогресс між тиками потоку позиції, щоб слайдер не смикався
+    if (player.playing) {
+      final elapsed = DateTime.now().difference(_lastPositionUpdate);
+      if (!elapsed.isNegative && elapsed > Duration.zero) {
+        final projectedMillis =
+            _position.inMilliseconds + (elapsed.inMilliseconds * _speed).round();
+        final maxMillis = _duration > Duration.zero ? _duration.inMilliseconds : null;
+
+        final clampedMillis = maxMillis != null
+            ? projectedMillis.clamp(0, maxMillis)
+            : projectedMillis.clamp(0, 24 * 60 * 60 * 1000);
+
+        return Duration(milliseconds: clampedMillis);
+      }
+    }
+
+    return _position;
+  }
 
   DateTime _lastUiTick = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _uiTick = Duration(milliseconds: 200);
+
+  void _setPosition(Duration pos) {
+    _position = pos;
+    _lastPositionUpdate = DateTime.now();
+  }
 
   // троттлинг сохранения прогресса (локально)
   DateTime? _lastPersistAt;
@@ -236,7 +263,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         return;
       }
 
-      _position = pos;
+      _setPosition(pos);
 
       if (pos > _duration) {
         _duration = pos;
@@ -275,9 +302,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     // Переключение раздела
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
-        _currentChapterIndex = idx;
-        _position = player.position;
+        final nextIndex = idx;
+        final changed = nextIndex != _currentChapterIndex;
+
+        _currentChapterIndex = nextIndex;
+        _setPosition(Duration.zero);
         _lastPushSig = null;
+
+        // Сбрасываем любые пользовательские оверрайды/drag-состояния,
+        // чтобы слайдер новой главы стартовал с нуля без артефактов.
+        _isUserSeeking = false;
+        _uiPositionOverride = null;
+        _lastUiTick = DateTime.now();
+
+        if (changed) {
+          _duration = Duration(seconds: _chapters[nextIndex].duration ?? 0);
+        }
+
         _pullDurationFromPlayer();
         notifyListeners();
       }
@@ -1177,8 +1218,8 @@ class AudioPlayerProvider extends ChangeNotifier {
 
         _chapters = [normalized];
         _currentChapterIndex = 0;
-        _position = Duration(seconds: pos);
-        _duration = Duration(seconds: normalized.duration ?? 0);
+    _setPosition(Duration(seconds: pos));
+    _duration = Duration(seconds: normalized.duration ?? 0);
 
         _log(
             'hydrate: applied server (book=$bookId, ch=${normalized.id}, pos=$pos, upd=$upd)');
@@ -1282,7 +1323,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _currentChapterIndex = initialIndex;
     _lastPushSig = null;
 
-    _position = initialPos;
+    _setPosition(initialPos);
     final fallbackDurSec = _chapters[_currentChapterIndex].duration ?? 0;
     _duration = Duration(seconds: fallbackDurSec);
     notifyListeners();
@@ -1325,7 +1366,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void _resetState() {
     _chapters = [];
     _currentChapterIndex = 0;
-    _position = Duration.zero;
+    _setPosition(Duration.zero);
     _duration = Duration.zero;
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
@@ -1419,7 +1460,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (!_hasSequence) return;
 
     await player.seek(position);
-    _position = position;
+    _setPosition(position);
 
     final sec = position.inSeconds;
     if (persist && sec > 0) {
@@ -1447,7 +1488,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     await player.seek(Duration.zero, index: _currentChapterIndex + 1);
-    _position = Duration.zero;
+    _setPosition(Duration.zero);
     _lastPushSig = null;
 
     _rearmFreeSecondsTicker();
@@ -1463,7 +1504,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     await player.seek(Duration.zero, index: _currentChapterIndex - 1);
-    _position = Duration.zero;
+    _setPosition(Duration.zero);
     _lastPushSig = null;
 
     _rearmFreeSecondsTicker();
@@ -1487,7 +1528,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     _log('seekChapter($index, pos=${newPos.inSeconds})');
     await player.seek(newPos, index: index);
-    _position = newPos;
+    _setPosition(newPos);
     _lastPushSig = null;
 
     if (persist && newPos.inSeconds > 0) {
@@ -1640,8 +1681,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         )
       ];
       _currentChapterIndex = 0;
-      _position = Duration(
-          seconds: position is int ? position : int.tryParse('$position') ?? 0);
+      _setPosition(Duration(
+          seconds: position is int ? position : int.tryParse('$position') ?? 0));
       _duration = Duration(seconds: chapter.duration ?? 0);
 
       await _writeProgressEntry(
@@ -1690,7 +1731,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       )
     ];
     _currentChapterIndex = 0;
-    _position = Duration(seconds: positionSec);
+    _setPosition(Duration(seconds: positionSec));
     _duration = Duration(seconds: chapter.duration ?? 0);
   }
 
@@ -1710,7 +1751,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _uiPositionOverride = null;
     await seek(pos);
     if (wasOverride != null) {
-      _position = pos;
+      _setPosition(pos);
       notifyListeners();
     }
   }

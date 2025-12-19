@@ -266,11 +266,13 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
     // Значення слайдера
     // Поки немає тривалості — ставимо тимчасовий max, щоб повзунок не був «сірим на максимумі»
+    final provisionalMaxMillis =
+        (position.inMilliseconds + 1000).clamp(1000, 24 * 60 * 60 * 1000);
     final double sliderMax = hasDur
-        ? effDuration.inSeconds.toDouble()
-        : (position.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
+        ? effDuration.inMilliseconds.toDouble()
+        : provisionalMaxMillis.toDouble();
     final double sliderValue =
-    position.inSeconds.toDouble().clamp(0.0, sliderMax);
+        position.inMilliseconds.clamp(0, sliderMax.toInt()).toDouble();
 
     final connectivityMessage = provider.connectivityMessage;
 
@@ -352,10 +354,10 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       context.read<AudioPlayerProvider>().seekDragStart(),
                   onChanged: (v) => context
                       .read<AudioPlayerProvider>()
-                      .seekDragUpdate(Duration(seconds: v.floor())),
+                      .seekDragUpdate(Duration(milliseconds: v.round())),
                   onChangeEnd: (v) => context
                       .read<AudioPlayerProvider>()
-                      .seekDragEnd(Duration(seconds: v.floor())),
+                      .seekDragEnd(Duration(milliseconds: v.round())),
                 ),
               ),
 
