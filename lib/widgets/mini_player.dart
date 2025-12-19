@@ -1,5 +1,4 @@
 // ПУТЬ: lib/widgets/mini_player.dart
-import 'package:booka_app/screens/login_screen.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,9 +7,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
-import '../core/network/image_cache.dart'; // уніфікований кешер для мініатюр
+import 'package:booka_app/screens/login_screen.dart'; // Переконайтесь, що імпорт правильний
+import '../core/network/image_cache.dart';
 
-/// Раскладка времени относительно слайдера.
 enum MiniTimeLayout { sides, above }
 
 class MiniPlayerWidget extends StatefulWidget {
@@ -38,11 +37,14 @@ class MiniPlayerWidget extends StatefulWidget {
 class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
   bool _showedEndDialog = false;
 
+  // 🔥 ЛОКАЛЬНИЙ СТАН ДЛЯ СЛАЙДЕРА (Щоб не смикався і не залежав від провайдера)
+  bool _isDragging = false;
+  double _dragValue = 0.0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // 🔔 Колбек на завершення першого розділу у гостьовому режимі
     final audio = Provider.of<AudioPlayerProvider>(context, listen: false);
     audio.onGuestFirstChapterEnd = () {
       final isGuest = Provider.of<UserNotifier>(context, listen: false).isGuest;
@@ -99,15 +101,17 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     final currentChapter = audio.currentChapter;
     final connectivityMessage = audio.connectivityMessage;
 
-    // Якщо нічого не відтворюється — не показуємо міні-плеєр
     if (audio.currentUrl == null || currentChapter == null) {
       return const SizedBox.shrink();
     }
 
-    // ⚠️ Позиція з провайдера
-    final pos = audio.uiPosition;
+    // 🔥 ВИЗНАЧЕННЯ ПОЗИЦІЇ:
+    // Якщо тягнемо (_isDragging) — беремо локальне значення (_dragValue).
+    // Якщо ні — беремо реальну позицію з провайдера.
+    final pos = _isDragging
+        ? Duration(seconds: _dragValue.floor())
+        : audio.position;
 
-    // ✅ Ефективна тривалість
     final rawDur = audio.duration;
     final metaDur = (currentChapter.duration ?? 0) > 0
         ? Duration(seconds: currentChapter.duration!)
@@ -116,7 +120,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     final dur = pos > knownDur ? pos : knownDur;
     final hasDur = dur.inSeconds > 0;
 
-    // Тимчасовий максимум
     final provisionalMax = (pos.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
     final sliderMax = hasDur ? dur.inSeconds.toDouble() : provisionalMax;
     final sliderValue = pos.inSeconds.toDouble().clamp(0.0, sliderMax);
@@ -168,13 +171,11 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                         ),
                       ),
 
-                    // Верхній рядок
                     Row(
                       children: [
                         _CoverThumb(url: widget.coverUrl),
                         const SizedBox(width: 12),
 
-                        // Заголовки
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -248,7 +249,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                     const SizedBox(height: 8),
 
-                    // ===== СЛАЙДЕР + ВРЕМЯ =====
+                    // ===== СЛАЙДЕР + ЧАС (ВИПРАВЛЕНО) =====
                     Builder(
                       builder: (_) {
                         final slider = SliderTheme(
@@ -262,11 +263,30 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             value: sliderValue,
                             min: 0.0,
                             max: sliderMax,
-                            onChangeStart: (_) => context.read<AudioPlayerProvider>().seekDragStart(),
-                            onChanged: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragUpdate(Duration(seconds: v.floor())),
-                            onChangeEnd: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragEnd(Duration(seconds: v.floor())),
+                            // 🔥 1. Початок драгу: вмикаємо локальний режим
+                            onChangeStart: (val) {
+                              setState(() {
+                                _isDragging = true;
+                                _dragValue = val;
+                              });
+                            },
+                            // 🔥 2. Процес: оновлюємо локальну змінну (плавно)
+                            onChanged: (val) {
+                              setState(() {
+                                _dragValue = val;
+                              });
+                            },
+                            // 🔥 3. Кінець: відправляємо seek() і тільки потім вимикаємо локальний режим
+                            onChangeEnd: (val) async {
+                              setState(() => _dragValue = val); // На всякий випадок
+                              await context.read<AudioPlayerProvider>().seek(Duration(seconds: val.floor()));
+
+                              if (mounted) {
+                                setState(() {
+                                  _isDragging = false;
+                                });
+                              }
+                            },
                           ),
                         );
 
@@ -304,7 +324,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                     const SizedBox(height: 6),
 
-                    // Керування
+                    // Кнопки -15/+15, Next/Prev
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -340,7 +360,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     );
   }
 
-  // 🔥 ВИПРАВЛЕНО: тепер повертає години, якщо вони є!
   String _fmt(Duration d) {
     final hh = d.inHours;
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -435,7 +454,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
   Future<void> _skipSeconds(int delta, {required Duration effectiveDuration}) async {
     final audio = context.read<AudioPlayerProvider>();
-    var newPos = audio.uiPosition + Duration(seconds: delta);
+    // Тут теж: якщо тягнемо — беремо від пальця, інакше — від реальної позиції
+    final basePos = _isDragging
+        ? Duration(seconds: _dragValue.toInt())
+        : audio.position;
+
+    var newPos = basePos + Duration(seconds: delta);
+
     if (newPos < Duration.zero) newPos = Duration.zero;
     if (effectiveDuration > Duration.zero && newPos > effectiveDuration) {
       newPos = effectiveDuration - const Duration(milliseconds: 500);

@@ -159,10 +159,10 @@ class AudioPlayerProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // ===== UI throttle и drag override для слайдера
-  bool _isUserSeeking = false;
-  Duration? _uiPositionOverride;
-  Duration get uiPosition => _uiPositionOverride ?? _position;
+  // 🔥 CLEANUP: Убраны _isUserSeeking и _uiPositionOverride.
+  // uiPosition теперь просто возвращает реальную позицию.
+  // Логика "удержания" ползунка теперь в SimplePlayer (Optimistic UI).
+  Duration get uiPosition => _position;
 
   DateTime _lastUiTick = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _uiTick = Duration(milliseconds: 200);
@@ -232,6 +232,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     player.positionStream.listen((pos) {
       if (!_hasSequence) return;
 
+      // 🔥 FIX: Если позиция внезапно сбросилась в 0, а мы не в начале трека
+      // (это бывает у JustAudio при буферизации новой главы), игнорируем это обновление.
+      // Это предотвращает скачок ползунка в начало.
       if (_position > Duration.zero && pos == Duration.zero) {
         return;
       }
@@ -244,7 +247,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       _saveProgressThrottled();
       _scheduleServerPush();
 
-      if (_isUserSeeking) return;
+      // 🔥 CLEANUP: Убрана проверка _isUserSeeking.
+      // Провайдер просто транслирует правду. UI сам решит, показывать её или нет.
 
       final now = DateTime.now();
       if (now.difference(_lastUiTick) >= _uiTick) {
@@ -276,7 +280,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
         _currentChapterIndex = idx;
+
+        // При смене главы доверяем плееру (обычно сбрасывается в 0)
         _position = player.position;
+
         _lastPushSig = null;
         _pullDurationFromPlayer();
         notifyListeners();
@@ -1418,8 +1425,11 @@ class AudioPlayerProvider extends ChangeNotifier {
       }) async {
     if (!_hasSequence) return;
 
-    await player.seek(position);
+    // 🔥 Сразу обновляем локальную переменную, чтобы UI не ждал
     _position = position;
+    notifyListeners();
+
+    await player.seek(position);
 
     final sec = position.inSeconds;
     if (persist && sec > 0) {
@@ -1428,7 +1438,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     _rearmFreeSecondsTicker();
-    notifyListeners();
   }
 
   Future<void> setSpeed(double speed) async {
@@ -1694,26 +1703,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     _duration = Duration(seconds: chapter.duration ?? 0);
   }
 
-  // ======== Drag-помощники для слайдера ========
-  void seekDragStart() {
-    _isUserSeeking = true;
-  }
-
-  void seekDragUpdate(Duration pos) {
-    _uiPositionOverride = pos;
-    notifyListeners();
-  }
-
-  Future<void> seekDragEnd(Duration pos) async {
-    _isUserSeeking = false;
-    final wasOverride = _uiPositionOverride;
-    _uiPositionOverride = null;
-    await seek(pos);
-    if (wasOverride != null) {
-      _position = pos;
-      notifyListeners();
-    }
-  }
+  // 🔥 УДАЛЕНЫ МЕТОДЫ seekDragStart, seekDragUpdate, seekDragEnd.
+  // Логика перенесена в SimplePlayer (Optimistic UI).
 
   // === AD-MODE: PUBLIC API ===
   Future<void> enableAdsMode({bool keepPlaying = true}) async {

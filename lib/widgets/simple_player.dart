@@ -1,4 +1,3 @@
-// ПУТЬ: lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,10 +7,6 @@ import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/models/user.dart';
 import 'package:booka_app/screens/login_screen.dart';
 
-/// Простий плеєр — список розділів + базове керування відтворенням.
-/// Виправлено «сірий повзунок на максимумі»:
-///  - використовуємо uiPosition з провайдера (з урахуванням drag-override)
-///  - поки тривалість ще невідома, тимчасовий max = pos+1
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
   final String author;
@@ -40,6 +35,10 @@ class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
   bool _didSeek = false;
 
+  // 🔥 1. Вводжу локальний стан, щоб слайдер слухав палець, а не глючний стрім
+  bool _isDragging = false;
+  double _dragValue = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -49,8 +48,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
-    // 🔔 Колбек на завершення першого розділу для гостя
     final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
     audioProvider.onGuestFirstChapterEnd = () {
       final user = Provider.of<UserNotifier>(context, listen: false).user;
@@ -66,13 +63,19 @@ class _SimplePlayerState extends State<SimplePlayer> {
   void didUpdateWidget(SimplePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     _resetDialogStateIfReplayed();
+
+    // Якщо змінилась глава (id), скидаємо драг, щоб не показувати старий час
+    if (widget.selectedChapterId != oldWidget.selectedChapterId) {
+      setState(() {
+        _isDragging = false;
+        _dragValue = 0.0;
+      });
+    }
   }
 
   Future<void> _maybeSeekToInitial() async {
-    // Один раз перемістимо позицію на початкову, якщо вона задана
     if (!_didSeek && widget.initialPosition != null) {
       final provider = context.read<AudioPlayerProvider>();
-      // даємо джерелу трохи часу на підготовку
       await Future.delayed(const Duration(milliseconds: 400));
       await provider.seek(Duration(seconds: widget.initialPosition!), persist: false);
       _didSeek = true;
@@ -80,7 +83,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   void _resetDialogStateIfReplayed() {
-    // Скидаємо прапорець діалогу при повторному запуску першої глави
     final audioProvider = context.read<AudioPlayerProvider>();
     final user = Provider.of<UserNotifier>(context, listen: false).user;
     final userType = getUserType(user);
@@ -95,29 +97,33 @@ class _SimplePlayerState extends State<SimplePlayer> {
     }
   }
 
-  void _changeSpeed(BuildContext context) {
-    context.read<AudioPlayerProvider>().changeSpeed();
-  }
-
   Future<void> _skipSeconds(BuildContext context, int seconds) async {
     final provider = context.read<AudioPlayerProvider>();
     final effDur = _effectiveDuration(provider, provider.currentChapter);
 
-    var target = provider.uiPosition + Duration(seconds: seconds);
+    // Якщо тягнемо — відштовхуємось від пальця, якщо ні — від реальної позиції
+    final basePos = _isDragging
+        ? Duration(seconds: _dragValue.toInt())
+        : provider.position;
+
+    var target = basePos + Duration(seconds: seconds);
+
     if (target < Duration.zero) target = Duration.zero;
     if (effDur > Duration.zero && target > effDur) {
       target = effDur - const Duration(milliseconds: 500);
     }
-    await provider.seek(target); // через провайдер — зберігаємо/синхронізуємо
+    await provider.seek(target);
   }
 
-  // Поточний індекс у вихідному списку widget.chapters (за id з провайдера)
   int _currentIndexInWidgetList(AudioPlayerProvider provider) {
     final currentId = provider.currentChapter?.id ?? widget.chapters.first.id;
     return widget.chapters.indexWhere((c) => c.id == currentId);
   }
 
   Future<void> _nextChapter(BuildContext context, UserType userType) async {
+    // Скидаємо драг перед переходом
+    if (mounted) setState(() => _isDragging = false);
+
     final provider = context.read<AudioPlayerProvider>();
     final idx = _currentIndexInWidgetList(provider);
     if (idx == -1) return;
@@ -125,7 +131,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final nextIdx = idx + 1;
     if (nextIdx >= widget.chapters.length) return;
 
-    // Гість — тільки перша глава
     if (userType == UserType.guest && nextIdx > 0) {
       _showAuthDialog(context);
       return;
@@ -136,19 +141,20 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   Future<void> _previousChapter(BuildContext context, UserType userType) async {
+    // Скидаємо драг
+    if (mounted) setState(() => _isDragging = false);
+
     final provider = context.read<AudioPlayerProvider>();
     final idx = _currentIndexInWidgetList(provider);
     if (idx == -1) return;
 
     if (idx == 0) {
-      // Якщо вже перша — переміститись на початок
       await provider.seek(const Duration(seconds: 0));
       return;
     }
 
     final prevIdx = idx - 1;
 
-    // Гість — дозволяємо перейти лише на нульовий індекс
     if (userType == UserType.guest && prevIdx > 0) {
       _showAuthDialog(context);
       return;
@@ -158,7 +164,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     widget.onChapterSelected(widget.chapters[prevIdx]);
   }
 
-  /// 🔐 Адаптивне попередження про доступ (bottom-sheet)
   void _showAuthDialog(BuildContext context) {
     final theme = Theme.of(context);
     showModalBottomSheet(
@@ -171,7 +176,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        // Адаптивність шрифтів + обмеження ширини для планшетів/великих екранів
         final media = MediaQuery.of(ctx);
         final clamped = media.textScaleFactor.clamp(1.0, 1.3);
         return MediaQuery(
@@ -199,7 +203,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     const SizedBox(height: 6),
                     const Text(
                       'У гостьовому режимі доступна лише перша глава. '
-                          'Увійдіть, щоб отримати повний доступ до інших розділів і синхронізації прогресу.',
+                          'Увійдіть, щоб отримати повний доступ до інших розділів.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -208,7 +212,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.of(ctx).maybePop();
-                          // Переходимо на екран логіну через rootNavigator
                           Future.microtask(() {
                             Navigator.of(context, rootNavigator: true).push(
                               MaterialPageRoute(
@@ -237,7 +240,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     );
   }
 
-  // Ефективна тривалість: плеєрна або з метаданих глави (щоб не було "сірої" шкали)
   Duration _effectiveDuration(AudioPlayerProvider provider, Chapter? current) {
     final d = provider.duration;
     if (d > Duration.zero) return d;
@@ -257,20 +259,25 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final currentChapter =
         provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
 
-    // Позиція з урахуванням drag-override, щоб UI був стабільним під час перетягування
-    final position = provider.uiPosition;
-
-    // Ефективна тривалість
+    // Тривалість
     final effDuration = _effectiveDuration(provider, currentChapter);
     final hasDur = effDuration.inSeconds > 0;
 
-    // Значення слайдера
-    // Поки немає тривалості — ставимо тимчасовий max, щоб повзунок не був «сірим на максимумі»
+    // 🔥 ВАЖЛИВО 2: Визначаємо значення для слайдера
+    // Якщо тягнемо (_isDragging) — беремо наше локальне значення (_dragValue).
+    // Якщо ні — беремо з провайдера.
+    final double currentSeconds = _isDragging
+        ? _dragValue
+        : provider.position.inSeconds.toDouble();
+
+    // Максимум слайдера. Якщо тривалість ще невідома, даємо хоча б трохи місця (pos + 1),
+    // щоб слайдер не ламався і не був "заблокованим".
     final double sliderMax = hasDur
         ? effDuration.inSeconds.toDouble()
-        : (position.inSeconds + 1).clamp(1, 24 * 60 * 60).toDouble();
-    final double sliderValue =
-    position.inSeconds.toDouble().clamp(0.0, sliderMax);
+        : (currentSeconds + 10).toDouble(); // +10 для запасу
+
+    // Обов'язковий clamp, щоб value ніколи не був більше max (це викликає помилку Flutter)
+    final double sliderValue = currentSeconds.clamp(0.0, sliderMax);
 
     final connectivityMessage = provider.connectivityMessage;
 
@@ -308,7 +315,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   ),
                 ),
 
-              // Заголовки
               Text(
                 currentChapter.title,
                 maxLines: 2,
@@ -338,7 +344,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
-              // Слайдер позиції
+              // 🔥 СЛАЙДЕР З ЛОКАЛЬНИМ УПРАВЛІННЯМ
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
@@ -348,24 +354,48 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
-                  onChangeStart: (_) =>
-                      context.read<AudioPlayerProvider>().seekDragStart(),
-                  onChanged: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragUpdate(Duration(seconds: v.floor())),
-                  onChangeEnd: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragEnd(Duration(seconds: v.floor())),
+
+                  // Початок: захоплюємо керування
+                  onChangeStart: (val) {
+                    setState(() {
+                      _isDragging = true;
+                      _dragValue = val;
+                    });
+                  },
+
+                  // Процес: оновлюємо тільки UI (швидко і плавно)
+                  onChanged: (val) {
+                    setState(() {
+                      _dragValue = val;
+                    });
+                  },
+
+                  // Кінець: відправляємо в плеєр і чекаємо
+                  onChangeEnd: (val) async {
+                    // Оновимо dragValue наостанок
+                    setState(() => _dragValue = val);
+
+                    // Виконуємо seek. Провайдер оновить позицію, коли плеєр буде готовий.
+                    await context.read<AudioPlayerProvider>().seek(Duration(seconds: val.floor()));
+
+                    // Відпускаємо UI. Тепер він знову слухає провайдер.
+                    if (mounted) {
+                      setState(() {
+                        _isDragging = false;
+                      });
+                    }
+                  },
                 ),
               ),
 
-              // Таймінги
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(_formatDuration(position), style: theme.textTheme.labelSmall),
+                    // Показуємо час від слайдера (щоб цифри не скакали окремо від повзунка)
+                    Text(_formatDuration(Duration(seconds: sliderValue.floor())),
+                        style: theme.textTheme.labelSmall),
                     Text(hasDur ? _formatDuration(effDuration) : '--:--',
                         style: theme.textTheme.labelSmall),
                   ],
@@ -374,13 +404,10 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 8),
 
-              // Кнопки керування
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Кнопка зміни швидкості
                   const _SpeedButton(),
-
                   IconButton(
                     tooltip: 'Попередній розділ',
                     onPressed: () => _previousChapter(context, userType),
@@ -391,8 +418,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     onPressed: () => _skipSeconds(context, -15),
                     icon: const Icon(Icons.replay_10_rounded, size: 28),
                   ),
-
-                  // Play / Pause
                   Semantics(
                     label: provider.isPlaying ? 'Пауза' : 'Відтворити',
                     button: true,
@@ -402,7 +427,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       onTap: provider.togglePlayback,
                     ),
                   ),
-
                   IconButton(
                     tooltip: '+15 с',
                     onPressed: () => _skipSeconds(context, 15),
@@ -418,7 +442,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
-              // Банер для free (каталог доступний, але з рекламою)
               if (userType == UserType.free)
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -450,7 +473,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
               ),
               const SizedBox(height: 8),
 
-              // Список розділів
               Expanded(
                 child: ListView.builder(
                   itemCount: widget.chapters.length,
@@ -499,7 +521,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     );
   }
 
-  // 🔥 ВИПРАВЛЕНО: тепер показує години, якщо вони є (H:MM:SS або MM:SS)
   String _formatDuration(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -512,7 +533,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 }
 
-/// Кнопка швидкості з поточним значенням (1×, 1.25× ...).
 class _SpeedButton extends StatelessWidget {
   const _SpeedButton();
 
@@ -542,7 +562,6 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-/// Кругла кнопка play/pause з градієнтним кільцем.
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
