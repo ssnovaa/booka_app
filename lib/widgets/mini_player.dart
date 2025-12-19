@@ -262,11 +262,18 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             value: sliderValue,
                             min: 0.0,
                             max: sliderMax,
-                            onChangeStart: (_) => context.read<AudioPlayerProvider>().seekDragStart(),
-                            onChanged: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragUpdate(Duration(seconds: v.floor())),
-                            onChangeEnd: (v) =>
-                                context.read<AudioPlayerProvider>().seekDragEnd(Duration(seconds: v.floor())),
+                            onChangeStart: audio.uiSeekLocked
+                                ? null
+                                : (_) => context.read<AudioPlayerProvider>().seekDragStart(),
+                            onChanged: audio.uiSeekLocked
+                                ? null
+                                : (v) => context
+                                    .read<AudioPlayerProvider>()
+                                    .seekDragUpdate(Duration(seconds: v.floor())),
+                            onChangeEnd: audio.uiSeekLocked
+                                ? null
+                                : (v) =>
+                                    context.read<AudioPlayerProvider>().seekDragEnd(Duration(seconds: v.floor())),
                           ),
                         );
 
