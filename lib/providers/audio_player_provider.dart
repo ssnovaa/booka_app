@@ -159,6 +159,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   // Блокировка пользовательского seek, пока плеер не подтвердил позицию
   bool _uiSeekLocked = false;
   Duration? _pendingSeekTarget;
+  bool _requireReadyToUnlock = false;
+  bool _playerReady = false;
   bool get uiSeekLocked => _uiSeekLocked;
 
   Duration _position = Duration.zero;
@@ -246,7 +248,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       // Разблокируем seek, когда плеер подтвердил нужную позицию
       if (_uiSeekLocked && _pendingSeekTarget != null) {
         final diff = (pos - _pendingSeekTarget!).abs();
-        if (diff <= const Duration(milliseconds: 300)) {
+        if ((!_requireReadyToUnlock || _playerReady) &&
+            diff <= const Duration(milliseconds: 300)) {
           _unlockUiSeek();
         }
       }
@@ -267,12 +270,15 @@ class AudioPlayerProvider extends ChangeNotifier {
     });
 
     // Сводное состояние плеера
-    player.playerStateStream.listen((_) {
+    player.playerStateStream.listen((event) {
+      _playerReady = event.processingState == ProcessingState.ready;
       _rearmFreeSecondsTicker();
       _syncAdScheduleWithPlayback();
 
       // Если плеер вернулся в готовность без явной целевой позиции — снимем блокировку
-      if (_uiSeekLocked && _pendingSeekTarget == null) {
+      if (_uiSeekLocked &&
+          _pendingSeekTarget == null &&
+          (!_requireReadyToUnlock || _playerReady)) {
         _unlockUiSeek();
       }
     });
@@ -1458,7 +1464,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   Future<void> nextChapter() async {
     if (!_hasSequence || _currentChapterIndex + 1 >= _chapters.length) return;
 
-    _lockUiSeek(const Duration(seconds: 0));
+    _lockUiSeek(const Duration(seconds: 0), requireReady: true);
 
     if (_position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
@@ -1476,7 +1482,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   Future<void> previousChapter() async {
     if (!_hasSequence || _currentChapterIndex - 1 < 0) return;
 
-    _lockUiSeek(const Duration(seconds: 0));
+    _lockUiSeek(const Duration(seconds: 0), requireReady: true);
 
     if (_position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
@@ -1501,7 +1507,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final isChapterChange = index != _currentChapterIndex;
     final newPos = position ?? Duration.zero;
 
-    _lockUiSeek(newPos);
+    _lockUiSeek(newPos, requireReady: true);
 
     if (isChapterChange && _position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
@@ -1733,21 +1739,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     _isUserSeeking = false;
     final wasOverride = _uiPositionOverride;
     _uiPositionOverride = null;
-    _lockUiSeek(pos);
+    _lockUiSeek(pos, requireReady: true);
     await seek(pos);
     _uiPositionOverride = wasOverride ?? pos;
     notifyListeners();
   }
 
-  void _lockUiSeek(Duration? target) {
+  void _lockUiSeek(Duration? target, {bool requireReady = false}) {
     _uiSeekLocked = true;
     _pendingSeekTarget = target;
+    _requireReadyToUnlock = requireReady;
     notifyListeners();
   }
 
   void _unlockUiSeek() {
     _uiSeekLocked = false;
     _pendingSeekTarget = null;
+    _requireReadyToUnlock = false;
     _uiPositionOverride = null;
     notifyListeners();
   }
