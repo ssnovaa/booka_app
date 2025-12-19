@@ -276,7 +276,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     player.currentIndexStream.listen((idx) {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
         _currentChapterIndex = idx;
-        _position = player.position;
         _lastPushSig = null;
         _pullDurationFromPlayer();
         notifyListeners();
