@@ -348,14 +348,19 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
-                  onChangeStart: (_) =>
-                      context.read<AudioPlayerProvider>().seekDragStart(),
-                  onChanged: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragUpdate(Duration(seconds: v.floor())),
-                  onChangeEnd: (v) => context
-                      .read<AudioPlayerProvider>()
-                      .seekDragEnd(Duration(seconds: v.floor())),
+                  onChangeStart: provider.uiSeekLocked
+                      ? null
+                      : (_) => context.read<AudioPlayerProvider>().seekDragStart(),
+                  onChanged: provider.uiSeekLocked
+                      ? null
+                      : (v) => context
+                          .read<AudioPlayerProvider>()
+                          .seekDragUpdate(Duration(seconds: v.floor())),
+                  onChangeEnd: provider.uiSeekLocked
+                      ? null
+                      : (v) => context
+                          .read<AudioPlayerProvider>()
+                          .seekDragEnd(Duration(seconds: v.floor())),
                 ),
               ),
 
