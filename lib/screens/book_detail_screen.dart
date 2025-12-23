@@ -874,7 +874,65 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // ✅ Картка метаданих + ❤️ праворуч (toggle)
+                        // 🔥 НОВИЙ БЛОК: КНОПКА СЛУХАТИ + ОБРАНЕ
+                        Row(
+                          children: [
+                            // Кнопка "Слухати"
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: FilledButton.icon(
+                                  onPressed: (isLoading || error != null)
+                                      ? null
+                                      : _onPlayButtonTap,
+                                  icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                                  label: Text(
+                                    isLoading ? 'Завантаження...' : 'Слухати',
+                                    style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold
+                                    ),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: cs.primary,
+                                    foregroundColor: cs.onPrimary,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Кнопка "Обране" (Квадратна)
+                            SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Material(
+                                color: cs.surfaceContainerHighest.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(12),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: _toggleFavorite,
+                                  child: Center(
+                                    child: _favBusy
+                                        ? const LoadingIndicator(size: 20)
+                                        : Icon(
+                                      _isFav ? Icons.favorite : Icons.favorite_border,
+                                      color: _isFav ? Colors.redAccent : cs.primary,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // ----------------------------------------------------
+
+                        const SizedBox(height: 16),
+
+                        // ✅ Картка метаданих (без сердечка)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: BackdropFilter(
@@ -896,120 +954,66 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                                   ),
                                 ],
                               ),
-                              child: Row(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Ліва частина — текстові метадані
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (_book.series != null &&
-                                            _book.series!.trim().isNotEmpty)
-                                          Text('Серія: ${_book.series}',
-                                              style: theme.textTheme.bodySmall),
-                                        if (_book.genres.isNotEmpty)
-                                          Text(
-                                            'Жанри: ${_book.genres.join(', ')}',
-                                            style: theme.textTheme.bodySmall,
-                                          ),
-                                        if (_book.duration.isNotEmpty)
-                                          Text(
-                                            'Тривалість: ${formatBookDuration(_book.duration, locale: "uk")}',
-                                            style: theme.textTheme.bodySmall,
-                                          ),
-                                        if (_bookLoading) ...[
-                                          const SizedBox(height: 10),
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              LoadingIndicator(size: 16),
-                                              SizedBox(width: 8),
-                                              Text('Оновлення даних книги'),
-                                            ],
-                                          ),
-                                        ],
-                                        if (_bookError != null) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            _bookError!,
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              color: Colors.redAccent,
-                                            ),
-                                          ),
-                                        ],
+                                  if (_book.series != null &&
+                                      _book.series!.trim().isNotEmpty)
+                                    Text('Серія: ${_book.series}',
+                                        style: theme.textTheme.bodySmall),
+                                  if (_book.genres.isNotEmpty)
+                                    Text(
+                                      'Жанри: ${_book.genres.join(', ')}',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  if (_book.duration.isNotEmpty)
+                                    Text(
+                                      'Тривалість: ${formatBookDuration(_book.duration, locale: "uk")}',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  if (_bookLoading) ...[
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        LoadingIndicator(size: 16),
+                                        SizedBox(width: 8),
+                                        Text('Оновлення даних книги'),
                                       ],
                                     ),
-                                  ),
-
-                                  const SizedBox(width: 12),
-
-                                  // Права частина — велика кнопка «серце» (toggle)
-                                  SizedBox(
-                                    height: 36,
-                                    width: 36,
-                                    child: IconButton(
-                                      padding: EdgeInsets.zero,
-                                      tooltip: _isFav
-                                          ? 'Прибрати з «Вибраного»'
-                                          : 'Додати у «Вибране»',
-                                      onPressed: () {
-                                        if (_favBusy) return; // не вимикаємо кнопку, щоб не «провалюватися»
-                                        _toggleFavorite();
-                                      },
-                                      icon: _favBusy
-                                          ? const LoadingIndicator(size: 24)
-                                          : Icon(
-                                        _isFav ? Icons.favorite : Icons.favorite_border,
-                                        size: 26,
+                                  ],
+                                  if (_bookError != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _bookError!,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.redAccent,
                                       ),
-                                      color: _isFav ? Colors.redAccent : cs.primary,
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
                           ),
                         ),
 
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 24),
 
-                        // ✅ ВЕЛИКА КНОПКА «СЛУХАТИ»
-                        // Додаємо її, щоб користувач міг явно запустити цю книгу
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: FilledButton.icon(
-                            onPressed: (isLoading || error != null)
-                                ? null
-                                : _onPlayButtonTap,
-                            icon: const Icon(Icons.play_arrow_rounded, size: 28),
-                            label: Text(
-                              isLoading ? 'Завантаження...' : 'Слухати',
-                              style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold
-                              ),
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: cs.primary,
-                              foregroundColor: cs.onPrimary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                        // Опис
+                        if ((_book.description ?? '').trim().isNotEmpty) ...[
+                          Text(
+                            'Про книгу',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        if ((_book.description ?? '').trim().isNotEmpty)
+                          const SizedBox(height: 8),
                           Text(
                             _book.description!.trim(),
                             style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                           ),
-
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 24),
+                        ],
 
                         // 🔗 Клікабельний рядок для гостя: веде на екран логіну
                         if (userType == UserType.guest)
