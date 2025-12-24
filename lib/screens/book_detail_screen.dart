@@ -1,7 +1,7 @@
 // lib/screens/book_detail_screen.dart
 
-import 'dart:async'; // 1️⃣ Додано для StreamSubscription
-import 'dart:ui'; // для BackdropFilter (glass-ефект)
+import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -21,19 +21,13 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
-import 'package:booka_app/screens/login_screen.dart'; // ⬅️ для переходу на екран логіну
+import 'package:booka_app/screens/login_screen.dart';
 
-// ⬇️ форматування тривалості (години і хвилини)
 import 'package:booka_app/core/utils/duration_format.dart';
-
-// ❗ Санітизація повідомлень про помилки
 import 'package:booka_app/core/security/safe_errors.dart';
-
-// 2️⃣ Імпорти для роботи з вибраним та кешем
 import 'package:booka_app/core/network/favorites_api.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 
-// 🔽 Висота банерної реклами (AdSize.banner.height)
 const double _kAdH = 50.0;
 
 class BookDetailScreen extends StatefulWidget {
@@ -53,37 +47,29 @@ class BookDetailScreen extends StatefulWidget {
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
-  // Поточна «повна» книга (може оновитися після довантаження)
   late Book _book;
 
-  // Розділи
   List<Chapter> chapters = [];
   int selectedChapterIndex = 0;
   bool _userSelectedChapter = false;
 
-  // Прапорці завантаження/помилок
-  bool isLoading = true; // завантаження розділів
+  bool isLoading = true;
   String? error;
 
   bool _playerInitialized = false;
   bool _autoStartPending = false;
 
-  // Завантаження книги (якщо прийшла урізаною)
   bool _bookLoading = false;
   String? _bookError;
 
-  // 📏 Резерв під MiniPlayer: оновлюється динамічно за фактичною висотою
   double _miniPlayerReserved = 0.0;
 
-  // ❤️ Стан «Вибране» з можливістю додати/прибрати (toggle)
-  bool _favBusy = false;   // йде запит
-  bool _isFav = false;     // поточний стан на клієнті
+  bool _favBusy = false;
+  bool _isFav = false;
 
-  // Підписка на оновлення профілю
   StreamSubscription? _updateSub;
   AudioPlayerProvider? _audioProvider;
 
-  /// Синхронізація локального вибору з глобальним плеєром
   void _onAudioChanged() {
     final audio = _audioProvider;
     if (audio == null || chapters.isEmpty) return;
@@ -95,23 +81,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     super.initState();
     _book = widget.book;
 
-    // Спробувати взяти початковий стан з моделі (якщо передали)
     _inferInitialFavoriteFromModel();
-
-    // 3️⃣ МИТТЄВА ПЕРЕВІРКА КЕШУ: прибирає затримку ("блимання") сердечка
     _checkStatusFromCache();
 
-    // 4️⃣ Підписка на оновлення (щоб синхронізуватися, якщо щось зміниться ззовні)
     _updateSub = ProfileRepository.I.onUpdate.listen((_) {
       if (mounted) _checkStatusFromCache();
     });
 
-    _maybeLoadFullBook(); // підтягнути відсутню інформацію про книгу
-
-    // Можна залишити syncFavoriteFromServer як "подвійну перевірку", але кеш зазвичай актуальний
+    _maybeLoadFullBook();
     _syncFavoriteFromServer();
-
-    fetchChapters(); // паралельно підтягнути розділи
+    fetchChapters();
   }
 
   @override
@@ -121,7 +100,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     super.dispose();
   }
 
-  /// 5️⃣ Перевіряє статус у локальному кеші репозиторію
   void _checkStatusFromCache() {
     final map = ProfileRepository.I.getCachedMap();
     if (map == null) return;
@@ -152,7 +130,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  // Спроба визначити стартовий стан «вибране» з моделі Book (якщо є відповідне поле)
   void _inferInitialFavoriteFromModel() {
     try {
       final dyn = _book as dynamic;
@@ -160,7 +137,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final b = _coerceBool(v);
       if (b != null) _isFav = b;
     } catch (_) {
-      // якщо в моделі немає таких полів — ігноруємо
     }
   }
 
@@ -175,7 +151,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     return null;
   }
 
-  // Синхронізуємо локальний стан «вибране» з сервером (резервна перевірка)
   Future<void> _syncFavoriteFromServer() async {
     try {
       final r = await ApiClient.i().get('/favorites');
@@ -206,11 +181,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final nowFav = ids.contains(_book.id);
       if (mounted && nowFav != _isFav) setState(() => _isFav = nowFav);
     } catch (_) {
-      // м’яко ігноруємо помилку
     }
   }
 
-  // ✅ Перевірка, чи «урізаний» об’єкт книги. Обов’язково враховуємо поле "series".
   bool _isSparse(Book b) {
     return (b.description == null || b.description!.trim().isEmpty) ||
         b.genres.isEmpty ||
@@ -218,7 +191,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         (b.series == null || b.series!.trim().isEmpty);
   }
 
-  /// 🔎 Нормалізація назви серії з різних форматів відповіді бекенда
   String? _coerceSeries(Map<String, dynamic> raw) {
     final s = raw['series'];
     if (s is String && s.trim().isNotEmpty) return s.trim();
@@ -262,7 +234,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           throw Exception('Несподівана відповідь від сервера');
         }
 
-        // ✅ Примусово приводимо назву серії до ключа "series"
         final normalized = Map<String, dynamic>.from(raw);
         final coercedSeries = _coerceSeries(raw);
         if (coercedSeries != null && coercedSeries.isNotEmpty) {
@@ -275,7 +246,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           _bookLoading = false;
         });
 
-        // Після отримання повної моделі ще раз спробуємо зчитати прапор «вибране»
         _inferInitialFavoriteFromModel();
       } else {
         setState(() {
@@ -305,7 +275,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final audioProvider = Provider.of<AudioPlayerProvider>(context, listen: false);
 
     try {
-      // КЕШ: forceCache (звично) / refreshForceCache (pull-to-refresh), maxStale 24h
       final cacheOpts = ApiClient.cacheOptions(
         policy: refresh ? CachePolicy.refreshForceCache : CachePolicy.forceCache,
         maxStale: const Duration(hours: 24),
@@ -345,11 +314,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           _userSelectedChapter = false;
           isLoading = false;
           _playerInitialized = false;
-          _autoStartPending = true; // ініціалізуємо плеєр після побудови
+          _autoStartPending = true;
         });
 
-        // Після завантаження глав повторно ініціалізуємо плеєр,
-        // щоб синхронізувати локальний індекс із вже програною главою.
         if (mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_playerInitialized && _autoStartPending) {
@@ -390,12 +357,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _audioProvider?.addListener(_onAudioChanged);
       _onAudioChanged();
     }
-    // ❌ ВІДКЛЮЧАЄМО АВТОЗАПУСК: Не перебивати поточне аудіо при вході
-    /*
-    if (!_playerInitialized && !_autoStartPending && chapters.isNotEmpty) {
-      _initAudioPlayer();
-    }
-    */
   }
 
   @override
@@ -405,7 +366,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       _book = widget.book;
       _playerInitialized = false;
       _autoStartPending = true;
-      _checkStatusFromCache(); // 🔄 Оновлюємо статус при зміні книги
+      _checkStatusFromCache();
       _maybeLoadFullBook(refresh: true);
       fetchChapters();
     }
@@ -416,7 +377,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (mounted) super.setState(fn);
   }
 
-  // Привести відносний шлях до абсолютного + форсувати https
   String _absUrl(String? path) {
     if (path == null || path.trim().isEmpty) return '';
     final s = path.trim();
@@ -440,18 +400,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final currentBookId = audio.currentBook?.id;
       final sameBook = current != null && currentBookId == _book.id;
 
-      // 🔥 FIX ДЛЯ ЗАЇКАННЯ:
-      // Якщо це та сама книга, ми НЕ перезавантажуємо плейлист автоматично.
-      // Ми довіряємо плеєру, що він вже має потрібний контент.
-      // Перезавантаження через setChapters (навіть з правильною позицією)
-      // змушує плеєр скинути буфер, що викликає заїкання звуку.
       if (sameBook) {
-        // Синхронізуємо тільки UI (яка глава виділена)
+        // 🔥 FIX 2: Якщо книга вже грає, оновлюємо дані обкладинки/назви на екрані,
+        // щоб MiniPlayer не був порожнім, поки довантажується сторінка.
+        // Але головне — не перезавантажуємо плейлист.
         final idx = chapters.indexWhere((c) => c.id == current!.id);
         if (idx != -1 && idx != selectedChapterIndex) {
           setState(() => selectedChapterIndex = idx);
         }
-        // Позначаємо, що все готово, і виходимо.
         setState(() {
           _playerInitialized = true;
           _autoStartPending = false;
@@ -459,8 +415,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         return;
       }
 
-      // Якщо книга інша (або нічого не грає), то перевіряємо чи це просто навігація на іншу книгу
-      // (ми не хочемо її авто-запускати, але хочемо знати прогрес)
       if (audio.currentBook != null) {
         final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
         if (savedIdx != null && savedIdx != selectedChapterIndex) {
@@ -472,10 +426,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         });
         return;
       }
-
-      // ⬇️ СЮДИ МИ ПОТРАПЛЯЄМО ТІЛЬКИ ЯКЩО ПЛЕЄР БУВ ПУСТИЙ (перший старт без збереження)
-      // АБО якщо сталася якась нештатна ситуація.
-      // В нормальному flow користувача тут не буде (бо або playing, або sameBook).
 
       final ignoreSavedPosition = widget.initialChapter != null;
 
@@ -516,13 +466,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  // 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: "Розумне" перемикання розділів
   Future<void> _onChapterSelected(Chapter chapter) async {
-    // 1. Шукаємо індекс у повному списку на екрані
     final index = chapters.indexWhere((c) => c.id == chapter.id);
     if (index == -1) return;
 
-    // МИТТЄВО оновлюємо UI (щоб кнопка підсвітилась)
     setState(() {
       selectedChapterIndex = index;
       _userSelectedChapter = true;
@@ -530,27 +477,22 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     final audio = context.read<AudioPlayerProvider>();
 
-    // 2. Чи потрібно перезавантажувати плейлист?
-    // Так, якщо ID книги не той АБО кількість розділів у плеєрі не збігається.
     bool needReload = (audio.currentBook?.id != _book.id) ||
         (audio.chapters.length != chapters.length);
 
     if (needReload) {
-      // 3. Завантажуємо повний список у плеєр
       await audio.setChapters(
         chapters,
         book: _book,
-        startIndex: index, // І стартуємо з потрібного індексу
+        startIndex: index,
         bookTitle: _book.title,
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
-        // 🔥 ВАЖЛИВО: Ігноруємо збережену позицію, бо користувач явно обрав розділ
         ignoreSavedPosition: true,
       );
 
       await audio.play();
     } else {
-      // 5. Якщо список вже повний і правильний — просто перемикаємо трек
       await audio.seekChapter(index, position: Duration.zero, persist: false);
       await audio.play();
     }
@@ -589,7 +531,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     );
   }
 
-  /// ❤️ Перемикач «Вибране» (toggle). Не відключаємо кнопку, щоб тап не «провалювався» в InkWell.
   Future<void> _toggleFavorite() async {
     if (_favBusy) return;
 
@@ -614,7 +555,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final wantFav = !_isFav;
     setState(() => _favBusy = true);
     try {
-      // 6️⃣ ВИКОРИСТОВУЄМО ОНОВЛЕНИЙ API (щоб сповістити ProfileScreen)
       if (wantFav) {
         await FavoritesApi.add(_book.id);
       } else {
@@ -640,23 +580,49 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  // ✅ НОВИЙ МЕТОД: Обробка натискання кнопки «Слухати»
   Future<void> _onPlayButtonTap() async {
-    // Якщо розділи ще не завантажились — ігноруємо
     if (isLoading || chapters.isEmpty) return;
 
     final audio = context.read<AudioPlayerProvider>();
+    final user = context.read<UserNotifier>().user;
+    final userType = getUserType(user);
 
-    // Якщо в плеєрі вже завантажена ця книга
     if (audio.currentBook?.id == _book.id) {
-      // Якщо на паузі — продовжуємо
-      if (!audio.isPlaying) {
+      // 🛠 FIX: Перевірка на "застарілий плейлист гостя".
+      // Якщо ми вже не гість, а плеєр має менше глав, ніж доступно — перезавантажуємо.
+      final bool needsPlaylistUpdate = (userType != UserType.guest) &&
+          (audio.chapters.length < chapters.length);
+
+      if (needsPlaylistUpdate) {
+        // Зберігаємо позицію
+        final currentPos = audio.player.position;
+        // Шукаємо індекс
+        int resumeIndex = 0;
+        if (audio.currentChapter != null) {
+          resumeIndex = chapters.indexWhere((c) => c.id == audio.currentChapter!.id);
+          if (resumeIndex == -1) resumeIndex = 0;
+        }
+
+        // Перезавантажуємо ПОВНИЙ список
+        await audio.setChapters(
+          chapters,
+          book: _book,
+          startIndex: resumeIndex,
+          bookTitle: _book.title,
+          artist: _book.author.trim(),
+          coverUrl: _resolveBgUrl(_book),
+          initialPositionOverride: currentPos,
+        );
         await audio.play();
+      } else {
+        // Звичайна поведінка
+        if (!audio.isPlaying) {
+          await audio.play();
+        }
       }
-      // Відкриваємо шторку повного плеєра
       _openFullPlayer();
     } else {
-      // Це НОВА книга: завантажуємо її в плеєр і стартуємо
+      // Нова книга
       int startIndex = selectedChapterIndex;
       if (!_userSelectedChapter) {
         final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
@@ -671,9 +637,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       await audio.setChapters(
         chapters,
         book: _book,
-        // Використовуємо вже обраний (або синхронізований із плеєром) розділ,
-        // щоб кнопка запускала ту ж главу, що бачить користувач.
-        // Якщо у провайдера є збережений прогрес — він все одно перекриє startIndex.
         startIndex: startIndex,
         bookTitle: _book.title,
         artist: _book.author.trim(),
@@ -691,13 +654,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final user = context.watch<UserNotifier>().user;
     final userType = getUserType(user);
 
-    // Реклама: guest/free — показываем, paid — нет
     final bool showAds = userType != UserType.paid;
 
     final media = MediaQuery.of(context);
     final size = media.size;
 
-    // 📐 Адаптивна висота обкладинки з клампом
     double coverHeight = size.height * 0.38;
     coverHeight = coverHeight.clamp(210.0, 510.0);
 
@@ -712,10 +673,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
     final coverUrlAbs = _absUrl(_book.coverUrl);
 
-    // 🔤 Обмежуємо textScaleFactor, щоб верстка не «ламалася» при дуже великих шрифтах
     final clampedScale = media.textScaleFactor.clamp(1.0, 1.35);
 
-    // 📏 Динамічний низ: фактична висота MiniPlayer + SafeArea.
     final double reservedBottom =
         (currentChapter != null ? _miniPlayerReserved : 0.0) + media.padding.bottom;
 
@@ -754,7 +713,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         )
             : Stack(
           children: [
-            // Фоновий вертикальний градієнт
             IgnorePointer(
               child: Align(
                 alignment: Alignment.topCenter,
@@ -776,12 +734,11 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
 
-            // Контент з pull-to-refresh та ДИНАМІЧНИМ нижнім відступом
             RefreshIndicator(
               onRefresh: () async {
                 await _maybeLoadFullBook(refresh: true);
-                _checkStatusFromCache(); // <-- оновлюємо з кешу
-                await _syncFavoriteFromServer(); // <-- і з сервера
+                _checkStatusFromCache();
+                await _syncFavoriteFromServer();
                 await fetchChapters(refresh: true);
               },
               child: SingleChildScrollView(
@@ -790,7 +747,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 child: Center(
                   child: ConstrainedBox(
                     constraints:
-                    const BoxConstraints(maxWidth: 720), // 📱 читабельна ширина на планшетах
+                    const BoxConstraints(maxWidth: 720),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -874,10 +831,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 🔥 НОВИЙ БЛОК: КНОПКА СЛУХАТИ + ОБРАНЕ
+                        // ✅ БЛОК КНОПОК
                         Row(
                           children: [
-                            // Кнопка "Слухати"
                             Expanded(
                               child: SizedBox(
                                 height: 48,
@@ -904,7 +860,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            // Кнопка "Обране" (Квадратна)
                             SizedBox(
                               width: 48,
                               height: 48,
@@ -928,11 +883,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                             ),
                           ],
                         ),
-                        // ----------------------------------------------------
 
                         const SizedBox(height: 16),
 
-                        // ✅ Картка метаданих (без сердечка)
+                        // ✅ Картка метаданих (БЕЗ СЕРЦЯ)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: BackdropFilter(
@@ -999,7 +953,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
                         const SizedBox(height: 24),
 
-                        // Опис
                         if ((_book.description ?? '').trim().isNotEmpty) ...[
                           Text(
                             'Про книгу',
@@ -1015,8 +968,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                           const SizedBox(height: 24),
                         ],
 
-                        // 🔗 Клікабельний рядок для гостя: веде на екран логіну
-                        if (userType == UserType.guest)
+                        if (userType == UserType.guest) ...[
                           InkWell(
                             onTap: () {
                               Navigator.of(context, rootNavigator: true).push(
@@ -1033,12 +985,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 16),
+                        ],
 
-                        if (userType == UserType.free)
+                        if (userType == UserType.free) ...[
                           Text(
                             'Безкоштовний тариф відтворює з рекламою. Оформіть підписку, щоб слухати без реклами.',
                             style: theme.textTheme.bodySmall?.copyWith(color: cs.tertiary),
                           ),
+                          const SizedBox(height: 16),
+                        ],
                       ],
                     ),
                   ),
@@ -1046,7 +1002,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
 
-            // MiniPlayer поверх усього
             if (currentChapter != null)
               Positioned(
                 left: 0,
@@ -1061,13 +1016,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   },
                   child: MiniPlayerWidget(
                     chapter: currentChapter,
-                    // ✅ ПОКАЗУЄМО ДАНІ ТОГО, ЩО ГРАЄ В ФОНІ, а не поточної сторінки
+                    // ✅ ПОКАЗУЄМО ДАНІ ТОГО, ЩО ГРАЄ В ФОНІ
                     bookTitle: audio.currentBook?.title ?? _book.title,
                     coverUrl: audio.currentBook != null
                         ? _resolveBgUrl(audio.currentBook!)
                         : _resolveBgUrl(_book),
                     onExpand: _openFullPlayer,
-                    // 👇 якщо показуємо рекламу — притискаємо до банера
                     bottomSafeMargin: showAds ? 0 : 8,
                   ),
                 ),
