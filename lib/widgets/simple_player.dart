@@ -35,7 +35,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
   bool _didSeek = false;
 
-  // 🔥 1. Вводжу локальний стан, щоб слайдер слухав палець, а не глючний стрім
+  // 🔥 1. Локальний стан для слайдера
   bool _isDragging = false;
   double _dragValue = 0.0;
 
@@ -64,11 +64,13 @@ class _SimplePlayerState extends State<SimplePlayer> {
     super.didUpdateWidget(oldWidget);
     _resetDialogStateIfReplayed();
 
-    // Якщо змінилась глава (id), скидаємо драг, щоб не показувати старий час
+    // 🔥 FIX: Если изменилась глава (id), сбрасываем только флаг перетаскивания.
+    // Мы БОЛЬШЕ НЕ сбрасываем _dragValue в 0.0 принудительно.
+    // Это предотвращает визуальный скачок ползунка в начало при переключении.
     if (widget.selectedChapterId != oldWidget.selectedChapterId) {
       setState(() {
         _isDragging = false;
-        _dragValue = 0.0;
+        // _dragValue = 0.0; // СТРОКА УДАЛЕНА
       });
     }
   }
@@ -101,7 +103,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final provider = context.read<AudioPlayerProvider>();
     final effDur = _effectiveDuration(provider, provider.currentChapter);
 
-    // Якщо тягнемо — відштовхуємось від пальця, якщо ні — від реальної позиції
     final basePos = _isDragging
         ? Duration(seconds: _dragValue.toInt())
         : provider.position;
@@ -121,7 +122,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   Future<void> _nextChapter(BuildContext context, UserType userType) async {
-    // Скидаємо драг перед переходом
     if (mounted) setState(() => _isDragging = false);
 
     final provider = context.read<AudioPlayerProvider>();
@@ -141,7 +141,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
   }
 
   Future<void> _previousChapter(BuildContext context, UserType userType) async {
-    // Скидаємо драг
     if (mounted) setState(() => _isDragging = false);
 
     final provider = context.read<AudioPlayerProvider>();
@@ -259,24 +258,18 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final currentChapter =
         provider.currentChapter ?? (widget.initialChapter ?? widget.chapters.first);
 
-    // Тривалість
     final effDuration = _effectiveDuration(provider, currentChapter);
     final hasDur = effDuration.inSeconds > 0;
 
-    // 🔥 ВАЖЛИВО 2: Визначаємо значення для слайдера
-    // Якщо тягнемо (_isDragging) — беремо наше локальне значення (_dragValue).
-    // Якщо ні — беремо з провайдера.
+    // 🔥 Слайдер слушает локальное значение при перетаскивании, иначе — провайдер
     final double currentSeconds = _isDragging
         ? _dragValue
         : provider.position.inSeconds.toDouble();
 
-    // Максимум слайдера. Якщо тривалість ще невідома, даємо хоча б трохи місця (pos + 1),
-    // щоб слайдер не ламався і не був "заблокованим".
     final double sliderMax = hasDur
         ? effDuration.inSeconds.toDouble()
-        : (currentSeconds + 10).toDouble(); // +10 для запасу
+        : (currentSeconds + 10).toDouble();
 
-    // Обов'язковий clamp, щоб value ніколи не був більше max (це викликає помилку Flutter)
     final double sliderValue = currentSeconds.clamp(0.0, sliderMax);
 
     final connectivityMessage = provider.connectivityMessage;
@@ -344,7 +337,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
-              // 🔥 СЛАЙДЕР З ЛОКАЛЬНИМ УПРАВЛІННЯМ
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
@@ -354,31 +346,20 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
-
-                  // Початок: захоплюємо керування
                   onChangeStart: (val) {
                     setState(() {
                       _isDragging = true;
                       _dragValue = val;
                     });
                   },
-
-                  // Процес: оновлюємо тільки UI (швидко і плавно)
                   onChanged: (val) {
                     setState(() {
                       _dragValue = val;
                     });
                   },
-
-                  // Кінець: відправляємо в плеєр і чекаємо
                   onChangeEnd: (val) async {
-                    // Оновимо dragValue наостанок
                     setState(() => _dragValue = val);
-
-                    // Виконуємо seek. Провайдер оновить позицію, коли плеєр буде готовий.
                     await context.read<AudioPlayerProvider>().seek(Duration(seconds: val.floor()));
-
-                    // Відпускаємо UI. Тепер він знову слухає провайдер.
                     if (mounted) {
                       setState(() {
                         _isDragging = false;
@@ -393,7 +374,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Показуємо час від слайдера (щоб цифри не скакали окремо від повзунка)
                     Text(_formatDuration(Duration(seconds: sliderValue.floor())),
                         style: theme.textTheme.labelSmall),
                     Text(hasDur ? _formatDuration(effDuration) : '--:--',

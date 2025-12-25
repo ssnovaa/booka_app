@@ -116,7 +116,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   // Скільки часу залишилось до реклами (зберігається при паузі)
   Duration _remainingAdDuration = _adInterval;
 
-  // Час, коли спрацює реклама (якщо грає). Null, якщо пауза.
+  // Час, коли спрацює реклама (якщо грає). Null, если пауза.
   DateTime? _adTargetTime;
 
   Timer? _adTimer;
@@ -281,8 +281,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (idx != null && idx >= 0 && idx < _chapters.length) {
         _currentChapterIndex = idx;
 
-        // При смене главы доверяем плееру (обычно сбрасывается в 0)
-        _position = player.position;
+        // 🔥 FIX: Убрана строка _position = player.position;
+        // Это предотвращает сброс позиции в 0 в момент инициализации новой главы,
+        // сохраняя целевую позицию перемотки (seek), если она была установлена.
 
         _lastPushSig = null;
         _pullDurationFromPlayer();
@@ -332,6 +333,8 @@ class AudioPlayerProvider extends ChangeNotifier {
         .checkConnectivity()
         .then(_handleConnectivityChange);
   }
+
+  // ... (остальные методы без изменений)
 
   Future<void> _handleConnectivityChange(
       List<ConnectivityResult> events) async {
