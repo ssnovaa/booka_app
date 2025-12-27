@@ -83,7 +83,7 @@ class RewardedAdService {
               _isLoaded = false;
             },
             onAdFailedToShowFullScreenContent: (ad, err) {
-              _setError('Не удалось показать рекламу: ${err.message}');
+              _setError('Не вдалося показати рекламу: ${err.message}');
               _isShowing = false;
               ad.dispose();
               _ad = null;
@@ -95,7 +95,7 @@ class RewardedAdService {
           if (!completer.isCompleted) completer.complete(true);
         },
         onAdFailedToLoad: (LoadAdError error) {
-          _setError('Не удалось загрузить рекламу: ${error.message}');
+          _setError('Не вдалося завантажити рекламу: ${error.message}');
           _dispose();
           if (!completer.isCompleted) completer.complete(false);
         },
@@ -121,20 +121,20 @@ class RewardedAdService {
     }
 
     if (_ad == null) {
-      _setError('Показ отменён: объявление недоступно.');
+      _setError('Показ скасовано: оголошення недоступне.');
       return false;
     }
 
     // 1) Запрашиваем одноразовый nonce у сервера
     final nonce = await _requestNonce();
     if (nonce == null || nonce.isEmpty) {
-      _lastError ??= 'Сервер не выдал одноразовый токен (nonce).';
+      _lastError ??= 'Сервер не видав одноразовий токен (nonce).';
       _dispose();
       return false;
     }
 
     if (_ad == null) {
-      _setError('Показ отменён до отображения объявления.');
+      _setError('Показ скасовано до відображення оголошення.');
       return false;
     }
 
@@ -147,7 +147,7 @@ class RewardedAdService {
       await _ad!.setServerSideOptions(ssv);
       debugPrint('[REWARD] SSV set: userId=$_userId, nonce=$nonce');
     } catch (e) {
-      _setError('Не удалось применить SSV-настройки: $e');
+      _setError('Не вдалося застосувати SSV-налаштування: $e');
       _dispose();
       return false;
     }
@@ -165,7 +165,7 @@ class RewardedAdService {
         if (!earned.isCompleted) earned.complete(true);
       });
     } catch (e) {
-      _setError('Ошибка показа объявления: $e');
+      _setError('Помилка показу оголошення: $e');
       _dispose();
       return false;
     }
@@ -174,7 +174,7 @@ class RewardedAdService {
         .timeout(const Duration(minutes: 2), onTimeout: () => false);
 
     if (!gotEarned || !earnedFlag) {
-      _setError('Награда не получена (пользователь закрыл объявление или истёк таймаут).');
+      _setError('Нагороду не отримано (користувач закрив оголошення або минув час очікування).');
       _dispose();
       return false;
     }
@@ -188,7 +188,7 @@ class RewardedAdService {
     );
 
     if (!credited) {
-      _setError('Сервер не подтвердил награду (status != granted).');
+      _setError('Сервер не підтвердив нагороду (status != granted).');
     }
 
     debugPrint('[REWARD] credited=$credited');
@@ -214,10 +214,10 @@ class RewardedAdService {
         debugPrint('[REWARD] nonce=$nonce');
         return nonce;
       }
-      _setError('Неизвестный ответ /rewards/prepare: код ${r.statusCode}');
+      _setError('Невідома відповідь /rewards/prepare: код ${r.statusCode}');
       return null;
     } catch (e) {
-      _setError('Ошибка /rewards/prepare: $e');
+      _setError('Помилка /rewards/prepare: $e');
       return null;
     }
   }
@@ -262,11 +262,11 @@ class RewardedAdService {
             return true;
           }
         } else {
-          _setError('Статус награды: код ${r.statusCode}');
+          _setError('Статус нагороди: код ${r.statusCode}');
         }
       } catch (e) {
         // не падаем — пробуем ещё
-        _setError('Ошибка запроса статуса награды: $e');
+        _setError('Помилка запиту статусу нагороди: $e');
       }
 
       await Future.delayed(delay);

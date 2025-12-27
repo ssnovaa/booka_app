@@ -26,7 +26,7 @@ class RewardService {
       }) async {
     // На web и не-мобайле — не поддерживается.
     if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
-      onError?.call('Rewarded доступен только на Android/iOS.');
+      onError?.call('Перегляд реклами доступний лише на Android/iOS.');
       return false;
     }
 
@@ -69,7 +69,7 @@ class RewardService {
         onAdFailedToLoad: (error) {
           if (!completer.isCompleted) {
             completer.completeError(
-              Exception('Не удалось загрузить рекламу: $error'),
+              Exception('Не вдалося завантажити рекламу: $error'),
             );
           }
         },
