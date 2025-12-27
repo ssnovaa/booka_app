@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart'; // Для кликабельной ссылки
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
@@ -22,8 +23,9 @@ import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/screens/login_screen.dart';
+import 'package:booka_app/screens/subscriptions_screen.dart'; // Экран подписок
 
-import 'package:booka_app/core/utils/duration_format.dart';
+import 'package:booka_app/core/utils/duration_format.dart'; // formatBookDuration
 import 'package:booka_app/core/security/safe_errors.dart';
 import 'package:booka_app/core/network/favorites_api.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
@@ -401,9 +403,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       final sameBook = current != null && currentBookId == _book.id;
 
       if (sameBook) {
-        // 🔥 FIX 2: Якщо книга вже грає, оновлюємо дані обкладинки/назви на екрані,
-        // щоб MiniPlayer не був порожнім, поки довантажується сторінка.
-        // Але головне — не перезавантажуємо плейлист.
         final idx = chapters.indexWhere((c) => c.id == current!.id);
         if (idx != -1 && idx != selectedChapterIndex) {
           setState(() => selectedChapterIndex = idx);
@@ -580,6 +579,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
+  // ✅ ИСПРАВЛЕННЫЙ МЕТОД: Обробка натискання кнопки «Слухати»
+  // ⛔ ПРИБРАНО автоматичне відкриття шторки плеєра (_openFullPlayer)
   Future<void> _onPlayButtonTap() async {
     if (isLoading || chapters.isEmpty) return;
 
@@ -588,22 +589,24 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final userType = getUserType(user);
 
     if (audio.currentBook?.id == _book.id) {
-      // 🛠 FIX: Перевірка на "застарілий плейлист гостя".
-      // Якщо ми вже не гість, а плеєр має менше глав, ніж доступно — перезавантажуємо.
+      // 1. Проверяем целостность данных в плеере
       final bool needsPlaylistUpdate = (userType != UserType.guest) &&
           (audio.chapters.length < chapters.length);
 
-      if (needsPlaylistUpdate) {
-        // Зберігаємо позицію
+      final currentCover = audio.currentBook?.coverUrl;
+      final screenCover = _book.coverUrl;
+      final bool metadataMissing = (currentCover == null || currentCover.isEmpty) &&
+          (screenCover != null && screenCover.isNotEmpty);
+
+      if (needsPlaylistUpdate || metadataMissing) {
+        // Если данных не хватает — обновляем плеер с сохранением позиции
         final currentPos = audio.player.position;
-        // Шукаємо індекс
         int resumeIndex = 0;
         if (audio.currentChapter != null) {
           resumeIndex = chapters.indexWhere((c) => c.id == audio.currentChapter!.id);
           if (resumeIndex == -1) resumeIndex = 0;
         }
 
-        // Перезавантажуємо ПОВНИЙ список
         await audio.setChapters(
           chapters,
           book: _book,
@@ -613,16 +616,19 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           coverUrl: _resolveBgUrl(_book),
           initialPositionOverride: currentPos,
         );
-        await audio.play();
+
+        if (!audio.isPlaying) {
+          await audio.play();
+        }
       } else {
-        // Звичайна поведінка
+        // Если всё ок — просто включаем Play, если стояла пауза
         if (!audio.isPlaying) {
           await audio.play();
         }
       }
-      _openFullPlayer();
+      // ❌ _openFullPlayer(); — ВИДАЛЕНО, шторка більше не стрибає
     } else {
-      // Нова книга
+      // Новая книга — запускаем с нуля
       int startIndex = selectedChapterIndex;
       if (!_userSelectedChapter) {
         final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
@@ -831,7 +837,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // ✅ БЛОК КНОПОК
                         Row(
                           children: [
                             Expanded(
@@ -886,7 +891,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
                         const SizedBox(height: 16),
 
-                        // ✅ Картка метаданих (БЕЗ СЕРЦЯ)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: BackdropFilter(
@@ -989,12 +993,38 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ],
 
                         if (userType == UserType.free) ...[
-                          Text(
-                            'Безкоштовний тариф відтворює з рекламою. Оформіть підписку, щоб слухати без реклами.',
-                            style: theme.textTheme.bodySmall?.copyWith(color: cs.tertiary),
+                          Text.rich(
+                            TextSpan(
+                              style: theme.textTheme.bodySmall?.copyWith(color: cs.tertiary),
+                              children: [
+                                const TextSpan(
+                                  text: 'Безкоштовний тариф відтворює з рекламою. Оформіть ',
+                                ),
+                                TextSpan(
+                                  text: 'підписку',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => const SubscriptionsScreen(),
+                                        ),
+                                      );
+                                    },
+                                ),
+                                const TextSpan(
+                                  text: ', щоб слухати без реклами.',
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 16),
                         ],
+
+                        // ⛔ СПИСОК ГЛАВ УДАЛЕН ИЗ ИНТЕРФЕЙСА ⛔
                       ],
                     ),
                   ),
@@ -1017,10 +1047,16 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   child: MiniPlayerWidget(
                     chapter: currentChapter,
                     // ✅ ПОКАЗУЄМО ДАНІ ТОГО, ЩО ГРАЄ В ФОНІ
-                    bookTitle: audio.currentBook?.title ?? _book.title,
-                    coverUrl: audio.currentBook != null
+                    // Якщо грає поточна книга (по ID), то беремо дані з _book (тут вони повні).
+                    // Якщо грає інша — беремо з аудіо.
+                    bookTitle: (audio.currentBook?.id == _book.id)
+                        ? _book.title
+                        : (audio.currentBook?.title ?? _book.title),
+                    coverUrl: (audio.currentBook?.id == _book.id)
+                        ? _resolveBgUrl(_book)
+                        : (audio.currentBook != null
                         ? _resolveBgUrl(audio.currentBook!)
-                        : _resolveBgUrl(_book),
+                        : _resolveBgUrl(_book)),
                     onExpand: _openFullPlayer,
                     bottomSafeMargin: showAds ? 0 : 8,
                   ),

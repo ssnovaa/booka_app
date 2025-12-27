@@ -1,4 +1,6 @@
+// ПУТЬ: lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart'; // 👈 1. Додано для обробки натискань
 import 'package:provider/provider.dart';
 
 import 'package:booka_app/models/chapter.dart';
@@ -6,6 +8,7 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/models/user.dart';
 import 'package:booka_app/screens/login_screen.dart';
+import 'package:booka_app/screens/subscriptions_screen.dart'; // 👈 2. Додано імпорт екрану підписок
 
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
@@ -65,12 +68,9 @@ class _SimplePlayerState extends State<SimplePlayer> {
     _resetDialogStateIfReplayed();
 
     // 🔥 FIX: Если изменилась глава (id), сбрасываем только флаг перетаскивания.
-    // Мы БОЛЬШЕ НЕ сбрасываем _dragValue в 0.0 принудительно.
-    // Это предотвращает визуальный скачок ползунка в начало при переключении.
     if (widget.selectedChapterId != oldWidget.selectedChapterId) {
       setState(() {
         _isDragging = false;
-        // _dragValue = 0.0; // СТРОКА УДАЛЕНА
       });
     }
   }
@@ -261,7 +261,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
     final effDuration = _effectiveDuration(provider, currentChapter);
     final hasDur = effDuration.inSeconds > 0;
 
-    // 🔥 Слайдер слушает локальное значение при перетаскивании, иначе — провайдер
     final double currentSeconds = _isDragging
         ? _dragValue
         : provider.position.inSeconds.toDouble();
@@ -394,7 +393,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     icon: const Icon(Icons.skip_previous_rounded, size: 30),
                   ),
                   IconButton(
-                    tooltip: '-15 с',
+                    tooltip: '-10 с',
                     onPressed: () => _skipSeconds(context, -10),
                     icon: const Icon(Icons.replay_10_rounded, size: 28),
                   ),
@@ -408,7 +407,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '+15 с',
+                    tooltip: '+10 с',
                     onPressed: () => _skipSeconds(context, 10),
                     icon: const Icon(Icons.forward_10_rounded, size: 28),
                   ),
@@ -436,9 +435,30 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       Icon(Icons.campaign, color: cs.tertiary),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          "Реклама: придбайте підписку та слухайте без реклами!",
-                          style: theme.textTheme.bodySmall,
+                        // 👇 3. Замінено Text на Text.rich з посиланням
+                        child: Text.rich(
+                          TextSpan(
+                            style: theme.textTheme.bodySmall,
+                            children: [
+                              const TextSpan(text: 'Реклама: придбайте '),
+                              TextSpan(
+                                text: 'підписку',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const SubscriptionsScreen(),
+                                      ),
+                                    );
+                                  },
+                              ),
+                              const TextSpan(text: ' та слухайте без реклами!'),
+                            ],
+                          ),
                         ),
                       ),
                     ],
