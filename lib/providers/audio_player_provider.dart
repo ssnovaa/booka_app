@@ -1434,6 +1434,9 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     await player.seek(position);
 
+    // 🔥 FIX: Скидаємо базу для CreditsConsumer, щоб перемотка вперед не списувала секунди
+    _creditsConsumer?.resetBaseline();
+
     final sec = position.inSeconds;
     if (persist && sec > 0) {
       _saveProgressThrottled(force: true);
@@ -1499,6 +1502,10 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     _log('seekChapter($index, pos=${newPos.inSeconds})');
     await player.seek(newPos, index: index);
+
+    // 🔥 FIX: Скидаємо базу і тут, для безпеки
+    _creditsConsumer?.resetBaseline();
+
     _position = newPos;
     _lastPushSig = null;
 

@@ -395,7 +395,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   ),
                   IconButton(
                     tooltip: '-15 с',
-                    onPressed: () => _skipSeconds(context, -15),
+                    onPressed: () => _skipSeconds(context, -10),
                     icon: const Icon(Icons.replay_10_rounded, size: 28),
                   ),
                   Semantics(
@@ -409,7 +409,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                   ),
                   IconButton(
                     tooltip: '+15 с',
-                    onPressed: () => _skipSeconds(context, 15),
+                    onPressed: () => _skipSeconds(context, 10),
                     icon: const Icon(Icons.forward_10_rounded, size: 28),
                   ),
                   IconButton(
