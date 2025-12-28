@@ -334,12 +334,12 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                           icon: const Icon(Icons.skip_previous_rounded, size: 22),
                         ),
                         IconButton(
-                          tooltip: '-15 с',
+                          tooltip: '-10 с',
                           onPressed: () => _skipSeconds(-10, effectiveDuration: dur),
                           icon: const Icon(Icons.replay_10_rounded, size: 22),
                         ),
                         IconButton(
-                          tooltip: '+15 с',
+                          tooltip: '+10 с',
                           onPressed: () => _skipSeconds(10, effectiveDuration: dur),
                           icon: const Icon(Icons.forward_10_rounded, size: 22),
                         ),

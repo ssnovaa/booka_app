@@ -995,7 +995,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     }).toList();
 
     return ConcatenatingAudioSource(
-      useLazyPreparation: false,
+      // ✅ ВИПРАВЛЕНО: true включає ліниве завантаження
+      useLazyPreparation: true,
       children: children,
     );
   }
@@ -1307,6 +1308,12 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log(
         'setChapters: ${_chapters.length} items, start=$_currentChapterIndex, initialPos=${initialPos.inSeconds}s, ignoreSaved=$ignoreSavedPosition');
     try {
+      // ✅ ДОДАНО: Примусова зупинка перед зміною джерела.
+      // Це гарантує, що буфери попередньої книги звільнені.
+      if (player.playing) {
+        await player.stop();
+      }
+
       // 🔥 3. АТОМАРНАЯ ИНИЦИАЛИЗАЦИЯ
       await player.setAudioSource(
         playlist,
