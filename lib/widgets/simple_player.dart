@@ -1,6 +1,6 @@
 // ПУТЬ: lib/widgets/simple_player.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart'; // 👈 1. Додано для обробки натискань
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 
 import 'package:booka_app/models/chapter.dart';
@@ -8,7 +8,7 @@ import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
 import 'package:booka_app/models/user.dart';
 import 'package:booka_app/screens/login_screen.dart';
-import 'package:booka_app/screens/subscriptions_screen.dart'; // 👈 2. Додано імпорт екрану підписок
+import 'package:booka_app/screens/subscriptions_screen.dart';
 
 class SimplePlayer extends StatefulWidget {
   final String bookTitle;
@@ -38,7 +38,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
   bool _showedEndDialog = false;
   bool _didSeek = false;
 
-  // 🔥 1. Локальний стан для слайдера
+  // 🔥 Локальний стан для слайдера
   bool _isDragging = false;
   double _dragValue = 0.0;
 
@@ -403,6 +403,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     child: _RoundPlayButton(
                       size: 64,
                       isPlaying: provider.isPlaying,
+                      isBuffering: provider.isBuffering, // 🔥 1. Передаем статус
                       onTap: provider.togglePlayback,
                     ),
                   ),
@@ -435,7 +436,6 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       Icon(Icons.campaign, color: cs.tertiary),
                       const SizedBox(width: 8),
                       Expanded(
-                        // 👇 3. Замінено Text на Text.rich з посиланням
                         child: Text.rich(
                           TextSpan(
                             style: theme.textTheme.bodySmall,
@@ -565,11 +565,13 @@ class _SpeedButton extends StatelessWidget {
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
+  final bool isBuffering; // 🔥 2. Добавляем поле
   final VoidCallback onTap;
 
   const _RoundPlayButton({
     required this.size,
     required this.isPlaying,
+    required this.isBuffering, // 🔥 3. В конструктор
     required this.onTap,
   });
 
@@ -608,7 +610,16 @@ class _RoundPlayButton extends StatelessWidget {
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
+                  child: isBuffering
+                  // 🔥 4. Логика спиннера
+                      ? const Padding(
+                    padding: EdgeInsets.all(14.0), // Отступы для большого размера кнопки
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7C4DFF)),
+                    ),
+                  )
+                      : Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
                 ),
               ),
             ),

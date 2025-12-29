@@ -204,6 +204,13 @@ class AudioPlayerProvider extends ChangeNotifier {
   set onGuestFirstChapterEnd(void Function()? cb) => _onGuestFirstChapterEnd = cb;
 
   bool get isPlaying => player.playing;
+
+  // 🔥 ДОБАВЛЕНО: Геттер для статуса буферизации
+  bool get isBuffering {
+    final state = player.processingState;
+    return state == ProcessingState.buffering || state == ProcessingState.loading;
+  }
+
   double get speed => _speed;
   Duration get position => _position;
   Duration get duration => _duration;
@@ -300,6 +307,9 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     // Конец трека/раздела
     player.processingStateStream.listen((state) async {
+      // 🔥 ОБНОВЛЕНО: Уведомляем UI, чтобы спиннер мог появиться/исчезнуть
+      notifyListeners();
+
       if (state == ProcessingState.completed) {
         _saveProgressThrottled(force: true);
         await _pushProgressToServer(force: true);

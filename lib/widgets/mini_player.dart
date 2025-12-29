@@ -1,4 +1,4 @@
-// ПУТЬ: lib/widgets/mini_player.dart
+// lib/widgets/mini_player.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:booka_app/models/chapter.dart';
 import 'package:booka_app/providers/audio_player_provider.dart';
 import 'package:booka_app/user_notifier.dart';
-import 'package:booka_app/screens/login_screen.dart'; // Переконайтесь, що імпорт правильний
+import 'package:booka_app/screens/login_screen.dart';
 import '../core/network/image_cache.dart';
 
 enum MiniTimeLayout { sides, above }
@@ -207,6 +207,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                           child: _RoundPlayButton(
                             size: 38,
                             isPlaying: audio.isPlaying,
+                            isBuffering: audio.isBuffering, // 🔥 Передаем статус буферизации
                             onTap: audio.togglePlayback,
                           ),
                         ),
@@ -518,11 +519,13 @@ class _CoverThumb extends StatelessWidget {
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
+  final bool isBuffering; // 🔥 Додано параметр буферизації
   final VoidCallback onTap;
 
   const _RoundPlayButton({
     required this.size,
     required this.isPlaying,
+    required this.isBuffering, // 🔥 Додано параметр
     required this.onTap,
   });
 
@@ -567,7 +570,16 @@ class _RoundPlayButton extends StatelessWidget {
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: iconSize, color: Color(0xFF7C4DFF)),
+                  child: isBuffering
+                  // 🔥 Показуємо індикатор, якщо плеєр думає/завантажує
+                      ? const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7C4DFF)),
+                    ),
+                  )
+                      : Icon(icon, size: iconSize, color: const Color(0xFF7C4DFF)),
                 ),
               ),
             ),

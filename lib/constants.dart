@@ -1,6 +1,8 @@
 // constants.dart
 
-const String BASE_ORIGIN = 'https://app.booka.top';
+// 👇 ГЛАВНОЕ ИЗМЕНЕНИЕ: Ваш новый сервер на Railway
+const String BASE_ORIGIN = 'https://bookacloud-production.up.railway.app';
+
 const String API_PATH = '/api';
 const String BASE_HOST = BASE_ORIGIN;
 const String BASE_URL = '$BASE_ORIGIN$API_PATH';
@@ -31,15 +33,18 @@ String wsUrl(String path) {
   ).toString();
 }
 
+// Эта функция отлично сработает с Cloudflare, так как они отдают полные ссылки (https://...)
 String? ensureAbsoluteImageUrl(String? raw) {
   if (raw == null) return null;
   var s = raw.trim();
   if (s.isEmpty) return null;
 
+  // Если ссылка уже полная (с Cloudflare R2), возвращаем её как есть
   if (s.startsWith('http://') || s.startsWith('https://')) {
     return s.replaceFirst('http://', 'https://');
   }
 
+  // Логика для старых/локальных файлов (если вдруг останутся)
   String? fragment;
   final hashIdx = s.indexOf('#');
   if (hashIdx >= 0) {
