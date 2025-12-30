@@ -7,7 +7,7 @@ import '../core/network/image_cache.dart';
 import 'package:booka_app/widgets/loading_indicator.dart'; // ← Lottie-лоадер замість стандартного бублика
 
 /// Картка улюбленої книги — компактна, підходить для списків.
-/// Підтримує як абсолютні URL, так і відносні шляхи з /storage.
+/// Підтримує як абсолютні URL (Cloudflare R2), так і відносні шляхи.
 class FavoriteBookCard extends StatelessWidget {
   final Map<String, dynamic> book;
 
@@ -20,31 +20,11 @@ class FavoriteBookCard extends StatelessWidget {
     this.coverUrl,
   });
 
-  /// Витягує thumb_url або cover_url з мапи книги.
-  /// Якщо шлях відносний — повертає абсолютний через fullResourceUrl('storage/...').
+  /// Витягує thumb_url або cover_url з мапи книги та перетворює на абсолютне посилання.
+  /// 🔥 ОНОВЛЕНО: Тепер використовує єдину функцію ensureAbsoluteImageUrl
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> b) {
-    String? pick(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      return s.isEmpty ? null : s;
-    }
-
-    String? url =
-        pick(b['thumb_url'] ?? b['thumbUrl']) ?? pick(b['cover_url'] ?? b['coverUrl']);
-    if (url == null) return null;
-
-    final lower = url.toLowerCase();
-    if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return url;
-    }
-
-    if (lower.startsWith('storage/')) {
-      return fullResourceUrl(url);
-    }
-    if (lower.startsWith('/storage/')) {
-      return fullResourceUrl(url.substring(1));
-    }
-    return fullResourceUrl('storage/$url');
+    final rawUrl = (b['thumb_url'] ?? b['thumbUrl'] ?? b['cover_url'] ?? b['coverUrl'])?.toString();
+    return ensureAbsoluteImageUrl(rawUrl);
   }
 
   /// Формує ім'я автора з можливих варіантів поля.
@@ -149,10 +129,7 @@ class FavoriteBookCard extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: const [
-        // Базовий фон з іконкою
-        // Використовуємо той самий стиль, що і у _coverPlaceholder
-        // (перевикористовуємо шляхом інлайна для уникнення рекурсії у Stack)
-        ColoredBox(color: Colors.transparent), // заповнювач розміру
+        ColoredBox(color: Colors.transparent),
       ],
     ).buildBackgroundWith(
       child: _coverPlaceholder(isDark),

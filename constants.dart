@@ -1,6 +1,8 @@
 // constants.dart
 
+// 👇 ВАЖНО: Используем ваш актуальный домен
 const String BASE_ORIGIN = 'https://app.booka.top';
+
 const String API_PATH = '/api';
 const String BASE_HOST = BASE_ORIGIN;
 const String BASE_URL = '$BASE_ORIGIN$API_PATH';
@@ -31,15 +33,21 @@ String wsUrl(String path) {
   ).toString();
 }
 
+/// Универсальная функция для формирования полного URL изображения.
+/// Она корректно обрабатывает как полные ссылки (Cloudflare R2),
+/// так и относительные пути из старой базы данных.
 String? ensureAbsoluteImageUrl(String? raw) {
   if (raw == null) return null;
   var s = raw.trim();
   if (s.isEmpty) return null;
 
+  // 1. Если ссылка уже полная (начинается с http), возвращаем её как есть.
+  // Это критически важно для Cloudflare R2.
   if (s.startsWith('http://') || s.startsWith('https://')) {
     return s.replaceFirst('http://', 'https://');
   }
 
+  // 2. Обработка относительных путей
   String? fragment;
   final hashIdx = s.indexOf('#');
   if (hashIdx >= 0) {
@@ -54,20 +62,29 @@ String? ensureAbsoluteImageUrl(String? raw) {
     s = s.substring(0, qIdx);
   }
 
+  // Очищаем путь от обратных слешей и лишних начальных слешей
   s = s.replaceAll('\\', '/');
   s = s.replaceFirst(RegExp(r'^/+'), '');
   s = s.replaceAll(RegExp(r'/+'), '/');
+
+  // 3. Логика префикса storage/
+  // Если ваши файлы в Cloudflare лежат в корне бакета (например, сразу в папке covers/),
+  // то проверку ниже можно закомментировать.
+  // Но если ссылки на Railway по-прежнему требуют /storage/, оставляем как есть.
   if (!s.startsWith('storage/')) {
     s = 'storage/$s';
   }
 
   var abs = fullResourceUrl(s);
+
+  // Восстанавливаем query-параметры и фрагменты, если они были
   if (queryString != null && queryString.isNotEmpty) {
     abs += (abs.contains('?') ? '&' : '?') + queryString;
   }
   if (fragment != null && fragment.isNotEmpty) {
     abs += '#$fragment';
   }
+
   return abs;
 }
 

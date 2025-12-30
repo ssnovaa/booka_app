@@ -212,17 +212,12 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                   BorderRadius.circular(CurrentListenCard._kRadius),
                   child: SizedBox(
                     height: tileHeight,
-                    // STACK: Дозволяє іконці бути "поверх" всього
                     child: Stack(
                       children: [
-                        // ШАР 1: Основний контент (Клікабельна картка)
-                        // Тап по порожньому місцю може вести на сторінку книги,
-                        // але ми винесли перехід в іконку.
-                        // Можна залишити onTap: widget.onContinue якщо потрібно відкривати плеєр.
                         InkWell(
                           borderRadius:
                           BorderRadius.circular(CurrentListenCard._kRadius),
-                          onTap: null, // Вимкнув тап по всій картці, щоб не плутати користувача
+                          onTap: null,
                           child: Row(
                             children: [
                               ClipRRect(
@@ -246,7 +241,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // Відступ справа для тексту, щоб не наліз на іконку
                                       Padding(
                                         padding: const EdgeInsets.only(right: 36),
                                         child: Text(
@@ -278,7 +272,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      // Прогрес-бар коротший, щоб не заважав кнопці
                                       Padding(
                                         padding: const EdgeInsets.only(right: 4),
                                         child: SizedBox(
@@ -292,14 +285,12 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                         ),
                                       ),
                                       const Spacer(),
-                                      // Кнопка "Продовжити" (внизу праворуч)
                                       Align(
                                         alignment: Alignment.centerRight,
                                         child: ConstrainedBox(
                                           constraints: const BoxConstraints(
                                               minHeight: 28),
                                           child: ElevatedButton(
-                                            // ✅ ТУТ ВИПРАВЛЕННЯ: Кнопка викликає плеєр напряму
                                             onPressed: () {
                                               p.handleBottomPlayTap();
                                             },
@@ -380,15 +371,11 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                             ],
                           ),
                         ),
-
-                        // ШАР 2: Велика іконка-стрілка (Верхній правий кут)
-                        // З фоном та легкою анімацією пульсації
                         Positioned(
                           top: 8,
                           right: 8,
                           child: _PulseArrowButton(
                             onTap: () {
-                              // Перехід на екран книги
                               Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) =>
@@ -410,25 +397,18 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
     );
   }
 
+  /// Універсальний метод для отримання обкладинки.
+  /// 🔥 ВИПРАВЛЕНО: Тепер використовує глобальну функцію ensureAbsoluteImageUrl.
   static String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
-    String? _pick(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      if (s.isEmpty) return null;
-      if (s.startsWith('http')) return s;
-      final path = s.startsWith('storage/')
-          ? s
-          : (s.startsWith('/storage/') ? s.substring(1) : 'storage/$s');
-      return fullResourceUrl(path);
-    }
+    final rawValue = (
+        book['thumb_url'] ??
+            book['thumbUrl'] ??
+            book['cover_url'] ??
+            book['coverUrl'] ??
+            book['cover']
+    )?.toString();
 
-    final t1 = _pick(book['thumb_url']);
-    final t2 = _pick(book['thumbUrl']);
-    final c1 = _pick(book['cover_url']);
-    final c2 = _pick(book['coverUrl']);
-    final c3 = _pick(book['cover']);
-
-    return t1 ?? t2 ?? c1 ?? c2 ?? c3;
+    return ensureAbsoluteImageUrl(rawValue);
   }
 
   static String _fmt(Duration d) {
@@ -439,7 +419,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
   }
 }
 
-// ✅ Віджет для кнопки з пульсацією
 class _PulseArrowButton extends StatefulWidget {
   final VoidCallback onTap;
   const _PulseArrowButton({required this.onTap});
@@ -455,7 +434,6 @@ class _PulseArrowButtonState extends State<_PulseArrowButton> with SingleTickerP
   @override
   void initState() {
     super.initState();
-    // Легка пульсація
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -477,7 +455,6 @@ class _PulseArrowButtonState extends State<_PulseArrowButton> with SingleTickerP
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Колір фону кнопки (напівпрозорий білий або темний)
     final bgColor = isDark
         ? Colors.black.withOpacity(0.3)
         : Colors.white.withOpacity(0.6);
@@ -493,7 +470,7 @@ class _PulseArrowButtonState extends State<_PulseArrowButton> with SingleTickerP
       child: Material(
         color: bgColor,
         shape: const CircleBorder(),
-        elevation: 0, // Без сильної тіні, щоб було "легко"
+        elevation: 0,
         child: InkWell(
           onTap: widget.onTap,
           customBorder: const CircleBorder(),
@@ -502,7 +479,7 @@ class _PulseArrowButtonState extends State<_PulseArrowButton> with SingleTickerP
             child: Icon(
               Icons.arrow_forward_rounded,
               size: 24,
-              color: theme.colorScheme.primary, // Колір іконки - основний
+              color: theme.colorScheme.primary,
             ),
           ),
         ),

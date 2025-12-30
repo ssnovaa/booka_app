@@ -8,7 +8,6 @@ import 'package:booka_app/constants.dart';
 import 'package:booka_app/widgets/loading_indicator.dart';
 import '../core/network/image_cache.dart';
 
-// 1️⃣ Імпорт нашої "розумної" кнопки
 import 'package:booka_app/widgets/add_to_favorites_button.dart';
 
 class BooksGrid extends StatelessWidget {
@@ -48,12 +47,23 @@ class BooksGrid extends StatelessWidget {
     return v.toString().trim();
   }
 
-  // 2️⃣ Хелпер для безпечного отримання ID
   int _idOf(Map<String, dynamic> m) {
     final v = m['id'] ?? m['book_id'] ?? m['bookId'];
     if (v is int) return v;
     if (v is String) return int.tryParse(v) ?? 0;
     return 0;
+  }
+
+  /// Получение URL обложки с поддержкой всех форматов ключей
+  /// 🔥 Использование единой функции ensureAbsoluteImageUrl
+  String? _getCoverUrl(Map<String, dynamic> m) {
+    final raw = resolveUrl(m) ??
+        m['thumb_url'] ??
+        m['thumbUrl'] ??
+        m['cover_url'] ??
+        m['coverUrl'] ??
+        m['cover'];
+    return ensureAbsoluteImageUrl(raw?.toString());
   }
 
   void _openDetails(BuildContext context, Map<String, dynamic> m) {
@@ -84,12 +94,15 @@ class BooksGrid extends StatelessWidget {
       ),
       itemBuilder: (context, i) {
         final m = items[i];
-        final coverUrl = ensureAbsoluteImageUrl(resolveUrl(m));
+
+        // 🔥 Обновлено получение ссылки
+        final coverUrl = _getCoverUrl(m);
+
         final title = _titleOf(m);
         final author = _authorOf(m);
         final duration = _durationOf(m);
         final series = _seriesOf(m);
-        final bookId = _idOf(m); // Отримуємо ID
+        final bookId = _idOf(m);
 
         final isDark = theme.brightness == Brightness.dark;
 
@@ -131,10 +144,8 @@ class BooksGrid extends StatelessWidget {
                       child: SizedBox(
                         height: imageH,
                         width: double.infinity,
-                        // 3️⃣ Використовуємо Stack, щоб накласти кнопку поверх картинки
                         child: Stack(
                           children: [
-                            // Картинка на весь фон Stack
                             Positioned.fill(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
@@ -176,8 +187,6 @@ class BooksGrid extends StatelessWidget {
                                 ),
                               ),
                             ),
-
-                            // Кнопка "Вибране" у правому верхньому куті
                             if (bookId > 0)
                               Positioned(
                                 top: 4,
@@ -222,8 +231,6 @@ class BooksGrid extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 6),
-
-                          // 🔻 Рядок мета: [тривалість] [серія]
                           Row(
                             children: [
                               Expanded(
@@ -257,7 +264,6 @@ class BooksGrid extends StatelessWidget {
     );
   }
 
-  // Локальний хелпер для відступів між елементами в рядку
   List<Widget> _withSpacing(List<Widget> children) {
     final out = <Widget>[];
     for (var i = 0; i < children.length; i++) {
