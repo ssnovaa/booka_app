@@ -780,24 +780,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// thumb_url > cover_url → абсолютний URL
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
-    String? pick(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      return s.isEmpty ? null : s;
-    }
+    final rawThumb = (book['thumb_url'] ?? book['thumbUrl'])?.toString();
+    final rawCover = (book['cover_url'] ?? book['coverUrl'])?.toString();
 
-    String? thumb = pick(book['thumb_url'] ?? book['thumbUrl']);
-    if (thumb != null) {
-      if (thumb.startsWith('http')) return thumb;
-      return fullResourceUrl('storage/$thumb');
-    }
+    final toProcess = rawThumb ?? rawCover;
 
-    String? cover = pick(book['cover_url'] ?? book['coverUrl']);
-    if (cover != null) {
-      if (cover.startsWith('http')) return cover;
-      return fullResourceUrl('storage/$cover');
-    }
-    return null;
+    // 📝 ЛОГ для перевірки даних від сервера
+    // debugPrint('🔎 PROFILE_RAW_DATA: thumb=$rawThumb, cover=$rawCover');
+
+    return ensureAbsoluteImageUrl(toProcess);
   }
 
   Map<String, dynamic> _normalizedBookMap(Map<String, dynamic> m) {

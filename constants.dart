@@ -1,7 +1,8 @@
-// constants.dart
+// lib/constants.dart
+import 'package:flutter/foundation.dart' show debugPrint;
 
-// 👇 ВАЖНО: Используем ваш актуальный домен
-const String BASE_ORIGIN = 'https://app.booka.top';
+// 👇 ВИКОРИСТОВУЄМО ТИМЧАСОВИЙ ДОМЕН RAILWAY
+const String BASE_ORIGIN = 'https://bookacloud-production.up.railway.app';
 
 const String API_PATH = '/api';
 const String BASE_HOST = BASE_ORIGIN;
@@ -33,59 +34,52 @@ String wsUrl(String path) {
   ).toString();
 }
 
-/// Универсальная функция для формирования полного URL изображения.
-/// Она корректно обрабатывает как полные ссылки (Cloudflare R2),
-/// так и относительные пути из старой базы данных.
+/// Універсальна функція для формування повного URL зображення з логами.
 String? ensureAbsoluteImageUrl(String? raw) {
   if (raw == null) return null;
   var s = raw.trim();
   if (s.isEmpty) return null;
 
-  // 1. Если ссылка уже полная (начинается с http), возвращаем её как есть.
-  // Это критически важно для Cloudflare R2.
+  String? result;
+
+  // 1. Якщо посилання вже повне (Cloudflare R2)
   if (s.startsWith('http://') || s.startsWith('https://')) {
-    return s.replaceFirst('http://', 'https://');
+    result = s.replaceFirst('http://', 'https://');
+  } else {
+    // 2. Обробка відносних шляхів
+    String? fragment;
+    final hashIdx = s.indexOf('#');
+    if (hashIdx >= 0) {
+      fragment = s.substring(hashIdx + 1);
+      s = s.substring(0, hashIdx);
+    }
+
+    String? queryString;
+    final qIdx = s.indexOf('?');
+    if (qIdx >= 0) {
+      queryString = s.substring(qIdx + 1);
+      s = s.substring(0, qIdx);
+    }
+
+    s = s.replaceAll('\\', '/');
+    s = s.replaceFirst(RegExp(r'^/+'), '');
+    s = s.replaceAll(RegExp(r'/+'), '/');
+
+    // ✅ ПРЕФІКС storage/ ВИДАЛЕНО, бо на R2 його немає
+    var abs = fullResourceUrl(s);
+
+    if (queryString != null && queryString.isNotEmpty) {
+      abs += (abs.contains('?') ? '&' : '?') + queryString;
+    }
+    if (fragment != null && fragment.isNotEmpty) {
+      abs += '#$fragment';
+    }
+    result = abs;
   }
 
-  // 2. Обработка относительных путей
-  String? fragment;
-  final hashIdx = s.indexOf('#');
-  if (hashIdx >= 0) {
-    fragment = s.substring(hashIdx + 1);
-    s = s.substring(0, hashIdx);
-  }
-
-  String? queryString;
-  final qIdx = s.indexOf('?');
-  if (qIdx >= 0) {
-    queryString = s.substring(qIdx + 1);
-    s = s.substring(0, qIdx);
-  }
-
-  // Очищаем путь от обратных слешей и лишних начальных слешей
-  s = s.replaceAll('\\', '/');
-  s = s.replaceFirst(RegExp(r'^/+'), '');
-  s = s.replaceAll(RegExp(r'/+'), '/');
-
-  // 3. Логика префикса storage/
-  // Если ваши файлы в Cloudflare лежат в корне бакета (например, сразу в папке covers/),
-  // то проверку ниже можно закомментировать.
-  // Но если ссылки на Railway по-прежнему требуют /storage/, оставляем как есть.
-  if (!s.startsWith('storage/')) {
-    s = 'storage/$s';
-  }
-
-  var abs = fullResourceUrl(s);
-
-  // Восстанавливаем query-параметры и фрагменты, если они были
-  if (queryString != null && queryString.isNotEmpty) {
-    abs += (abs.contains('?') ? '&' : '?') + queryString;
-  }
-  if (fragment != null && fragment.isNotEmpty) {
-    abs += '#$fragment';
-  }
-
-  return abs;
+  // 📝 ЛОГ В КОНСОЛЬ
+  debugPrint('🖼️ IMAGE_URL_DEBUG: $result (raw input: $raw)');
+  return result;
 }
 
 String _join(String a, String b) {
