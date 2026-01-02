@@ -344,8 +344,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         .then(_handleConnectivityChange);
   }
 
-  // ... (остальные методы без изменений)
-
   Future<void> _handleConnectivityChange(
       List<ConnectivityResult> events) async {
     final connected =
@@ -912,10 +910,30 @@ class AudioPlayerProvider extends ChangeNotifier {
         ? prettyTitle
         : (chapter.title.isNotEmpty ? chapter.title : 'Розділ');
 
-    final normalizedUrl = _normalizeAudioUrl(chapter.audioUrl);
-    if (normalizedUrl == null || normalizedUrl.isEmpty) {
+    // --- 🔥 ИЗМЕНЕНИЕ ДЛЯ HLS: Добавление расширения и токена в URL ---
+    String normalizedUrl = _normalizeAudioUrl(chapter.audioUrl) ?? '';
+
+    if (normalizedUrl.isNotEmpty) {
+      // 1. Убеждаемся, что URL заканчивается на /index.m3u8 для корректного детекта HLS
+      if (!normalizedUrl.contains('index.m3u8')) {
+        normalizedUrl = normalizedUrl.endsWith('/')
+            ? '${normalizedUrl}index.m3u8'
+            : '$normalizedUrl/index.m3u8';
+      }
+
+      // 2. Добавляем токен авторизации прямо в URL, чтобы сегменты .ts могли авторизоваться
+      final access = AuthStore.I.accessToken;
+      if (access != null && access.isNotEmpty) {
+        normalizedUrl = normalizedUrl.contains('?')
+            ? '$normalizedUrl&token=$access'
+            : '$normalizedUrl?token=$access';
+      }
+    }
+
+    if (normalizedUrl.isEmpty) {
       throw StateError('Chapter ${chapter.id} has no valid audioUrl');
     }
+    // --- КОНЕЦ ИЗМЕНЕНИЙ HLS ---
 
     final albumName = ((bookTitle ?? '').trim()).isNotEmpty
         ? bookTitle!.trim()
