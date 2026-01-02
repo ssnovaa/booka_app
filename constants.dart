@@ -2,7 +2,7 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 
 // 👇 ВИКОРИСТОВУЄМО ТИМЧАСОВИЙ ДОМЕН RAILWAY
-const String BASE_ORIGIN = 'https://bookacloud-production.up.railway.app';
+const String BASE_ORIGIN = 'https://app.booka.top/';
 
 const String API_PATH = '/api';
 const String BASE_HOST = BASE_ORIGIN;

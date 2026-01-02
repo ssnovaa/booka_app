@@ -37,7 +37,7 @@ class ApiClient {
 
     final dio = Dio(options);
 
-    // Файловий кеш (Android/iOS). Без MemCacheStore, щоб уникнути помилки імпорту.
+    // --- ВАШ ОРИГИНАЛЬНЫЙ КОД КЕША ---
     try {
       final tmpDir = await getTemporaryDirectory();
       final dirPath = p.join(tmpDir.path, 'dio_cache');
@@ -49,7 +49,6 @@ class ApiClient {
       cachePath = dirPath;
       if (kDebugMode) debugPrint('ApiClient: using FileCacheStore at $dirPath');
     } catch (e) {
-      // Фолбек: використовуємо системний temp; якщо і він упаде — пробросимо виняток.
       final altPath = p.join(Directory.systemTemp.path, 'dio_cache_fallback');
       final dir = Directory(altPath);
       if (!await dir.exists()) {
@@ -62,7 +61,6 @@ class ApiClient {
       }
     }
 
-    // Глобальні опції кешу для всіх запитів (якщо не перевизначити per-request).
     final defaultCacheOptions = CacheOptions(
       store: cacheStore,
       policy: CachePolicy.request,
@@ -75,10 +73,33 @@ class ApiClient {
 
     dio.interceptors.add(DioCacheInterceptor(options: defaultCacheOptions));
 
-    // ⚠️ Немає ручного Authorization-інтерсептора.
-    // Актуальна авторизація додається через AuthInterceptor (див. EntryScreen).
+    // --- 🔥 НОВЫЙ БЛОК: ОТЛОВ ПРИЧИНЫ ОШИБКИ 500 ---
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onError: (err, handler) {
+          if (err.response != null) {
+            final statusCode = err.response?.statusCode;
+            final data = err.response?.data;
 
-    // Простий retry: таймаути для всіх запитів, 502/503/504 для GET.
+            // Это сообщение мы увидим в Logcat даже в релизе
+            final techMessage = "DEBUG_ERROR [$statusCode] URL: ${err.requestOptions.uri}\nDATA: $data";
+            debugPrint(techMessage);
+
+            // Передаем техническую информацию в объект ошибки
+            return handler.next(DioException(
+              requestOptions: err.requestOptions,
+              response: err.response,
+              type: err.type,
+              error: techMessage,
+              message: "Ошибка сервера $statusCode. Проверьте диск S3/R2.",
+            ));
+          }
+          return handler.next(err);
+        },
+      ),
+    );
+
+    // --- ВАШ ОРИГИНАЛЬНЫЙ RETRY ИНТЕРЦЕПТОР ---
     dio.interceptors.add(
       InterceptorsWrapper(
         onError: (err, handler) async {
@@ -107,7 +128,7 @@ class ApiClient {
       ),
     );
 
-    // Debug-логи з позначкою HIT/MISS.
+    // --- ВАШИ ОРИГИНАЛЬНЫЕ DEBUG ЛОГИ ---
     if (kDebugMode) {
       dio.interceptors.add(
         InterceptorsWrapper(
@@ -134,13 +155,10 @@ class ApiClient {
   }
 
   static Dio i() {
-    if (!_initialized) {
-      throw StateError('ApiClient не ініціалізований. Викличте ApiClient.init() у main() перед використанням.');
-    }
+    if (!_initialized) throw StateError('ApiClient не ініціалізований.');
     return _dio;
   }
 
-  /// Per-request CacheOptions (можна передавати через `.toOptions()` у Dio).
   static CacheOptions cacheOptions({
     CachePolicy policy = CachePolicy.request,
     Duration? maxStale,
@@ -160,63 +178,32 @@ class ApiClient {
     );
   }
 
-  /// Очистити весь кеш.
-  static Future<void> clearAllCache() async {
-    await cacheStore.clean();
-  }
+  static Future<void> clearAllCache() async => await cacheStore.clean();
 
-  /// Видалити кеш конкретного запиту по path+queryParams.
-  static Future<void> deleteCacheFor(
-      String path, {
-        Map<String, dynamic>? queryParameters,
-      }) async {
+  static Future<void> deleteCacheFor(String path, {Map<String, dynamic>? queryParameters}) async {
     final base = Uri.parse(BASE_URL);
     final qp = (queryParameters ?? {}).map((k, v) => MapEntry(k, v?.toString()));
-
-    Uri url;
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      url = Uri.parse(path).replace(queryParameters: qp);
-    } else if (path.startsWith('/')) {
-      url = base.replace(path: path, queryParameters: qp);
-    } else {
-      url = base.resolve(path).replace(queryParameters: qp);
-    }
-
+    Uri url = path.startsWith('http') ? Uri.parse(path).replace(queryParameters: qp) : base.resolve(path).replace(queryParameters: qp);
     final cacheKey = CacheOptions.defaultCacheKeyBuilder(url: url, headers: null);
     await cacheStore.delete(cacheKey);
   }
 
-  /// ===== Відлагоджувальні утиліти для перевірки кешу =====
-
-  /// true, якщо відповідь прийшла з кешу (а не з мережі).
   static bool wasFromCache(Response r) {
-    final fromNetwork = r.extra[extraFromNetworkKey] == true; // '@fromNetwork@'
-    final hasKey = r.extra[extraCacheKey] != null;            // '@cache_key@'
+    final fromNetwork = r.extra[extraFromNetworkKey] == true;
+    final hasKey = r.extra[extraCacheKey] != null;
     return hasKey && !fromNetwork;
   }
 
-  /// Повертає рядок-позначку 'HIT(cache)' / 'MISS(net)'.
   static String cacheMark(Response r) => wasFromCache(r) ? 'HIT(cache)' : 'MISS(net)';
 
-  /// Друк інформації про папку кешу (кількість файлів і розмір).
   static Future<void> debugPrintCacheDirInfo() async {
-    if (cachePath == null) {
-      debugPrint('Cache dir is null.');
-      return;
-    }
+    if (cachePath == null) return;
     final dir = Directory(cachePath!);
-    if (!await dir.exists()) {
-      debugPrint('Cache dir not found: $cachePath');
-      return;
+    if (!await dir.exists()) return;
+    int files = 0; int bytes = 0;
+    await for (final ent in dir.list(recursive: true)) {
+      if (ent is File) { files++; bytes += await ent.length(); }
     }
-    int files = 0;
-    int bytes = 0;
-    await for (final ent in dir.list(recursive: true, followLinks: false)) {
-      if (ent is File) {
-        files++;
-        bytes += await ent.length();
-      }
-    }
-    debugPrint('📦 Cache dir: $files files, ${(bytes / 1024).toStringAsFixed(1)} KB at $cachePath');
+    debugPrint('📦 Cache dir: $files files, ${(bytes / 1024).toStringAsFixed(1)} KB');
   }
 }

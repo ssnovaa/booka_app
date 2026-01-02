@@ -1,7 +1,7 @@
 // constants.dart
 
 // 👇 ГЛАВНОЕ ИЗМЕНЕНИЕ: Ваш новый сервер на Railway
-const String BASE_ORIGIN = 'https://bookacloud-production.up.railway.app';
+const String BASE_ORIGIN = 'https://app.booka.top/';
 
 const String API_PATH = '/api';
 const String BASE_HOST = BASE_ORIGIN;
