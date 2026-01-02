@@ -910,18 +910,11 @@ class AudioPlayerProvider extends ChangeNotifier {
         ? prettyTitle
         : (chapter.title.isNotEmpty ? chapter.title : 'Розділ');
 
-    // --- 🔥 ИЗМЕНЕНИЕ ДЛЯ HLS: Добавление расширения и токена в URL ---
+    // 🔥 FIX: Доверяем URL от бэкенда (там уже или .m3u8 или ID)
     String normalizedUrl = _normalizeAudioUrl(chapter.audioUrl) ?? '';
 
     if (normalizedUrl.isNotEmpty) {
-      // 1. Убеждаемся, что URL заканчивается на /index.m3u8 для корректного детекта HLS
-      if (!normalizedUrl.contains('index.m3u8')) {
-        normalizedUrl = normalizedUrl.endsWith('/')
-            ? '${normalizedUrl}index.m3u8'
-            : '$normalizedUrl/index.m3u8';
-      }
-
-      // 2. Добавляем токен авторизации прямо в URL, чтобы сегменты .ts могли авторизоваться
+      // Добавляем токен авторизации прямо в URL для поддержки сегментов HLS
       final access = AuthStore.I.accessToken;
       if (access != null && access.isNotEmpty) {
         normalizedUrl = normalizedUrl.contains('?')
@@ -933,7 +926,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (normalizedUrl.isEmpty) {
       throw StateError('Chapter ${chapter.id} has no valid audioUrl');
     }
-    // --- КОНЕЦ ИЗМЕНЕНИЙ HLS ---
 
     final albumName = ((bookTitle ?? '').trim()).isNotEmpty
         ? bookTitle!.trim()
@@ -1816,9 +1808,17 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     if (_adTargetTime != null) {
       final now = DateTime.now();
-      final left = _adTargetTime!.difference(now);
-      // Если время вышло, но реклама не успела показаться — будет 0
-      _remainingAdDuration = left.isNegative ? Duration.zero : left;
+      final diff = _adTargetTime!.difference(now);
+
+      // ✅ FIX: РУЧНОЙ CLAMP ДЛЯ DURATION (БЕЗ ОШИБОК)
+      if (diff.isNegative) {
+        _remainingAdDuration = Duration.zero;
+      } else if (diff > _adInterval) {
+        _remainingAdDuration = _adInterval;
+      } else {
+        _remainingAdDuration = diff;
+      }
+
       _adTargetTime = null;
     }
   }
