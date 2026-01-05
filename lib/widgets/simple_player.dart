@@ -67,7 +67,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
     super.didUpdateWidget(oldWidget);
     _resetDialogStateIfReplayed();
 
-    // 🔥 FIX: Если изменилась глава (id), сбрасываем только флаг перетаскивания.
+    // Если изменилась глава, сбрасываем состояние перетаскивания
     if (widget.selectedChapterId != oldWidget.selectedChapterId) {
       setState(() {
         _isDragging = false;
@@ -336,15 +336,33 @@ class _SimplePlayerState extends State<SimplePlayer> {
 
               const SizedBox(height: 12),
 
+              // 🔥 УЛУЧШЕННЫЙ СЛАЙДЕР (С ПУЗЫРЕМ И DIVISIONS)
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
-                  trackHeight: 4,
+                  trackHeight: 6, // Линия чуть толще
+
+                  // Большая зона нажатия (Overlay)
                   thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 30.0),
+
+                  // Настройка всплывающего пузыря
+                  valueIndicatorShape: const PaddleSliderValueIndicatorShape(),
+                  valueIndicatorColor: cs.primary,
+                  valueIndicatorTextStyle: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  showValueIndicator: ShowValueIndicator.always,
                 ),
                 child: Slider(
                   value: sliderValue,
                   min: 0.0,
                   max: sliderMax,
+                  // 🔥 ВАЖНО: divisions включает пузырь
+                  divisions: sliderMax > 0 ? sliderMax.toInt() : 1,
+                  // Текст внутри пузыря
+                  label: _formatDuration(Duration(seconds: sliderValue.floor())),
+
                   onChangeStart: (val) {
                     setState(() {
                       _isDragging = true;
@@ -403,7 +421,7 @@ class _SimplePlayerState extends State<SimplePlayer> {
                     child: _RoundPlayButton(
                       size: 64,
                       isPlaying: provider.isPlaying,
-                      isBuffering: provider.isBuffering, // 🔥 1. Передаем статус
+                      isBuffering: provider.isBuffering, // Статус буферизации
                       onTap: provider.togglePlayback,
                     ),
                   ),
@@ -565,13 +583,13 @@ class _SpeedButton extends StatelessWidget {
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
-  final bool isBuffering; // 🔥 2. Добавляем поле
+  final bool isBuffering; // Новое поле
   final VoidCallback onTap;
 
   const _RoundPlayButton({
     required this.size,
     required this.isPlaying,
-    required this.isBuffering, // 🔥 3. В конструктор
+    required this.isBuffering,
     required this.onTap,
   });
 
@@ -611,9 +629,9 @@ class _RoundPlayButton extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: isBuffering
-                  // 🔥 4. Логика спиннера
+                  // 🔥 Если идет буферизация — крутим спиннер
                       ? const Padding(
-                    padding: EdgeInsets.all(14.0), // Отступы для большого размера кнопки
+                    padding: EdgeInsets.all(14.0),
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
                       valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7C4DFF)),

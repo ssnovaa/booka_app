@@ -37,7 +37,7 @@ class MiniPlayerWidget extends StatefulWidget {
 class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
   bool _showedEndDialog = false;
 
-  // 🔥 ЛОКАЛЬНИЙ СТАН ДЛЯ СЛАЙДЕРА (Щоб не смикався і не залежав від провайдера)
+  // 🔥 ЛОКАЛЬНИЙ СТАН ДЛЯ СЛАЙДЕРА
   bool _isDragging = false;
   double _dragValue = 0.0;
 
@@ -105,9 +105,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       return const SizedBox.shrink();
     }
 
-    // 🔥 ВИЗНАЧЕННЯ ПОЗИЦІЇ:
-    // Якщо тягнемо (_isDragging) — беремо локальне значення (_dragValue).
-    // Якщо ні — беремо реальну позицію з провайдера.
+    // Визначення позиції (локальна або реальна)
     final pos = _isDragging
         ? Duration(seconds: _dragValue.floor())
         : audio.position;
@@ -207,7 +205,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                           child: _RoundPlayButton(
                             size: 38,
                             isPlaying: audio.isPlaying,
-                            isBuffering: audio.isBuffering, // 🔥 Передаем статус буферизации
+                            isBuffering: audio.isBuffering,
                             onTap: audio.togglePlayback,
                           ),
                         ),
@@ -250,36 +248,52 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
                     const SizedBox(height: 8),
 
-                    // ===== СЛАЙДЕР + ЧАС (ВИПРАВЛЕНО) =====
+                    // ===== ПОКРАЩЕНИЙ СЛАЙДЕР + ЧАС =====
                     Builder(
                       builder: (_) {
                         final slider = SliderTheme(
                           data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape: SliderComponentShape.noOverlay,
+                            trackHeight: 4, // Трохи товстіша лінія (було 3)
+
+                            // 1. Велика зона натискання
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 24.0),
                             minThumbSeparation: 0,
+
+                            // 2. Всплывающий пузырь
+                            valueIndicatorShape: const PaddleSliderValueIndicatorShape(),
+                            valueIndicatorColor: cs.primary,
+                            valueIndicatorTextStyle: TextStyle(
+                              color: cs.onPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12, // Шрифт менше для міні-плеєра
+                            ),
+                            showValueIndicator: ShowValueIndicator.always,
                           ),
                           child: Slider(
                             value: sliderValue,
                             min: 0.0,
                             max: sliderMax,
-                            // 🔥 1. Початок драгу: вмикаємо локальний режим
+
+                            // 🔥 ВАЖЛИВО: Divisions вмикає бульбашку
+                            divisions: (sliderMax > 0) ? sliderMax.toInt() : 1,
+
+                            // Текст всередині бульбашки
+                            label: _fmt(Duration(seconds: sliderValue.floor())),
+
                             onChangeStart: (val) {
                               setState(() {
                                 _isDragging = true;
                                 _dragValue = val;
                               });
                             },
-                            // 🔥 2. Процес: оновлюємо локальну змінну (плавно)
                             onChanged: (val) {
                               setState(() {
                                 _dragValue = val;
                               });
                             },
-                            // 🔥 3. Кінець: відправляємо seek() і тільки потім вимикаємо локальний режим
                             onChangeEnd: (val) async {
-                              setState(() => _dragValue = val); // На всякий випадок
+                              setState(() => _dragValue = val);
                               await context.read<AudioPlayerProvider>().seek(Duration(seconds: val.floor()));
 
                               if (mounted) {
@@ -455,7 +469,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
 
   Future<void> _skipSeconds(int delta, {required Duration effectiveDuration}) async {
     final audio = context.read<AudioPlayerProvider>();
-    // Тут теж: якщо тягнемо — беремо від пальця, інакше — від реальної позиції
     final basePos = _isDragging
         ? Duration(seconds: _dragValue.toInt())
         : audio.position;
@@ -519,13 +532,13 @@ class _CoverThumb extends StatelessWidget {
 class _RoundPlayButton extends StatelessWidget {
   final double size;
   final bool isPlaying;
-  final bool isBuffering; // 🔥 Додано параметр буферизації
+  final bool isBuffering;
   final VoidCallback onTap;
 
   const _RoundPlayButton({
     required this.size,
     required this.isPlaying,
-    required this.isBuffering, // 🔥 Додано параметр
+    required this.isBuffering,
     required this.onTap,
   });
 
@@ -571,7 +584,7 @@ class _RoundPlayButton extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: isBuffering
-                  // 🔥 Показуємо індикатор, якщо плеєр думає/завантажує
+                  // Спіннер буферизації
                       ? const Padding(
                     padding: EdgeInsets.all(8.0),
                     child: CircularProgressIndicator(
