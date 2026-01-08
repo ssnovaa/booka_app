@@ -840,8 +840,13 @@ class AudioPlayerProvider extends ChangeNotifier {
   String? _coverFromBook(Map<String, dynamic>? bookMap) {
     if (bookMap == null) return null;
     final cand = [
+      bookMap['displayCoverUrl'],
+      bookMap['display_cover_url'],
       bookMap['cover_url'],
+      bookMap['coverUrl'],
       bookMap['thumbnailUrl'],
+      bookMap['thumb_url'],
+      bookMap['thumbUrl'],
       bookMap['thumb'],
       bookMap['cover'],
       bookMap['image'],
@@ -943,10 +948,24 @@ class AudioPlayerProvider extends ChangeNotifier {
       return _coverFromBook(chapter.book);
     })();
 
-    final displayTitle = title.isNotEmpty ? title : albumName;
+    // Системный плеер читает заголовок именно из `title`,
+    // поэтому гарантируем непустые значения для всех отображаемых полей,
+    // чтобы всегда показать название книги, автора и обложку.
+    final safeAlbum = albumName.isNotEmpty ? albumName : 'Аудіокнига';
+    final safeArtist = (artistName != null && artistName.trim().isNotEmpty)
+        ? artistName
+        : 'Booka';
+    final displayTitle = title.isNotEmpty ? title : safeAlbum;
     final displaySubtitle = (() {
-      if (artistName != null && artistName.isNotEmpty) return artistName;
-      return albumName;
+      final artist = artistName ?? '';
+      if (artist.trim().isNotEmpty) return artist;
+      return safeArtist;
+    })();
+    final mediaTitle = title.isNotEmpty ? title : displayTitle;
+    final mediaArtUri = (() {
+      final url = artUrl?.trim() ?? '';
+      if (url.isEmpty) return null;
+      return Uri.tryParse(url);
     })();
 
     final description = (() {
@@ -972,13 +991,13 @@ class AudioPlayerProvider extends ChangeNotifier {
       headers: _authHeaders(),
       tag: MediaItem(
         id: mediaId,
-        title: title,
-        album: albumName,
-        artist: artistName,
-        artUri: artUrl != null ? Uri.parse(artUrl) : null,
+        title: mediaTitle,
+        album: safeAlbum,
+        artist: safeArtist,
+        artUri: mediaArtUri,
         displayDescription: description.isNotEmpty ? description : null,
-        displayTitle: displayTitle,
-        displaySubtitle: displaySubtitle,
+        displayTitle: displayTitle.isNotEmpty ? displayTitle : mediaTitle,
+        displaySubtitle: displaySubtitle.isNotEmpty ? displaySubtitle : null,
         extras: {
           'bookTitle': albumName,
           if (artistName != null) 'artistName': artistName,
