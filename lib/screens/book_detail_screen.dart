@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart'; // Для кликабельной ссылки
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
@@ -23,9 +23,9 @@ import 'package:booka_app/core/network/api_client.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 import 'package:booka_app/widgets/booka_app_bar.dart';
 import 'package:booka_app/screens/login_screen.dart';
-import 'package:booka_app/screens/subscriptions_screen.dart'; // Экран подписок
+import 'package:booka_app/screens/subscriptions_screen.dart';
 
-import 'package:booka_app/core/utils/duration_format.dart'; // formatBookDuration
+import 'package:booka_app/core/utils/duration_format.dart';
 import 'package:booka_app/core/security/safe_errors.dart';
 import 'package:booka_app/core/network/favorites_api.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
@@ -428,6 +428,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
       final ignoreSavedPosition = widget.initialChapter != null;
 
+      // 🔥 FIX: Передаем context в setChapters
       await audio.setChapters(
         chapters,
         book: _book,
@@ -436,6 +437,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
         ignoreSavedPosition: ignoreSavedPosition,
+        context: context,
       );
 
       _syncSelectedChapterFromPlayer(audio);
@@ -480,6 +482,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         (audio.chapters.length != chapters.length);
 
     if (needReload) {
+      // 🔥 FIX: Передаем context
       await audio.setChapters(
         chapters,
         book: _book,
@@ -488,12 +491,15 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
         ignoreSavedPosition: true,
+        context: context,
       );
 
-      await audio.play();
+      // 🔥 FIX: Передаем context
+      await audio.play(context);
     } else {
       await audio.seekChapter(index, position: Duration.zero, persist: false);
-      await audio.play();
+      // 🔥 FIX: Передаем context
+      await audio.play(context);
     }
   }
 
@@ -579,8 +585,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  // ✅ ИСПРАВЛЕННЫЙ МЕТОД: Обробка натискання кнопки «Слухати»
-  // ⛔ ПРИБРАНО автоматичне відкриття шторки плеєра (_openFullPlayer)
   Future<void> _onPlayButtonTap() async {
     if (isLoading || chapters.isEmpty) return;
 
@@ -589,7 +593,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final userType = getUserType(user);
 
     if (audio.currentBook?.id == _book.id) {
-      // 1. Проверяем целостность данных в плеере
       final bool needsPlaylistUpdate = (userType != UserType.guest) &&
           (audio.chapters.length < chapters.length);
 
@@ -599,7 +602,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           (screenCover != null && screenCover.isNotEmpty);
 
       if (needsPlaylistUpdate || metadataMissing) {
-        // Если данных не хватает — обновляем плеер с сохранением позиции
         final currentPos = audio.player.position;
         int resumeIndex = 0;
         if (audio.currentChapter != null) {
@@ -607,6 +609,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           if (resumeIndex == -1) resumeIndex = 0;
         }
 
+        // 🔥 FIX: Передаем context
         await audio.setChapters(
           chapters,
           book: _book,
@@ -615,20 +618,20 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           artist: _book.author.trim(),
           coverUrl: _resolveBgUrl(_book),
           initialPositionOverride: currentPos,
+          context: context,
         );
 
         if (!audio.isPlaying) {
-          await audio.play();
+          // 🔥 FIX: Передаем context
+          await audio.play(context);
         }
       } else {
-        // Если всё ок — просто включаем Play, если стояла пауза
         if (!audio.isPlaying) {
-          await audio.play();
+          // 🔥 FIX: Передаем context
+          await audio.play(context);
         }
       }
-      // ❌ _openFullPlayer(); — ВИДАЛЕНО, шторка більше не стрибає
     } else {
-      // Новая книга — запускаем с нуля
       int startIndex = selectedChapterIndex;
       if (!_userSelectedChapter) {
         final savedIdx = await audio.getSavedChapterIndex(_book.id, chapters);
@@ -640,6 +643,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         }
       }
 
+      // 🔥 FIX: Передаем context
       await audio.setChapters(
         chapters,
         book: _book,
@@ -647,8 +651,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         bookTitle: _book.title,
         artist: _book.author.trim(),
         coverUrl: _resolveBgUrl(_book),
+        context: context,
       );
-      await audio.play();
+      // 🔥 FIX: Передаем context
+      await audio.play(context);
     }
   }
 
@@ -1023,8 +1029,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
-
-                        // ⛔ СПИСОК ГЛАВ УДАЛЕН ИЗ ИНТЕРФЕЙСА ⛔
                       ],
                     ),
                   ),
@@ -1047,8 +1051,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   child: MiniPlayerWidget(
                     chapter: currentChapter,
                     // ✅ ПОКАЗУЄМО ДАНІ ТОГО, ЩО ГРАЄ В ФОНІ
-                    // Якщо грає поточна книга (по ID), то беремо дані з _book (тут вони повні).
-                    // Якщо грає інша — беремо з аудіо.
                     bookTitle: (audio.currentBook?.id == _book.id)
                         ? _book.title
                         : (audio.currentBook?.title ?? _book.title),

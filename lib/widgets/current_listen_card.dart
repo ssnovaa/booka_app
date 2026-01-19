@@ -292,7 +292,8 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
                                               minHeight: 28),
                                           child: ElevatedButton(
                                             onPressed: () {
-                                              p.handleBottomPlayTap();
+                                              // 🔥 ВАЖНО: Передаем context для показа ошибок
+                                              p.handleBottomPlayTap(context);
                                             },
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor:
@@ -398,7 +399,6 @@ class _CurrentListenCardState extends State<CurrentListenCard> {
   }
 
   /// Універсальний метод для отримання обкладинки.
-  /// 🔥 ВИПРАВЛЕНО: Тепер використовує глобальну функцію ensureAbsoluteImageUrl.
   static String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     final rawValue = (
         book['thumb_url'] ??

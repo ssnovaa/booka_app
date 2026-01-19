@@ -14,7 +14,7 @@ class AppToast {
     );
   }
 
-  /// 🟢 Благодарность (Скорректирован отступ текста)
+  /// 🟢 Благодарность
   static void showThankYou(BuildContext context) {
     _showFancyToast(
       context,
@@ -23,6 +23,19 @@ class AppToast {
       icon: Icons.favorite_rounded,
       accentColor: const Color(0xFFE91E63), // Розовый
       isSpecial: true,
+    );
+  }
+
+  /// 🔴 Ошибка (ДОБАВЛЕНО ДЛЯ ПРОВЕРКИ ИНТЕРНЕТА)
+  static void showError(BuildContext context, String message) {
+    _showFancyToast(
+      context,
+      title: 'Увага',
+      subtitle: message,
+      // Используем rounded, чтобы соответствовать стилю других иконок
+      icon: Icons.wifi_off_rounded,
+      // Красный цвет ошибки, но не слишком "ядовитый"
+      accentColor: const Color(0xFFD32F2F),
     );
   }
 
@@ -35,7 +48,7 @@ class AppToast {
         required Color accentColor,
         bool isSpecial = false,
       }) {
-    // Чистим очередь
+    // Чистим очередь, чтобы не скапливались старые сообщения
     ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -79,7 +92,7 @@ class AppToast {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // 🔥 БЫЛО 70, СТАЛО 75 (сдвинули текст вправо на 5px)
+                        // Сдвиг текста вправо под иконку
                         const SizedBox(width: 85),
 
                         // Заголовок
@@ -139,7 +152,7 @@ class AppToast {
               ),
             ),
 
-            // --- 3. Декор ---
+            // --- 3. Декор (только если isSpecial) ---
             if (isSpecial)
               Positioned(
                 right: 16,

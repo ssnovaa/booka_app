@@ -422,7 +422,8 @@ class _SimplePlayerState extends State<SimplePlayer> {
                       size: 64,
                       isPlaying: provider.isPlaying,
                       isBuffering: provider.isBuffering, // Статус буферизации
-                      onTap: provider.togglePlayback,
+                      // 🔥 ИСПРАВЛЕНО: Передаем context в togglePlayback
+                      onTap: () => provider.togglePlayback(context),
                     ),
                   ),
                   IconButton(

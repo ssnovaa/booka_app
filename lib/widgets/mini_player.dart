@@ -206,7 +206,8 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                             size: 38,
                             isPlaying: audio.isPlaying,
                             isBuffering: audio.isBuffering,
-                            onTap: audio.togglePlayback,
+                            // 🔥 ВАЖНО: Передаем context для показа ошибок
+                            onTap: () => audio.togglePlayback(context),
                           ),
                         ),
 
@@ -482,8 +483,9 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     await audio.seek(newPos);
   }
 
-  Future<void> _nextChapter() => context.read<AudioPlayerProvider>().nextChapter();
-  Future<void> _previousChapter() => context.read<AudioPlayerProvider>().previousChapter();
+  // 🔥 ВАЖНО: Передаем context в методы навигации
+  Future<void> _nextChapter() => context.read<AudioPlayerProvider>().nextChapter(context);
+  Future<void> _previousChapter() => context.read<AudioPlayerProvider>().previousChapter(context);
 }
 
 class _CoverThumb extends StatelessWidget {

@@ -202,7 +202,8 @@ class CustomBottomNavBar extends StatelessWidget {
                           await p.ensureCreditsTickerBound();
 
                           // 3) Пытаемся продолжить сессию / play-pause
-                          final bool started = await p.handleBottomPlayTap();
+                          // 🔥 ВАЖНО: передаем context, чтобы показать ошибку сети, если нужно
+                          final bool started = await p.handleBottomPlayTap(context);
 
                           if (!started) {
                             // Нет активной сессии — зовем ваш «Продовжити»

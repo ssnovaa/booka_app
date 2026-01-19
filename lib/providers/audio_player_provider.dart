@@ -20,6 +20,10 @@ import 'package:booka_app/core/network/auth/auth_store.dart';
 import 'package:booka_app/repositories/profile_repository.dart';
 import 'package:booka_app/core/credits/credits_consumer.dart'; // списание секунд
 
+// 🔥 НОВЫЕ ИМПОРТЫ
+import 'package:booka_app/core/network/network_service.dart';
+import 'package:booka_app/core/ui/app_toast.dart';
+
 // ---- КЛЮЧИ ДЛЯ PREFS ----
 const String _kCurrentListenKey = 'current_listen';
 const String _kProgressMapKey = 'listen_progress_v1';
@@ -127,6 +131,9 @@ class AudioPlayerProvider extends ChangeNotifier {
   bool get isAdScheduleSuspended => _adScheduleSuspend > 0;
 
   bool get isAdMode => _adMode;
+
+  // 🔥 ТАЙМЕР БУФЕРИЗАЦИИ
+  Timer? _bufferingTimeoutTimer;
 
   // 🔥 Геттер для UI: повертає реальний час до реклами
   Duration get timeUntilNextAd {
@@ -310,6 +317,22 @@ class AudioPlayerProvider extends ChangeNotifier {
       // 🔥 ОБНОВЛЕНО: Уведомляем UI, чтобы спиннер мог появиться/исчезнуть
       notifyListeners();
 
+      // 🔥 ЛОГИКА ТАЙМАУТА БУФЕРИЗАЦИИ (20 СЕКУНД)
+      if (state == ProcessingState.buffering) {
+        _bufferingTimeoutTimer?.cancel();
+        _bufferingTimeoutTimer = Timer(const Duration(seconds: 20), () async {
+          if (player.processingState == ProcessingState.buffering) {
+            _log('Buffering timeout! Connection seems dead.');
+            await pause();
+            _connectivityMessage = 'Слабкий сигнал інтернету. Відтворення призупинено.';
+            notifyListeners();
+          }
+        });
+      } else {
+        _bufferingTimeoutTimer?.cancel();
+        _bufferingTimeoutTimer = null;
+      }
+
       if (state == ProcessingState.completed) {
         _saveProgressThrottled(force: true);
         await _pushProgressToServer(force: true);
@@ -324,7 +347,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
 
         if (hasNext) {
-          await nextChapter();
+          await nextChapter(); // Здесь будет использоваться метод без контекста
         } else {
           await player.seek(Duration.zero);
           await player.pause();
@@ -343,7 +366,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         .checkConnectivity()
         .then(_handleConnectivityChange);
   }
-
   Future<void> _handleConnectivityChange(
       List<ConnectivityResult> events) async {
     final connected =
@@ -367,6 +389,8 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (_pausedByConnectivity && !player.playing) {
         _pausedByConnectivity = false;
         try {
+          // При восстановлении пробуем играть.
+          // Метод play() сам выполнит проверку пинга.
           await play();
         } catch (e) {
           _log('Auto-resume failed: $e');
@@ -728,7 +752,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       positionSec: posSec,
     );
   }
-
   // ---------- PUSH ПРОГРЕССА НА СЕРВЕР ----------
   void _scheduleServerPush() {
     if (_userType == UserType.guest) return;
@@ -853,9 +876,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     return null;
   }
 
-  // ---------- HELPERS: API access / Chapters fetching (FIX: Добавлен _retrieveAllChaptersForBook) ----------
+  // ---------- HELPERS: API access / Chapters fetching ----------
 
-  // Новый вспомогательный метод для получения полного списка глав для книги.
   Future<List<Chapter>> _retrieveAllChaptersForBook(int bookId) async {
     try {
       final resp = await ApiClient.i().get(
@@ -876,7 +898,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         book: {'id': bookId},
       )).toList();
 
-      // 🔥 ДОБАВЛЕНО: Сохраняем в кэш для следующего раза
       if (list.isNotEmpty) {
         _cacheChaptersForBook(bookId, list);
       }
@@ -910,11 +931,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         ? prettyTitle
         : (chapter.title.isNotEmpty ? chapter.title : 'Розділ');
 
-    // 🔥 FIX: Доверяем URL от бэкенда (там уже или .m3u8 или ID)
     String normalizedUrl = _normalizeAudioUrl(chapter.audioUrl) ?? '';
 
     if (normalizedUrl.isNotEmpty) {
-      // Добавляем токен авторизации прямо в URL для поддержки сегментов HLS
       final access = AuthStore.I.accessToken;
       if (access != null && access.isNotEmpty) {
         normalizedUrl = normalizedUrl.contains('?')
@@ -1015,7 +1034,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     }).toList();
 
     return ConcatenatingAudioSource(
-      // ✅ ВИПРАВЛЕНО: true включає ліниве завантаження
       useLazyPreparation: true,
       children: children,
     );
@@ -1024,8 +1042,8 @@ class AudioPlayerProvider extends ChangeNotifier {
   // ---------- ПУБЛИЧНЫЕ ОБЁРТКИ ----------
   Future<bool> hydrateFromServerIfAvailable() => _hydrateFromServerIfAvailable();
 
-  Future<void> ensurePrepared() async {
-    await _prepareFromSavedIfNeeded();
+  Future<void> ensurePrepared([BuildContext? context]) async {
+    await _prepareFromSavedIfNeeded(context);
   }
 
   Future<void> seekTo(Duration position) => seek(position);
@@ -1230,6 +1248,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   // ---------- НАБОР РАЗДЕЛОВ / ПЛЕЙЛИСТ ----------
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Добавлен context и проверка сети
   Future<void> setChapters(
       List<Chapter> chapters, {
         int startIndex = 0,
@@ -1239,9 +1258,24 @@ class AudioPlayerProvider extends ChangeNotifier {
         Book? book,
         UserType? userTypeOverride,
         bool ignoreSavedPosition = false,
-        // 🔥 1. НОВЫЙ ПАРАМЕТР: точная позиция старта
         Duration? initialPositionOverride,
+        BuildContext? context, // 🔥
       }) async {
+
+    // --- 1. ПРОВЕРКА ИНТЕРНЕТА ---
+    if (chapters.any((c) => c.audioUrl.startsWith('http'))) {
+      final hasInternet = await NetworkService.isConnected();
+      if (!hasInternet) {
+        if (context != null && context.mounted) {
+          AppToast.showError(context, "Відсутнє з'єднання з інтернетом");
+        } else {
+          _log('setChapters: aborted due to no internet (no context)');
+        }
+        return;
+      }
+    }
+    // ----------------------------
+
     final effectiveType = userTypeOverride ?? _userType;
     List<Chapter> playlistChapters = chapters;
 
@@ -1273,10 +1307,8 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     int initialIndex = (effectiveType == UserType.guest) ? 0 : startIndex;
 
-    // 🔥 2. ЛОГИКА ОПРЕДЕЛЕНИЯ ПОЗИЦИИ
     Duration initialPos = initialPositionOverride ?? Duration.zero;
 
-    // Если override не передан, используем старую логику проверки истории
     if (initialPositionOverride == null) {
       if (book != null && !ignoreSavedPosition) {
         final saved = await _getProgressForBook(book.id);
@@ -1292,7 +1324,6 @@ class AudioPlayerProvider extends ChangeNotifier {
           }
         }
       } else {
-        // Фоллбэк для плейлиста из 1 элемента
         if (_position > Duration.zero && playlistChapters.length == 1) {
           initialPos = _position;
         }
@@ -1328,13 +1359,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log(
         'setChapters: ${_chapters.length} items, start=$_currentChapterIndex, initialPos=${initialPos.inSeconds}s, ignoreSaved=$ignoreSavedPosition');
     try {
-      // ✅ ДОДАНО: Примусова зупинка перед зміною джерела.
-      // Це гарантує, що буфери попередньої книги звільнені.
       if (player.playing) {
         await player.stop();
       }
 
-      // 🔥 3. АТОМАРНАЯ ИНИЦИАЛИЗАЦИЯ
       await player.setAudioSource(
         playlist,
         initialIndex: _currentChapterIndex,
@@ -1352,7 +1380,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     _rearmFreeSecondsTicker();
     notifyListeners();
   }
-
   int _orderKey(Chapter c) {
     final o = c.order;
     if (o == null) return 1 << 30;
@@ -1371,31 +1398,40 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   // ---------- КОНТРОЛЛЕРЫ ВОСПРОИЗВЕДЕНИЯ ----------
 
-  Future<void> play() async {
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Добавлен context и проверка сети
+  Future<void> play([BuildContext? context]) async {
+    // --- 1. ПРОВЕРКА СЕТИ ---
+    // Если пытаемся играть сетевой файл
+    if (!player.playing && (currentUrl?.startsWith('http') ?? false)) {
+      final hasNet = await NetworkService.isConnected();
+      if (!hasNet) {
+        if (context != null && context.mounted) {
+          AppToast.showError(context, "Відсутнє з'єднання з інтернетом");
+        }
+        return; // Отмена запуска
+      }
+    }
+    // ------------------------
+
     _ensureCreditsConsumer();
 
     if (_userType == UserType.free) {
       final secondsLeft = getFreeSeconds?.call() ?? 0;
 
-      // Если секунды закончились и ad-mode ещё не включён — спрашиваем согласие.
       if (secondsLeft <= 0 && !_adMode) {
         if (!_adConsentShown) {
           _adConsentShown = true;
           final ok = await (onNeedAdConsent?.call() ?? Future.value(false));
           if (ok) {
-            _enableAdMode(); // включает расписание рекламы и отключает списание секунд
+            _enableAdMode();
           } else {
-            // Пользователь уже увидел экран выбора (reward/ads-mode) и отменил.
-            // Не показываем второй раз подряд, просто выходим из play().
             return;
           }
         } else {
-          // экран уже показывали и отказались → просто не стартуем
           onCreditsExhausted?.call();
           return;
         }
       } else if (secondsLeft > 0) {
-        // На всякий случай снимаем флаг «исчерпано», если секунды вернулись.
         _creditsConsumer?.resetExhaustion();
       }
     }
@@ -1405,7 +1441,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (_adMode) {
       _syncAdScheduleWithPlayback();
     } else {
-      _creditsConsumer?.start(); // обычное списание для free с секундами
+      _creditsConsumer?.start();
     }
 
     rearmFreeSecondsTickerSafely();
@@ -1421,7 +1457,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
 
-    _stopAdTimer(); // === AD-MODE FIX
+    _stopAdTimer();
 
     _saveProgressThrottled(force: true);
     await _pushProgressToServer(force: true, allowZero: false);
@@ -1434,18 +1470,18 @@ class AudioPlayerProvider extends ChangeNotifier {
     _serverPushTimer?.cancel();
     _stopFreeSecondsTicker();
 
-    _stopAdTimer(); // === AD-MODE FIX
+    _stopAdTimer();
 
     _saveProgressThrottled(force: true);
     await _pushProgressToServer(force: true, allowZero: false);
     notifyListeners();
   }
 
-  Future<void> togglePlayback() async {
+  Future<void> togglePlayback([BuildContext? context]) async {
     if (player.playing) {
       await pause();
     } else {
-      await play();
+      await play(context);
     }
   }
 
@@ -1455,13 +1491,11 @@ class AudioPlayerProvider extends ChangeNotifier {
       }) async {
     if (!_hasSequence) return;
 
-    // 🔥 Сразу обновляем локальную переменную, чтобы UI не ждал
     _position = position;
     notifyListeners();
 
     await player.seek(position);
 
-    // 🔥 FIX: Скидаємо базу для CreditsConsumer, щоб перемотка вперед не списувала секунди
     _creditsConsumer?.resetBaseline();
 
     final sec = position.inSeconds;
@@ -1480,8 +1514,21 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> nextChapter() async {
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Добавлен context и проверка сети
+  Future<void> nextChapter([BuildContext? context]) async {
     if (!_hasSequence || _currentChapterIndex + 1 >= _chapters.length) return;
+
+    // Проверка сети перед переключением
+    final nextUrl = _chapters[_currentChapterIndex + 1].audioUrl;
+    if (nextUrl.startsWith('http')) {
+      final hasNet = await NetworkService.isConnected();
+      if (!hasNet) {
+        if (context != null && context.mounted) {
+          AppToast.showError(context, "Відсутнє з'єднання з інтернетом");
+        }
+        return;
+      }
+    }
 
     if (_position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
@@ -1496,8 +1543,21 @@ class AudioPlayerProvider extends ChangeNotifier {
     await player.play();
   }
 
-  Future<void> previousChapter() async {
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Добавлен context и проверка сети
+  Future<void> previousChapter([BuildContext? context]) async {
     if (!_hasSequence || _currentChapterIndex - 1 < 0) return;
+
+    // Проверка сети
+    final prevUrl = _chapters[_currentChapterIndex - 1].audioUrl;
+    if (prevUrl.startsWith('http')) {
+      final hasNet = await NetworkService.isConnected();
+      if (!hasNet) {
+        if (context != null && context.mounted) {
+          AppToast.showError(context, "Відсутнє з'єднання з інтернетом");
+        }
+        return;
+      }
+    }
 
     if (_position.inSeconds > 0) {
       _saveProgressThrottled(force: true);
@@ -1530,7 +1590,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     _log('seekChapter($index, pos=${newPos.inSeconds})');
     await player.seek(newPos, index: index);
 
-    // 🔥 FIX: Скидаємо базу і тут, для безпеки
     _creditsConsumer?.resetBaseline();
 
     _position = newPos;
@@ -1545,8 +1604,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ (FIX: Загрузка полного плейлиста для авторизованных) ----------
-  Future<bool> _prepareFromSavedIfNeeded() async {
+  // ---------- ПОДГОТОВКА / ВОССТАНОВЛЕНИЕ ----------
+
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Добавлен context для передачи в setChapters
+  Future<bool> _prepareFromSavedIfNeeded([BuildContext? context]) async {
     if (_hasSequence) return true;
     if (_isPreparing) {
       while (_isPreparing) {
@@ -1592,10 +1653,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       List<Chapter> chaptersToLoad;
       int startIndex = 0;
 
-      // 🔥 4. СОХРАНЯЕМ ТЕКУЩУЮ ПОЗИЦИЮ ПЕРЕД ВЫЗОВОМ SETCHAPTERS
       final posToRestore = _position;
 
-      // Логіка гостя (тільки перша глава)
+      // Логика гостя (тільки перша глава)
       if (effectiveUserType == UserType.guest) {
         final o = ch.order ?? 1;
         if (o > 1) {
@@ -1608,8 +1668,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         startIndex = 0;
       } else {
         // Для авторизованных: загружаем полный список.
-
-        // 🔥 ИЗМЕНЕНИЕ НАЧАЛО: Пробуем кэш, потом сеть
         List<Chapter> fullList = await _getCachedChaptersForBook(b.id);
 
         if (fullList.isNotEmpty) {
@@ -1618,7 +1676,6 @@ class AudioPlayerProvider extends ChangeNotifier {
           _log('_prepare: cache miss, fetching from network...');
           fullList = await _retrieveAllChaptersForBook(b.id);
         }
-        // 🔥 ИЗМЕНЕНИЕ КОНЕЦ
 
         if (fullList.isEmpty) {
           _log('_prepare: failed to fetch full chapter list for book ${b.id}, defaulting to single saved chapter');
@@ -1626,7 +1683,6 @@ class AudioPlayerProvider extends ChangeNotifier {
           startIndex = 0;
         } else {
           chaptersToLoad = fullList;
-          // Находим индекс главы, с которой остановились, в полном списке.
           startIndex = fullList.indexWhere((c) => c.id == ch.id);
           if (startIndex < 0) {
             _log('_prepare: last listened chapter not found in full list, starting at first chapter');
@@ -1637,7 +1693,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final cover = _absImageUrl(b.displayCoverUrl);
 
-      // 🔥 5. ПЕРЕДАЕМ ПОЗИЦИЮ В SETCHAPTERS
+      // 🔥 ВЫЗЫВАЕМ setChapters с CONTEXT
       await setChapters(
         chaptersToLoad,
         startIndex: startIndex,
@@ -1647,10 +1703,9 @@ class AudioPlayerProvider extends ChangeNotifier {
         coverUrl: cover,
         userTypeOverride: effectiveUserType,
         ignoreSavedPosition: true,
-        initialPositionOverride: posToRestore, // <--- Важно
+        initialPositionOverride: posToRestore,
+        context: context, // передаем контекст дальше
       );
-
-      // 🔥 6. УДАЛЕН БЛОК SEEK. Теперь инициализация атомарна.
 
       return true;
     } finally {
@@ -1703,9 +1758,11 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   // ---------- UI helpers ----------
-  Future<bool> handleBottomPlayTap() async {
+
+  // 🔥 ОБНОВЛЕННЫЙ МЕТОД: Принимает context
+  Future<bool> handleBottomPlayTap([BuildContext? context]) async {
     _log('handleBottomPlayTap()');
-    final prepared = await _prepareFromSavedIfNeeded();
+    final prepared = await _prepareFromSavedIfNeeded(context);
     if (!prepared) return false;
 
     await ensureCreditsTickerBound();
@@ -1713,7 +1770,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (player.playing) {
       await pause();
     } else {
-      await play();
+      await play(context); // передаем контекст в play
     }
 
     rearmFreeSecondsTickerSafely();
@@ -1739,9 +1796,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     _position = Duration(seconds: positionSec);
     _duration = Duration(seconds: chapter.duration ?? 0);
   }
-
-  // 🔥 УДАЛЕНЫ МЕТОДЫ seekDragStart, seekDragUpdate, seekDragEnd.
-  // Логика перенесена в SimplePlayer (Optimistic UI).
 
   // === AD-MODE: PUBLIC API ===
   Future<void> enableAdsMode({bool keepPlaying = true}) async {
@@ -1810,7 +1864,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       final now = DateTime.now();
       final diff = _adTargetTime!.difference(now);
 
-      // ✅ FIX: РУЧНОЙ CLAMP ДЛЯ DURATION (БЕЗ ОШИБОК)
       if (diff.isNegative) {
         _remainingAdDuration = Duration.zero;
       } else if (diff > _adInterval) {
@@ -1857,7 +1910,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         _adTargetTime = null;
 
         // 🔥 FIX 2: Сбрасываем таймер ЗАРАНЕЕ, до вызова рекламы.
-        // Это предотвращает зацикливание, если play() будет вызван внутри колбека рекламы.
         _remainingAdDuration = _adInterval;
 
         // Включаем "Загрузка"
@@ -1872,7 +1924,6 @@ class AudioPlayerProvider extends ChangeNotifier {
           _isAdLoading = false;
           // 🔥 СБРОС ТАЙМЕРА ПОСЛЕ ПОКАЗА, ЧТОБЫ НЕ БЫЛО ЦИКЛА
           _lastAdAt = DateTime.now();
-          // _remainingAdDuration уже сброшен выше.
           notifyListeners();
         }
       } else {
@@ -1894,7 +1945,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   Future<void> _cacheChaptersForBook(int bookId, List<Chapter> list) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Превращаем список объектов в список JSON-строк
       final jsonList = list.map((c) => c.toJson()).toList();
       await prefs.setString('$_kChaptersCachePrefix$bookId', json.encode(jsonList));
     } catch (e) {
@@ -1910,7 +1960,6 @@ class AudioPlayerProvider extends ChangeNotifier {
 
       final List<dynamic> jsonList = json.decode(raw);
       return jsonList.map((item) {
-        // Важно передать bookId, так как в JSON главы его может не быть
         return Chapter.fromJson(
           Map<String, dynamic>.from(item as Map),
           book: {'id': bookId},
@@ -1950,6 +1999,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _bufferingTimeoutTimer?.cancel();
     _serverPushTimer?.cancel();
     _pendingRearmTimer?.cancel();
     _creditsConsumer?.stop();
