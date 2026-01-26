@@ -1,4 +1,4 @@
-// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Notification + Resume Logic + AppToast)
+// lib/main.dart (ИСПРАВЛЕННЫЙ: Ad-Mode Notification + Resume Logic + AppToast + Deep Links)
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -15,6 +15,8 @@ import 'package:booka_app/screens/catalog_screen.dart' show routeObserver;
 
 // 👇 Экран согласия / режима с рекламой (рабочий, не тестовый)
 import 'package:booka_app/screens/reward_test_screen.dart';
+// 🔥 ДОБАВЛЕНО: Экран подписок для перехода из пуша
+import 'package:booka_app/screens/subscriptions_screen.dart';
 
 import 'package:booka_app/core/push/push_service.dart';
 import 'package:booka_app/core/network/api_client.dart';
@@ -220,7 +222,7 @@ Future<void> _initMobileAds() async {
   try {
     await MobileAds.instance.updateRequestConfiguration(
       RequestConfiguration(
-        testDeviceIds: <String>['129F9C64839B7C8761347820D44F1697'],
+        testDeviceIds: <String>[],
       ),
     );
   } catch (_) {}
@@ -255,9 +257,10 @@ class BookaApp extends StatelessWidget {
           navigatorObservers: [routeObserver],
           navigatorKey: _navKey,
 
-          // 👇 РЕГИСТРАЦИЯ ИМЕНОВАННОГО МАРШРУТА ДЛЯ РАБОЧЕГО ЭКРАНА НАГРАДЫ
+          // 👇 РЕГИСТРАЦИЯ ИМЕНОВАННЫХ МАРШРУТОВ
           routes: <String, WidgetBuilder>{
             '/rewarded': (_) => const RewardTestScreen(),
+            '/subscriptions': (_) => const SubscriptionsScreen(), // ✅ Добавлено
           },
 
           // Единый хост баннера (без глобального WillPopScope)
@@ -265,7 +268,7 @@ class BookaApp extends StatelessWidget {
             final Widget safeChild = child ?? const SizedBox.shrink();
             return GlobalBannerInjector(
               child: safeChild,
-              adUnitId: 'ca-app-pub-3940256099942544/6300978111', // тестовый баннер
+              adUnitId: 'ca-app-pub-9743644418783616/5671045607', // НЕ тестовый баннер
               adSize: AdSize.banner,
               navigatorKey: _navKey,
               ctaRouteName: '/rewarded',
@@ -336,7 +339,7 @@ Future<void> _showInterstitialAd(AudioPlayerProvider audio) async {
   }
 
   InterstitialAd.load(
-    adUnitId: 'ca-app-pub-3940256099942544/1033173712', // тестовый interstitial
+    adUnitId: 'ca-app-pub-9743644418783616/7443292271', // тестовый interstitial
     request: const AdRequest(),
     adLoadCallback: InterstitialAdLoadCallback(
       onAdLoaded: (InterstitialAd ad) {

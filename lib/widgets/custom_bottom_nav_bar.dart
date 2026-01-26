@@ -117,7 +117,7 @@ class CustomBottomNavBar extends StatelessWidget {
     // Индивидуальные цвета иконок (цепочка подстановок)
     final Color iconGenres  = genresIconColor  ?? navIconColor ?? _kIconLightYellow;
     final Color iconHome    = homeIconColor    ?? navIconColor ?? _kIconLightYellow;
-    final Color iconProfile = profileIconColor ?? navIconColor ?? _kIconLightYellow;
+    // final Color iconProfile = profileIconColor ?? navIconColor ?? _kIconLightYellow; // 🔥 Закомментировано, так как задаем явно ниже
 
     // Детальные отступы (если не заданы — берем дефолтные)
     final double gh = gapGenresHome ?? navGap;     // Жанры ↔︎ Главная
@@ -202,7 +202,7 @@ class CustomBottomNavBar extends StatelessWidget {
                           await p.ensureCreditsTickerBound();
 
                           // 3) Пытаемся продолжить сессию / play-pause
-                          // 🔥 ВАЖНО: передаем context, чтобы показать ошибку сети, если нужно
+                          // 🔥 ВАЖНО: передаем context
                           final bool started = await p.handleBottomPlayTap(context);
 
                           if (!started) {
@@ -241,7 +241,7 @@ class CustomBottomNavBar extends StatelessWidget {
               // FAB ↔︎ Профиль
               SizedBox(width: fp),
 
-              // ▶️ Профиль
+              // ▶️ Профиль (ВЫДЕЛЕННЫЙ)
               _MiniRingButton(
                 tooltip: 'Профіль',
                 icon: Icons.person_rounded,
@@ -251,9 +251,11 @@ class CustomBottomNavBar extends StatelessWidget {
                 innerSize: smallInner,
                 iconSize: smallIcon,
                 logoPadding: smallPad,
-                ringColor: miniRingColor,
-                innerColor: miniInnerColor,
-                iconColor: iconProfile,
+
+                // 🔥 ВЫДЕЛЕНИЕ: Делаем кнопку "Filled" (залитой) в цвет FAB
+                ringColor: _kRingBlue.withOpacity(0.5), // Полупрозрачное кольцо
+                innerColor: _kRingBlue,                 // Яркий синий фон
+                iconColor: Colors.white,                // Белая иконка для контраста
               ),
             ],
           ),
@@ -296,7 +298,11 @@ class _MiniRingButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final double thinRing = ringVisualSize * 0.04;
+
+    // Для выделенной кнопки (синей) делаем "активность" чуть ярче/темнее или оставляем как есть
+    // Если кнопка не активна, делаем её чуть более прозрачной
     final Color ringTint = isActive ? ringColor : ringColor.withOpacity(0.55);
+
     final Color hi = cs.onSurface.withOpacity(0.14);
     final Color lo = cs.onSurface.withOpacity(0.08);
 
