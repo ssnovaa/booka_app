@@ -29,6 +29,9 @@ import 'package:booka_app/core/network/app_exception.dart'; // Для прове
 import 'package:booka_app/screens/subscriptions_screen.dart';
 import 'package:booka_app/core/network/image_cache.dart';
 
+//👈Policy
+import 'package:url_launcher/url_launcher.dart';
+
 // ⬇️ для getUserType / UserType
 import 'package:booka_app/models/user.dart' show UserType, getUserType;
 
@@ -352,6 +355,8 @@ class _ProfileHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+
+              // ✅ ПОВЕРТАЄМО КНОПКУ ВИХОДУ НА МІСЦЕ (червона, помітна)
               TextButton.icon(
                 onPressed: onLogout,
                 style: TextButton.styleFrom(
@@ -606,7 +611,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<Map<String, dynamic>?> profileFuture;
-  // 1️⃣ Змінна для підписки на оновлення профілю
   StreamSubscription? _updateSub;
 
   @override
@@ -614,7 +618,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     profileFuture = _fetchUserProfile();
 
-    // локал-first: тягнемо сервер лише якщо немає локальної сесії
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final ap = context.read<AudioPlayerProvider>();
@@ -624,10 +627,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     });
 
-    // 2️⃣ Підписуємося на потік оновлень репозиторію
     _updateSub = ProfileRepository.I.onUpdate.listen((_) {
-      // Якщо профіль змінився (наприклад, видалили книгу з вибраного),
-      // автоматично оновлюємо дані на екрані.
       if (mounted) {
         _refresh();
       }
@@ -636,7 +636,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    // 3️⃣ Відписуємося при закритті екрану
     _updateSub?.cancel();
     super.dispose();
   }
@@ -648,10 +647,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         debugTag: 'ProfileScreen.load',
       );
     } catch (e) {
-      // ‼️ АВТО-ЛОГАУТ ПРИ 401 (Щоб не зависало на екрані помилки)
       if (e is AppNetworkException && e.statusCode == 401) {
         if (mounted) {
-          // Трохи чекаємо, щоб не було бліку
           Future.microtask(() => logout(context));
         }
       }
@@ -681,6 +678,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
     );
+  }
+
+  // 👇 ФУНКЦІЯ ДЛЯ ПОЛІТИКИ (ПЕРЕНЕСЕНА В СТЕЙТ)
+  Future<void> _openPrivacyPolicy() async {
+    final Uri url = Uri.parse('https://app.booka.top/privacy-policy');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint('Could not launch $url');
+    }
   }
 
   Future<void> _continueListening() async {
@@ -757,11 +762,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _switchMainTabAndClose(int tab) {
-    // 🧭 Повертаємо індекс бажаної вкладки назад через Navigator.pop
     Navigator.of(context).pop(tab);
   }
 
-  /// Нижній бар: 0=Жанри (CatalogAndCollections), 1=Каталог, 2=Плеєр, 3=Профіль
   void _onBottomTab(int index) {
     switch (index) {
       case 0:
@@ -778,16 +781,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// thumb_url > cover_url → абсолютний URL
   String? _resolveThumbOrCoverUrl(Map<String, dynamic> book) {
     final rawThumb = (book['thumb_url'] ?? book['thumbUrl'])?.toString();
     final rawCover = (book['cover_url'] ?? book['coverUrl'])?.toString();
-
     final toProcess = rawThumb ?? rawCover;
-
-    // 📝 ЛОГ для перевірки даних від сервера
-    // debugPrint('🔎 PROFILE_RAW_DATA: thumb=$rawThumb, cover=$rawCover');
-
     return ensureAbsoluteImageUrl(toProcess);
   }
 
@@ -831,7 +828,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return const _ProfileLoadingSkeleton();
           }
           if (snapshot.hasError) {
-            // Якщо 401 - вже спрацював автологаут, але покажемо лоадер
             if (snapshot.error is AppNetworkException &&
                 (snapshot.error as AppNetworkException).statusCode == 401) {
               return const Center(child: LoadingIndicator());
@@ -907,6 +903,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
+
+                // 🔥🔥🔥 [НОВЕ] ПОЛІТИКА КОНФІДЕНЦІЙНОСТІ (ОКРЕМИЙ БЛОК)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor.withOpacity(0.1),
+                        ),
+                      ),
+                      child: ListTile(
+                        leading: const Icon(Icons.privacy_tip_outlined, color: Colors.grey),
+                        title: const Text(
+                          'Політика конфіденційності',
+                          maxLines: 2, // Дозволяємо перенос тексту
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                        onTap: _openPrivacyPolicy,
+                      ),
+                    ),
+                  ),
+                ),
+                // 🔥🔥🔥 -----------------------------------------------
 
                 SliverToBoxAdapter(
                   child: Padding(
